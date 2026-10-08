@@ -1,0 +1,5 @@
+osc(10 * 2, 0.1 + 0.05, Math.PI / 2)
+  .rotate(-0.5, -0.1)
+  .scale(1e-1)
+  .pixelate(.5, 20.)
+  .out()

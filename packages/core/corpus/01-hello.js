@@ -1,0 +1,2 @@
+// the smallest sketch
+osc(20, 0.1, 0.8).out()
