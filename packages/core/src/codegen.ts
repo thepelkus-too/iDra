@@ -63,6 +63,8 @@ export interface RunnableOptions extends CodegenOptions {
   live?: boolean
   /** name of the live table object in the sketch's global scope */
   liveName?: string
+  /** leave out these `sN.initX(...)` statements (the runtime does this for sources it already initialised) */
+  skipSource?: (s: Extract<Stmt, { k: 'source' }>) => boolean
 }
 
 interface Ctx {
@@ -351,6 +353,7 @@ export function toRunnable(sketch: Sketch, opts: RunnableOptions = {}): Runnable
   const out: string[] = []
   for (const s of sketch.stmts) {
     if (s.k === 'comment') continue
+    if (s.k === 'source' && opts.skipSource?.(s)) continue
     if (ctx.safe) {
       if (s.k === 'raw') {
         ctx.skipped.push({ id: s.id, reason: 'raw code' })

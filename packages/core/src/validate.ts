@@ -63,6 +63,12 @@ function checkValue(
       break
     case 'vec4':
       if (!isVec) push('bad-arg', `${call.fn}: a vector was given for a ${inputType} input`)
+      else if (cat.get(call.fn)?.origin === 'builtin')
+        push('bad-arg', `${call.fn}: hydra-synth 1.4.0 throws "Arguments must be a texture or GlslSource" for array arguments to a ${inputType} input`, 'warning')
+      break
+    case 'tex':
+      if (inputType === 'float' && cat.get(call.fn)?.origin === 'builtin')
+        push('bad-arg', `${call.fn}: a texture in a numeric slot compiles to invalid GLSL in hydra-synth 1.4.0`, 'warning')
       break
     default:
       break
