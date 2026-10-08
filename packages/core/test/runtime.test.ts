@@ -254,6 +254,19 @@ describe.each(['inline', 'loopback'] as const)('runtime (%s transport, real gene
     expect(r.recompiled).toBe(true)
   })
 
+  test('setMouse drives Hydra\'s getter-only mouse without throwing', async () => {
+    ;({ rt } = mk())
+    const seen: string[] = []
+    rt.onError((e) => seen.push(e.message))
+    await rt.run(fromCode('osc(() => mouse.x / 100).out()'))
+    rt.setMouse(42, 7)
+    rt.setMouse(50, 9)
+    await tick(50)
+    expect((window as any).mouse.x).toBe(50)
+    expect(hydra().synth.mouse.y).toBe(9)
+    expect(seen).toEqual([])
+  })
+
   test('boundary: every message is plain data, the frame is only reachable through messages', async () => {
     if (mode === 'inline') return // the log is recorded by the loopback transport
     ;({ rt } = mk())

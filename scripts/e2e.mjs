@@ -298,6 +298,23 @@ await step('live closures render the same pixels as baked numbers (10 random ske
   return `max differing pixels of 5184: ${worst}; sketches with visible content: ${r.filter((x) => x.lit > 50).length}/10`
 })
 
+await step('hovering the canvas drives Hydra\'s mouse in both modes without errors', async () => {
+  for (const mode of ['iframe', 'inline']) {
+    await page.selectOption('#isolation', mode)
+    await page.waitForFunction((m) => window.__harness.rt.isolation === m && new RegExp('· ' + m).test(document.querySelector('#status').textContent), mode)
+    await page.evaluate(() => window.__harness.rt.run('osc(() => 5 + mouse.x / 50, 0.1).out()', { force: true }))
+    const before = await page.evaluate(() => window.__harness.rt.errors.length)
+    const box = await page.locator('#stage').boundingBox()
+    for (let i = 0; i < 8; i++) await page.mouse.move(box.x + 40 + i * 30, box.y + 60 + i * 10)
+    await page.waitForTimeout(300)
+    const errs = await page.evaluate((n) => window.__harness.rt.errors.slice(n).map((e) => e.message), before)
+    assert.deepEqual(errs, [], `${mode}: ${errs.join('; ')}`)
+    if (mode === 'inline') assert.ok(await page.evaluate(() => window.mouse.x > 0), 'inline mouse.x follows the pointer')
+  }
+  await page.selectOption('#isolation', 'iframe')
+  await page.waitForFunction(() => window.__harness.rt.isolation === 'iframe' && /· iframe/.test(document.querySelector('#status').textContent))
+})
+
 await step('diagnostics page computes live results and a copyable report', async () => {
   await page.click('#tabbtn-diag')
   await page.click('#diag-run')

@@ -69,20 +69,38 @@ export class Bridge {
         case 'audioSettings':
           this.audio?.applySettings(msg.settings)
           return
-        case 'mouse': {
-          const m = this.hydra?.synth?.mouse
-          if (m) {
-            m.x = msg.x
-            m.y = msg.y
-          }
-          return
-        }
+        case 'mouse':
+          return this.setMouse(msg.x, msg.y, msg.buttons)
         case 'dispose':
           return this.dispose()
       }
     } catch (err) {
       this.error('runtime', (err as Error)?.message ?? String(err))
     }
+  }
+
+  /**
+   * hydra-synth's `mouse` has getter-only x/y/buttons fed by its own window listeners. The first time the host drives the
+   * mouse we swap in a plain object (same shape) and switch the native listeners off, so the two sources never fight.
+   */
+  private hostMouse?: { x: number; y: number; buttons: number; mods: unknown; enabled: boolean }
+  private setMouse(x: number, y: number, buttons?: number) {
+    const h = this.hydra
+    if (!h?.synth) return
+    if (!this.hostMouse) {
+      const old = h.synth.mouse
+      try {
+        if (old) old.enabled = false
+      } catch {
+        /* ignore */
+      }
+      this.hostMouse = { x: 0, y: 0, buttons: 0, mods: old?.mods ?? { shift: false, alt: false, control: false, meta: false }, enabled: false }
+      h.synth.mouse = this.hostMouse
+      this.env.win.mouse = this.hostMouse
+    }
+    this.hostMouse.x = x
+    this.hostMouse.y = y
+    if (buttons !== undefined) this.hostMouse.buttons = buttons
   }
 
   private reply(id: number, f: () => unknown) {

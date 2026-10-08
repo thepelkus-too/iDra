@@ -53,7 +53,8 @@ export class MockHydra {
     this.screens = 0
     this.synth = {
       time: 0, bpm: 30, width: this.width, height: this.height, fps: undefined, stats: { fps: 0 }, speed: 1,
-      mouse: { x: 0, y: 0 },
+      // like hydra-synth's real mouse: getter-only x/y
+      mouse: Object.defineProperties({}, { x: { get: () => 0, enumerable: true }, y: { get: () => 0, enumerable: true }, enabled: { get: () => true, set: () => {}, enumerable: true } }),
       render: (o) => { this.rendered = o ? o.label : 'all' },
       setResolution: (w, h) => this.setResolution(w, h),
       update: () => {}, afterUpdate: () => {},
