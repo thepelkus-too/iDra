@@ -51,7 +51,8 @@ console.log(`\nHydra iPad e2e · ${base} · viewport 834×1194 · SOFTWARE WebGL
 
 await step('shell loads, seeds 3 starter sketches, lists editors from apps.json', async () => {
   await page.goto(base)
-  await page.waitForSelector('.card')
+  // the starters are written one by one and the grid redraws after each: wait for all three
+  await page.waitForFunction(() => document.querySelectorAll('.card').length === 3, null, { timeout: 15000 })
   assert.equal(await page.locator('.card').count(), 3)
   const apps = await (await page.request.get(base + 'apps.json')).json()
   assert.deepEqual(apps.apps.map((a) => a.name), ['harness'])
