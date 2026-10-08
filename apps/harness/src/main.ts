@@ -63,11 +63,12 @@ const switcherHost = h('span', {})
 const top = h('div', { class: 'top' }, switcherHost, nameInput, runBtn, diceBtn, h('label', { title: 'Run only recognised chains; skip raw code and plugins' }, safeToggle, ' safe'), isoSel)
 
 const banner = h('div', { class: 'banner', hidden: true, id: 'trust-banner' })
+const camBanner = h('div', { class: 'banner', hidden: true, id: 'camera-banner' })
 const textarea = h('textarea', { class: 'code', id: 'code', spellcheck: false, autocapitalize: 'off', autocomplete: 'off', 'aria-label': 'Hydra code' }) as HTMLTextAreaElement
 const status = h('div', { class: 'status', id: 'status' })
 const facts = h('div', { class: 'status', id: 'facts' })
 const corpusSel = h('select', { id: 'corpus', 'aria-label': 'Load a corpus sketch' }, h('option', { value: '' }, 'load corpus sketch…'), ...corpus.map((c) => h('option', { value: c.name }, c.name))) as HTMLSelectElement
-const codeTab = h('div', { class: 'tab on', id: 'tab-code' }, banner, textarea, h('div', { class: 'row' }, corpusSel), facts, status)
+const codeTab = h('div', { class: 'tab on', id: 'tab-code' }, banner, camBanner, textarea, h('div', { class: 'row' }, corpusSel), facts, status)
 const knobsTab = h('div', { class: 'tab', id: 'tab-knobs' })
 const diagTab = h('div', { class: 'tab', id: 'tab-diag' })
 const audioTab = h('div', { class: 'tab', id: 'tab-audio' })
@@ -130,9 +131,22 @@ function persist(s: Sketch) {
   }, 4000)
 }
 
+function updateCameraBanner() {
+  const uses = describe(sketch).usesCamera
+  camBanner.hidden = !(uses && isolation === 'iframe')
+  if (camBanner.hidden) return
+  camBanner.textContent = ''
+  camBanner.append(
+    h('strong', {}, 'Camera / screen sources need inline mode.'),
+    h('span', { class: 'status' }, 'Browsers refuse camera access inside the isolated frame. Inline mode runs the sketch without isolation, so only use it for sketches you trust.'),
+    h('button', { type: 'button', id: 'camera-inline', class: 'warn', onclick: async () => { isoSel.value = 'inline'; isoSel.dispatchEvent(new Event('change')) } }, 'Switch to inline'),
+  )
+}
+
 async function runNow(force = false) {
   const need = !trusted && (await lib.needsTrust(sketch))
   banner.hidden = !need
+  updateCameraBanner()
   const r = await rt.run(sketch, { safe: need || safeToggle.checked, force })
   const problems = validate(sketch, catalog).filter((p) => p.severity !== 'info')
   status.textContent = `${r.ok ? 'ran' : 'failed'} · ${r.recompiled ? 'recompiled' : 'numbers only'} · ${r.ms.toFixed(0)} ms · ${isolation}${r.skipped.length ? ` · ${r.skipped.length} skipped (safe mode)` : ''}${problems.length ? ` · ${problems.length} problem(s): ${problems[0].message}` : ''}`
@@ -236,6 +250,7 @@ async function startRuntime() {
   errorsEl.textContent = ''
   rt = createRuntime(stage, { isolation, audio, catalog, width: 960, height: 540 })
   rt.onError(showError)
+  rt.onError((e) => e.kind === 'camera' && updateCameraBanner())
   rt.forwardPointer(true)
   ;(window as any).__harness = { get rt() { return rt }, get sketch() { return sketch }, lib, audio, runNow }
   await rt.ready.catch((e) => showError({ kind: 'runtime', message: String(e.message ?? e), at: Date.now() }))

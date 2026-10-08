@@ -21,6 +21,7 @@ applyAppBase()
 injectStyles('shell', CSS)
 
 const lib = getLibrary()
+;(window as any).__hydra = { lib } // test hook (the e2e run adds meta to a sketch before opening it in an editor)
 const prefs = appStorage('shell')
 const root = document.getElementById('app')!
 let apps: AppInfo[] = []

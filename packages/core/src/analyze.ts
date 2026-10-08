@@ -35,6 +35,8 @@ export interface Description {
   /** what `render` finally shows: the last render stmt wins; undefined = o0 */
   activeRender?: OutName | 'all'
   usesAudio: boolean
+  /** a camera or screen source (`sN.initCam`/`initScreen`): needs inline mode, see docs/security.md */
+  usesCamera: boolean
   usesPrev: boolean
   settings: Record<string, number>
 }
@@ -83,6 +85,7 @@ export function describe(sketch: Sketch): Description {
   const usedSrc = new Set<SourceName>()
   let usesAudio = false
   let usesPrev = false
+  let usesCamera = false
   let maxDepth = 0
   const defUses = new Map<string, string[]>()
 
@@ -93,10 +96,12 @@ export function describe(sketch: Sketch): Description {
         break
       case 'raw':
         rawStmtIds.push(s.id)
+        if (/\binit(Cam|Screen)\b/.test(s.code)) usesCamera = true
         if (/\ba\.(show|fft|setBins)\b/.test(s.code)) usesAudio = true
         break
       case 'source':
         sources.push({ slot: s.slot, kind: s.init.kind, stmtId: s.id })
+        if (s.init.kind === 'cam' || s.init.kind === 'screen') usesCamera = true
         break
       case 'render':
         renders.push({ stmtId: s.id, target: s.target })
@@ -177,6 +182,7 @@ export function describe(sketch: Sketch): Description {
     renders,
     activeRender: renders.length ? renders[renders.length - 1].target : undefined,
     usesAudio,
+    usesCamera,
     usesPrev,
     settings,
   }
