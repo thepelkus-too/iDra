@@ -12,3 +12,7 @@ declare module 'hydra-synth' {
   const Hydra: any
   export default Hydra
 }
+declare module '@hydra-src/*' {
+  const mod: any
+  export default mod
+}

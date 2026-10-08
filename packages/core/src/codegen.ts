@@ -283,8 +283,34 @@ function defaultSep(prev: Stmt | undefined, cur: Stmt): string {
   return '\n'
 }
 
+/** Marks for a preserved top-level chain: lay the original segments (call texts + gaps) out again. */
+function preservedChainMarks(chain: Chain, text: string, ctx: Ctx): Mark[] {
+  const marks: Mark[] = [{ id: chain.id, from: 0, to: text.length }]
+  const calls = [chain.gen, ...chain.mods]
+  const gaps = chain.src?.gaps ?? []
+  let pos = 0
+  calls.forEach((c, i) => {
+    if (i) pos += (gaps[i - 1] ?? '').length
+    const t = c.src?.text
+    if (t === undefined || text.slice(pos, pos + t.length) !== t) return
+    marks.push({ id: c.id, from: pos, to: pos + t.length })
+    // nested calls get ranges when the canonical formatting happens to equal the original text
+    const fresh = emitCall(c, i === 0 ? 'gen' : 'mod', { ...ctx, fresh: true })
+    if (fresh.t === t) for (const k of fresh.m) if (k.id !== c.id) marks.push({ id: k.id, from: pos + k.from, to: pos + k.to })
+    pos += t.length
+  })
+  return marks
+}
+
 function emitStmt(s: Stmt, ctx: Ctx): Piece {
-  if (!ctx.fresh && s.src && s.src.hash === stmtHash(s)) return marked(s.id, lit(s.src.text))
+  if (!ctx.fresh && s.src && s.src.hash === stmtHash(s)) {
+    const text = s.src.text
+    const m: Mark[] = [{ id: s.id, from: 0, to: text.length }]
+    const fresh = emitStmtFresh(s, { ...ctx, fresh: true, semi: /;\s*$/.test(text) })
+    if (fresh.t === text) for (const k of fresh.m) m.push(k)
+    else if (s.k === 'chain') m.push(...preservedChainMarks(s.chain, text, ctx))
+    return { t: text, m }
+  }
   return marked(s.id, emitStmtFresh(s, ctx))
 }
 

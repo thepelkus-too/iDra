@@ -38,7 +38,7 @@ class MockSource {
 }
 
 export class MockHydra {
-  static instances = []
+  static instances: any[] = []
   constructor(opts = {}) {
     MockHydra.instances.push(this)
     ArrayUtils.init()

@@ -22,7 +22,7 @@ export interface AudioFrame {
   fft: number[]
 }
 
-export interface Transport {
+export interface MediaTransport {
   readonly duration: number
   readonly currentTime: number
   readonly playing: boolean
@@ -40,7 +40,7 @@ export interface AudioSource {
   start(ctx: AudioContext): Promise<AudioNode>
   stop(): void
   /** files/streams with a timeline */
-  transport?: Transport
+  transport?: MediaTransport
   /** monitor (speaker) default: mic is muted to avoid feedback */
   monitorDefaultMuted?: boolean
 }
@@ -159,7 +159,7 @@ export class FileSource implements AudioSource {
   private el?: HTMLMediaElement
   private url?: string
   private _loop = true
-  transport: Transport
+  transport: MediaTransport
   constructor(private file: Blob | File | string, name?: string) {
     this.label = name ?? (typeof file === 'string' ? file.split('/').pop() || 'audio' : (file as File).name || 'audio file')
     const self = this
