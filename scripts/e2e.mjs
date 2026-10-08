@@ -178,10 +178,58 @@ await step('backup JSON round-trips through the file UI and keeps meta', async (
   assert.ok(bundle.sketches.length >= 4)
 })
 
+await step('library management: duplicate, rename, delete (UI)', async () => {
+  const count = () => page.locator('.card').count()
+  const before = await count()
+  const card = page.locator(`.card[data-id="${sketchId}"]`)
+  await card.getByRole('button', { name: /More actions/ }).click()
+  await card.locator('.menu button', { hasText: 'Duplicate' }).click()
+  await page.waitForSelector('.card:has-text("E2E sketch copy")')
+  assert.equal(await count(), before + 1)
+  const copy = page.locator('.card:has-text("E2E sketch copy")')
+  await copy.getByRole('button', { name: /More actions/ }).click()
+  await copy.locator('.menu button', { hasText: 'Rename' }).click()
+  await page.fill('.modal input[type=text]', 'Renamed copy')
+  await page.locator('.modal').getByRole('button', { name: 'Rename' }).click()
+  await page.waitForSelector('.card:has-text("Renamed copy")')
+  const renamed = page.locator('.card:has-text("Renamed copy")')
+  await renamed.getByRole('button', { name: /More actions/ }).click()
+  await renamed.locator('.menu button', { hasText: 'Delete' }).click()
+  await page.locator('.modal').getByRole('button', { name: 'Delete' }).click()
+  await page.waitForFunction((n) => document.querySelectorAll('.card').length === n, before)
+  // the original is untouched
+  assert.ok(await page.locator(`.card[data-id="${sketchId}"]`).count())
+})
+
+await step('Restore… merges a backup file (and keeps newer local sketches)', async () => {
+  const [dl] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Backup everything' }).click()])
+  const path = await dl.path()
+  const before = await page.locator('.card').count()
+  await page.getByRole('button', { name: 'Restore…' }).click()
+  await page.setInputFiles('.modal input[type=file]', path)
+  await page.locator('.modal').getByRole('button', { name: 'Restore' }).click()
+  await page.waitForSelector('.note-toast')
+  assert.match(await page.textContent('.note-toast'), /0 new, 0 replaced, \d+ skipped/)
+  assert.equal(await page.locator('.card').count(), before)
+})
+
 // ------------------------------------------------------------------ harness checks
 await page.goto(base + `harness/#/s/${sketchId}`)
 await page.waitForFunction(() => window.__harness && window.__harness.rt)
 await page.evaluate(() => window.__harness.lib.approve(window.__harness.sketch).then(() => window.__harness.runNow(true)))
+
+await step('thumbnail: after an edit the harness captures a frame and the library stores it for the shell', async () => {
+  await page.click('#tabbtn-knobs')
+  await page.locator('input[type=number][aria-label="osc offset value"]').fill('1.25')
+  let thumb
+  for (let i = 0; i < 40 && !thumb; i++) {
+    await page.waitForTimeout(500)
+    thumb = await page.evaluate(async (id) => (await window.__harness.lib.list()).find((e) => e.id === id)?.thumbnail, sketchId)
+  }
+  assert.ok(thumb, 'no thumbnail stored within 20 s')
+  assert.equal(thumb.slice(0, 23), 'data:image/jpeg;base64,')
+  return `${(thumb.length / 1024).toFixed(1)} KB data URL`
+})
 
 await step('iframe isolation: a sketch cannot reach the parent page; inline mode can', async () => {
   const PROBE = "throw new Error('probe:' + (() => { try { return 'reached ' + parent.document.title } catch (e) { return 'blocked ' + e.name } })())"

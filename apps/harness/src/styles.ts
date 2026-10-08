@@ -28,9 +28,12 @@ textarea.code{width:100%;flex:1;min-height:140px;resize:none;border-radius:10px;
 .knob label{color:var(--hi-dim);font-size:12px;grid-column:1/-1}
 .knob input[type=range]{width:100%;min-height:32px}
 .knob input[type=number]{width:100%;min-height:36px;border-radius:8px;border:1px solid var(--hi-line);background:var(--hi-bg);color:var(--hi-text);padding:0 6px}
-table.caps{width:100%;border-collapse:collapse;font-size:13px}
-table.caps td{padding:6px 4px;border-bottom:1px solid var(--hi-line);vertical-align:top}
-table.caps td:first-child{white-space:nowrap;font-weight:600}
+table.caps,table.caps tbody{display:block;width:100%;font-size:13px}
+table.caps tr{display:grid;grid-template-columns:1fr auto;gap:2px 10px;padding:7px 2px;border-bottom:1px solid var(--hi-line)}
+table.caps td{display:block;padding:0}
+table.caps td:first-child{font-weight:600}
+table.caps td:nth-child(2){text-align:right;text-transform:uppercase;font-size:11px;letter-spacing:.04em}
+table.caps td:nth-child(3){grid-column:1/-1;color:var(--hi-dim);word-break:break-word}
 .st-yes{color:#53c27a}.st-no{color:var(--hi-bad)}.st-partial{color:var(--hi-warn)}.st-unknown{color:var(--hi-dim)}
 .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:6px 0}
 pre.report{white-space:pre-wrap;font-size:12px;background:var(--hi-bg);border:1px solid var(--hi-line);border-radius:8px;padding:8px}

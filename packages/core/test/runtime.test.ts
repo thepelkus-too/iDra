@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, test } from 'vitest'
-import { createRuntime, ScriptCache, type Runtime } from '../src/runtime'
+import { createRuntime, Bridge, ScriptCache, type Runtime, type RuntimeTransport, type FrameToHost, type HostToFrame } from '../src/runtime'
 import { importText, fromCode } from '../src/parse'
 import { toCode } from '../src/codegen'
 import { Catalog } from '../src/catalog'
@@ -9,11 +9,39 @@ import { corpus } from '../src/corpus'
 import { setArg, walkCalls, num, type Sketch } from '../src/ir'
 import { MockHydra, resetMock } from './helpers/mock-hydra'
 
+/**
+ * A custom transport that stands in for the iframe: the Bridge sits behind two structured-clone hops and is reachable ONLY through
+ * messages, exactly like the real frame. Each message is also asserted to be plain cloneable data. (Real-iframe behaviour is covered by
+ * scripts/e2e.mjs in Chromium.)
+ */
+function loopbackTransport(log: Array<{ dir: 'h2f' | 'f2h'; msg: any }>) {
+  return (container: HTMLElement): RuntimeTransport => {
+    let cb: (m: FrameToHost) => void = () => {}
+    let bridge: Bridge | undefined
+    const later = (f: () => void) => setTimeout(f, 0)
+    bridge = new Bridge({
+      win: window,
+      container,
+      post: (m) => later(() => { log.push({ dir: 'f2h', msg: m }); cb(structuredClone(m)) }),
+      Hydra: MockHydra as any,
+    })
+    return {
+      send: (m: HostToFrame) => later(() => { log.push({ dir: 'h2f', msg: m }); bridge!.handle(structuredClone(m)) }),
+      onMessage: (f) => (cb = f),
+      dispose: () => bridge?.dispose(),
+    }
+  }
+}
+
+let MODE: 'inline' | 'loopback' = 'inline'
+let MSG_LOG: Array<{ dir: 'h2f' | 'f2h'; msg: any }> = []
 const mk = (extra: Record<string, unknown> = {}) => {
   const container = document.createElement('div')
   document.body.appendChild(container)
   const catalog = Catalog.fromHydra()
-  const rt = createRuntime(container, { isolation: 'inline', hydraLoader: async () => MockHydra as any, catalog, ...extra } as any)
+  MSG_LOG = []
+  const opts: any = MODE === 'inline' ? { isolation: 'inline', hydraLoader: async () => MockHydra } : { transport: loopbackTransport(MSG_LOG) }
+  const rt = createRuntime(container, { catalog, ...opts, ...extra } as any)
   return { rt, catalog, container }
 }
 const hydra = () => MockHydra.instances[MockHydra.instances.length - 1]
@@ -27,7 +55,11 @@ beforeEach(() => {
 })
 afterEach(() => rt?.dispose())
 
-describe('runtime (inline mode, real generator + sandbox, no GL)', () => {
+describe.each(['inline', 'loopback'] as const)('runtime (%s transport, real generator + sandbox, no GL)', (mode) => {
+  beforeEach(() => {
+    MODE = mode
+    for (const k of ['__ran', '__loaded']) delete (window as any)[k]
+  })
   test('runs a sketch and compiles a shader', async () => {
     ;({ rt, catalog } = mk())
     await rt.ready
@@ -220,5 +252,18 @@ describe('runtime (inline mode, real generator + sandbox, no GL)', () => {
     await rt.hush()
     const r = await rt.run(fromCode('osc(10).out()'))
     expect(r.recompiled).toBe(true)
+  })
+
+  test('boundary: every message is plain data, the frame is only reachable through messages', async () => {
+    if (mode === 'inline') return // the log is recorded by the loopback transport
+    ;({ rt } = mk())
+    await rt.run(fromCode('osc(10).rotate(1).out()'))
+    rt.setLive('x', 1)
+    await tick(200)
+    const kinds = new Set(MSG_LOG.map((m) => `${m.dir}:${m.msg.t}`))
+    for (const k of ['h2f:init', 'h2f:run', 'f2h:ready', 'f2h:result']) expect(kinds.has(k), k).toBe(true)
+    for (const { msg } of MSG_LOG) expect(() => structuredClone(msg)).not.toThrow()
+    // a function can never cross: the host cannot smuggle behaviour into the frame
+    expect(() => structuredClone({ t: 'live', table: { a: () => 1 } })).toThrow()
   })
 })

@@ -128,7 +128,7 @@ export interface DetectOptions {
 export async function detectCapabilities(opts: DetectOptions = {}): Promise<CapabilityReport> {
   const items: CapItem[] = []
   const nav = navigator as any
-  items.push(item('standalone', 'Installed (standalone) vs browser tab', 'unknown', isStandalone() ? 'running as an installed home-screen app' : 'running in a browser tab'))
+  items.push(item('standalone', 'Installed (standalone) vs browser tab', isStandalone() ? 'yes' : 'no', isStandalone() ? 'running as an installed home-screen app' : 'running in a browser tab (yes = installed)'))
   items.push(item('https', 'HTTPS / secure context', window.isSecureContext ? 'yes' : 'no', `${location.protocol} · isSecureContext=${window.isSecureContext} (service workers, camera, mic and Add to Home Screen need this)`))
   let sw: CapItem
   if (!('serviceWorker' in navigator)) sw = item('sw', 'Service worker', 'no', 'not supported here')

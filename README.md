@@ -31,7 +31,7 @@ vercel.json  .github/workflows/{ci,pages}.yml
 
 ```
 npm ci
-npm test                              # core unit tests (vitest; ~230 tests incl. the 33-sketch corpus)
+npm test                              # core unit tests (vitest; 260+ tests incl. the 33-sketch corpus)
 npm run typecheck
 npm run build:all                     # dist/: shell at the root + dist/<name>/ for every apps/* with a build script + apps.json + sw.js
 npm run serve                         # serve dist/ on :4173
