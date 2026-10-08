@@ -1,3 +1,4 @@
+/// <reference path="types.d.ts" />
 // Text-only Hydra sketches used by tests in core and by every front-end's test-suite.
 // The files live in packages/core/corpus/*.js (all written for this project; see corpus/README.md).
 

@@ -1,3 +1,4 @@
+/// <reference path="types.d.ts" />
 // @hydra-ipad/core: everything an editor needs. Import from here (or from a subpath module).
 export * from './ir'
 export * from './catalog'
@@ -20,4 +21,5 @@ export * from './audio'
 export { mountAudioPanel, type AudioPanelHandle, type AudioPanelOptions } from './audio-panel'
 export * from './capabilities'
 export * from './runtime'
-export { h, injectStyles, TOKENS_CSS } from './ui'
+export * from './ui'
+export * from './update-toast'

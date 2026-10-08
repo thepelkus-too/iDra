@@ -1,0 +1,17 @@
+{
+  "name": "harness",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Test harness: fullscreen Hydra canvas, text editor, randomize, diagnostics and audio lab.",
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "hydra": { "title": "Harness", "description": "Code, randomize, diagnostics, audio lab" },
+  "scripts": {
+    "predev": "node ../../packages/core/scripts/build-frame.mjs",
+    "dev": "vite",
+    "prebuild": "node ../../packages/core/scripts/build-frame.mjs",
+    "build": "vite build",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": { "@hydra-ipad/core": "*" }
+}

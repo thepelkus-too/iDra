@@ -32,3 +32,17 @@ export const TOKENS_CSS = `
 @media (prefers-color-scheme: light){:root:not([data-theme="dark"]){--hi-bg:#f4f5f7;--hi-panel:#fff;--hi-line:#d5d9e0;--hi-text:#1b1e24;--hi-dim:#5d6676;--hi-accent:#127a7a;--hi-warn:#9a6200;--hi-bad:#b3261e}}
 :root[data-theme="light"]{--hi-bg:#f4f5f7;--hi-panel:#fff;--hi-line:#d5d9e0;--hi-text:#1b1e24;--hi-dim:#5d6676;--hi-accent:#127a7a;--hi-warn:#9a6200;--hi-bad:#b3261e}
 `
+
+/** Baseline page rules every app wants on an iPad: no tap delay, no pinch-zoom, safe areas, no rubber-banding. */
+export const APP_BASE_CSS = `
+*,*::before,*::after{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--hi-bg);color:var(--hi-text);font:15px/1.4 system-ui,-apple-system,"Segoe UI",sans-serif;-webkit-text-size-adjust:100%;text-size-adjust:100%}
+body{touch-action:manipulation;-webkit-tap-highlight-color:transparent;overscroll-behavior:none;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)}
+button,input,select,textarea{font:inherit;color:inherit}
+button{touch-action:manipulation;-webkit-touch-callout:none}
+a{color:var(--hi-accent)}
+`
+export function applyAppBase(): void {
+  injectStyles('tokens', TOKENS_CSS)
+  injectStyles('app-base', APP_BASE_CSS)
+}

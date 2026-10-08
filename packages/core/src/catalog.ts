@@ -1,3 +1,4 @@
+/// <reference path="types.d.ts" />
 import glslFunctions from 'hydra-synth/src/glsl/glsl-functions.js'
 import { HINTS, heuristicHint, type Hint } from './hints'
 

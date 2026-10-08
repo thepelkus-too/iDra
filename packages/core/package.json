@@ -4,12 +4,16 @@
   "description": "Shared core for the Hydra iPad editors: catalog, IR, codegen, parser, library, runtime, audio.",
   "license": "AGPL-3.0-only",
   "type": "module",
-  "repository": { "type": "git", "url": "git+https://github.com/thepelkus-too/iDra.git" },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/thepelkus-too/iDra.git"
+  },
   "exports": {
     ".": "./src/index.ts",
     "./corpus": "./src/corpus.ts",
     "./frame": "./dist-frame/hydra-frame.js",
-    "./frame-url": "./dist-frame/hydra-frame.js"
+    "./frame-url": "./dist-frame/hydra-frame.js",
+    "./vite": "./vite-plugin.mjs"
   },
   "scripts": {
     "build:frame": "node scripts/build-frame.mjs",
@@ -21,5 +25,12 @@
     "acorn": "^8.14.0",
     "hydra-synth": "1.4.0",
     "meyda": "^5.6.3"
-  }
+  },
+  "files": [
+    "src",
+    "dist-frame",
+    "vite-plugin.mjs",
+    "corpus"
+  ],
+  "sideEffects": false
 }

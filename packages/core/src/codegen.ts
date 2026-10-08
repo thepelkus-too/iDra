@@ -80,6 +80,9 @@ interface Ctx {
 
 // ---------------------------------------------------------------- scalars
 
+/** Id of a live-table slot: call id + argument index. Editors pass this to `runtime.setLive`. */
+export const liveId = (callId: string, index: number): string => `${callId}:${index}`
+
 export function fmtNum(v: number): string {
   if (!isFinite(v)) return '0'
   if (Object.is(v, -0)) return '0'
@@ -170,7 +173,7 @@ function emitCallArgs(call: Call, ctx: Ctx): Piece {
   const parts = args.map((a, i) => {
     const input = inputs[i]
     if (ctx.live && a.k === 'num' && input && input.type === 'float') {
-      const id = `${call.id}:${i}`
+      const id = liveId(call.id, i)
       ctx.liveTable[id] = a.v
       return lit(`() => ${ctx.liveName}[${JSON.stringify(id)}]`)
     }

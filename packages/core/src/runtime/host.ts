@@ -1,3 +1,4 @@
+/// <reference path="../types.d.ts" />
 import { catalog as defaultCatalog, type Catalog, type CatalogDelta } from '../catalog'
 import { toRunnable } from '../codegen'
 import { importText } from '../parse'
