@@ -206,6 +206,49 @@ await step('iframe isolation: a sketch cannot reach the parent page; inline mode
   await page.waitForFunction(() => window.__harness.rt.isolation === 'iframe' && /· iframe/.test(document.querySelector('#status').textContent))
 })
 
+await step('live closures render the same pixels as baked numbers (10 random sketches, speed = 0)', async () => {
+  const r = await page.evaluate(async () => {
+    const { rt, core } = window.__harness
+    const sleep = (ms) => new Promise((res) => setTimeout(res, ms))
+    const shot = async () => {
+      const url = await rt.screenshot()
+      const img = new Image()
+      await new Promise((res) => ((img.onload = res), (img.src = url)))
+      const c = document.createElement('canvas')
+      c.width = 96
+      c.height = 54
+      const ctx = c.getContext('2d')
+      ctx.drawImage(img, 0, 0, 96, 54)
+      return ctx.getImageData(0, 0, 96, 54).data
+    }
+    const out = []
+    for (let seed = 1; seed <= 10; seed++) {
+      const sk = core.randomSketch(seed, { fnP: 0, arrP: 0, nestedP: 1 })
+      const baked = 'speed = 0\n' + core.toCode(sk, { fresh: true })
+      await rt.run(baked, { force: true })
+      await sleep(350)
+      const a = await shot()
+      const withSpeed = { ...sk, stmts: [{ id: 'sp', k: 'setting', name: 'speed', v: 0 }, ...sk.stmts] }
+      const res = await rt.run(withSpeed, { force: true })
+      await sleep(350)
+      const b = await shot()
+      let bad = 0, max = 0, lit = 0
+      for (let i = 0; i < a.length; i += 4) {
+        const d = Math.max(Math.abs(a[i] - b[i]), Math.abs(a[i + 1] - b[i + 1]), Math.abs(a[i + 2] - b[i + 2]))
+        if (d > 3) bad++
+        max = Math.max(max, d)
+        if (a[i] + a[i + 1] + a[i + 2] > 20) lit++
+      }
+      out.push({ seed, ok: res.ok, bad, max, lit })
+    }
+    return out
+  })
+  const worst = r.reduce((m, x) => Math.max(m, x.bad), 0)
+  assert.ok(r.every((x) => x.ok), JSON.stringify(r))
+  assert.ok(worst <= 5, 'live vs baked differ: ' + JSON.stringify(r.filter((x) => x.bad > 5)))
+  return `max differing pixels of 5184: ${worst}; sketches with visible content: ${r.filter((x) => x.lit > 50).length}/10`
+})
+
 await step('diagnostics page computes live results and a copyable report', async () => {
   await page.click('#tabbtn-diag')
   await page.click('#diag-run')

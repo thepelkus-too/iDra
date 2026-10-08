@@ -28,6 +28,7 @@ import {
   type RuntimeError,
   type Sketch,
 } from '@hydra-ipad/core'
+import * as core from '@hydra-ipad/core'
 import { corpus } from '@hydra-ipad/core/corpus'
 import { CSS } from './styles'
 import { mountAudioLab, mountDiagnostics } from './diagnostics'
@@ -252,7 +253,7 @@ async function startRuntime() {
   rt.onError(showError)
   rt.onError((e) => e.kind === 'camera' && updateCameraBanner())
   rt.forwardPointer(true)
-  ;(window as any).__harness = { get rt() { return rt }, get sketch() { return sketch }, lib, audio, runNow }
+  ;(window as any).__harness = { get rt() { return rt }, get sketch() { return sketch }, lib, audio, runNow, core }
   await rt.ready.catch((e) => showError({ kind: 'runtime', message: String(e.message ?? e), at: Date.now() }))
 }
 
