@@ -3,8 +3,13 @@ import {
   applyAppBase,
   getLibrary,
   h,
+  getPluginStore,
   injectStyles,
   isStandalone,
+  loadScriptUrls,
+  openPluginSheet,
+  pluginRefFromUrl,
+  withPlugin,
   loadAppsManifest,
   mountAbout,
   mountUpdateToast,
@@ -107,14 +112,26 @@ function importDialog() {
   const name = h('input', { type: 'text', placeholder: 'Name (optional)', 'aria-label': 'Sketch name' })
   const file = h('input', { type: 'file', accept: '.js,.json,.txt,.mjs,text/javascript,application/json,text/plain', 'aria-label': 'Sketch file' })
   const info = h('div', { class: 'dim' })
+  // code that loads scripts (`await loadScript(url)`): offer to add them to the plugin manager, so they are cached for
+  // offline use and listed with their hash. The lines stay in the sketch exactly as written.
+  const addPlugins = h('input', { type: 'checkbox', 'data-role': 'import-add-plugins' }) as HTMLInputElement
+  const pluginsRow = h('label', { class: 'dim', hidden: true, 'data-role': 'import-plugins' }, addPlugins, ' ')
+  const showScripts = () => {
+    const urls = /^\s*[[{]/.test(text.value) ? [] : loadScriptUrls(text.value)
+    pluginsRow.hidden = !urls.length
+    pluginsRow.lastChild!.textContent = ` Add to plugins (fetch, cache for offline use, list with a hash): ${urls.join(', ')}`
+  }
+  text.addEventListener('input', showScripts)
   file.addEventListener('change', async () => {
     const f = file.files?.[0]
     if (!f) return
     text.value = await f.text()
     if (!name.value) name.value = f.name.replace(/\.(js|json|txt|mjs)$/i, '')
     info.textContent = `${f.name}: ${text.value.length} characters`
+    showScripts()
   })
-  modal('Import', [text, name, file, info], [
+  pluginsRow.append(h('span', {}))
+  modal('Import', [text, name, file, info, pluginsRow], [
     { label: 'Cancel', run: () => {} },
     {
       label: 'Import',
@@ -136,8 +153,21 @@ function importDialog() {
             /* not JSON: treat as code */
           }
         }
-        const { sketch, warnings } = await lib.importCode(name.value.trim() || 'Imported sketch', code)
+        let { sketch, warnings } = await lib.importCode(name.value.trim() || 'Imported sketch', code)
         highlight = sketch.id
+        if (addPlugins.checked) {
+          const failed: string[] = []
+          for (const url of loadScriptUrls(code)) {
+            try {
+              await getPluginStore().install(await getPluginStore().preview(url))
+              sketch = withPlugin(sketch, pluginRefFromUrl(url))
+            } catch (e) {
+              failed.push(`${url} (${(e as Error).message})`)
+            }
+          }
+          await lib.put(sketch)
+          if (failed.length) warnings = [...warnings, `could not add ${failed.join(', ')}`]
+        }
         toast(warnings.length ? `Imported with ${warnings.length} note(s): ${warnings[0]}` : 'Imported')
         await refresh()
       },
@@ -275,6 +305,7 @@ async function render() {
       h('button', { type: 'button', onclick: importDialog }, 'Import…'),
       h('button', { type: 'button', onclick: () => void backup() }, 'Backup everything'),
       h('button', { type: 'button', onclick: restoreDialog }, 'Restore…'),
+      h('button', { type: 'button', 'data-role': 'open-plugins', onclick: () => void openPluginSheet({ title: 'Plugins on this device' }) }, 'Plugins…'),
       h('button', { type: 'button', onclick: () => void aboutDialog() }, 'Storage & about'),
     ),
   )

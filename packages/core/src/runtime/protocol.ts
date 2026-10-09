@@ -27,13 +27,23 @@ export type HostToFrame =
   | { t: 'resolution'; id: number; w: number; h: number }
   | { t: 'screenshot'; id: number; type?: string; quality?: number }
   | { t: 'time'; id: number }
-  | { t: 'plugin'; id: number; pluginId: string; name: string; src: string }
+  | { t: 'plugin'; id: number; pluginId: string; name: string; src: string; url?: string }
   | { t: 'catalog'; id: number }
   | { t: 'fetched'; id: number; ok: boolean; text?: string; error?: string }
   | { t: 'audio'; vol: number; specific: number[] }
   | { t: 'audioSettings'; settings: Partial<HydraAudioSettings> }
   | { t: 'mouse'; x: number; y: number; buttons?: number }
+  /** MIDI inputs the host can see (real Web MIDI inputs it forwards, and the on-screen "Hydra Touch" controller) */
+  | { t: 'midiInputs'; inputs: MidiPortInfo[] }
+  /** one MIDI message from input `input` (raw bytes: status, data1, data2) */
+  | { t: 'midi'; input: string; data: number[] }
   | { t: 'dispose' }
+
+export interface MidiPortInfo {
+  id: string
+  name: string
+  manufacturer?: string
+}
 
 export type ErrorKind = 'eval' | 'shader' | 'runtime' | 'warning' | 'camera'
 export type FrameToHost =

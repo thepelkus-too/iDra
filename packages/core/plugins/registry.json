@@ -1,0 +1,299 @@
+{
+  "version": 1,
+  "note": "Curated, well-known Hydra extensions. URLs come from each project’s README; see verified.how. Nothing here is fetched until the owner installs it, and plugins only ever run inside the sandboxed preview frame.",
+  "plugins": [
+    {
+      "id": "hydra-midi",
+      "name": "hydra-midi",
+      "author": "Arno Schlipf (arnoson)",
+      "license": "MIT",
+      "homepage": "https://github.com/arnoson/hydra-midi",
+      "url": "https://cdn.jsdelivr.net/npm/hydra-midi@0.4.6/dist/index.js",
+      "version": "0.4.6",
+      "kind": "js",
+      "description": "MIDI notes and CCs as Hydra parameters: midi.start(), note(), cc(), .adsr/.range/.smooth. Adds globals, not catalog functions.",
+      "verified": {
+        "status": "verified",
+        "checked": "2026-10-09",
+        "how": "README documents https://cdn.jsdelivr.net/npm/hydra-midi@<version>/dist/index.js and pinning a version; npm hydra-midi@0.4.6 (latest) contains dist/index.js (9.4 kB). jsDelivr itself was not reachable from the build container."
+      }
+    },
+    {
+      "id": "hydra-arithmetics",
+      "name": "hydra-arithmetics",
+      "author": "geikha (hyper-hydra)",
+      "license": "GPL-3.0",
+      "homepage": "https://github.com/geikha/hyper-hydra",
+      "url": "https://cdn.jsdelivr.net/gh/geikha/hyper-hydra@latest/hydra-arithmetics.js",
+      "version": "latest",
+      "kind": "mixed",
+      "description": "Arithmetic and math transforms between textures (mod, step, div, …).",
+      "verified": {
+        "status": "verified",
+        "checked": "2026-10-09",
+        "how": "Exact URL listed in the hyper-hydra README; hydra-arithmetics.js exists on the default branch. The repository has no tags, so only @latest is documented. jsDelivr itself was not reachable from the build container."
+      }
+    },
+    {
+      "id": "hydra-arrays",
+      "name": "hydra-arrays",
+      "author": "geikha (hyper-hydra)",
+      "license": "GPL-3.0",
+      "homepage": "https://github.com/geikha/hyper-hydra",
+      "url": "https://cdn.jsdelivr.net/gh/geikha/hyper-hydra@latest/hydra-arrays.js",
+      "version": "latest",
+      "kind": "js",
+      "description": "Array operations for Hydra’s time patterns (Array.run, .div, .addWrap, …).",
+      "verified": {
+        "status": "verified",
+        "checked": "2026-10-09",
+        "how": "Exact URL listed in the hyper-hydra README; hydra-arrays.js exists on the default branch. The repository has no tags, so only @latest is documented. jsDelivr itself was not reachable from the build container."
+      }
+    },
+    {
+      "id": "hydra-blend",
+      "name": "hydra-blend",
+      "author": "geikha (hyper-hydra)",
+      "license": "GPL-3.0",
+      "homepage": "https://github.com/geikha/hyper-hydra",
+      "url": "https://cdn.jsdelivr.net/gh/geikha/hyper-hydra@latest/hydra-blend.js",
+      "version": "latest",
+      "kind": "mixed",
+      "description": "Blending modes from raster editors (screen, multiply, linearBurn, …).",
+      "verified": {
+        "status": "verified",
+        "checked": "2026-10-09",
+        "how": "Exact URL listed in the hyper-hydra README; hydra-blend.js exists on the default branch. The repository has no tags, so only @latest is documented. jsDelivr itself was not reachable from the build container."
+      }
+    },
+    {
+      "id": "hydra-colorspaces",
+      "name": "hydra-colorspaces",
+      "author": "geikha (hyper-hydra)",
+      "license": "GPL-3.0",
+      "homepage": "https://github.com/geikha/hyper-hydra",
+      "url": "https://cdn.jsdelivr.net/gh/geikha/hyper-hydra@latest/hydra-colorspaces.js",
+      "version": "latest",
+      "kind": "mixed",
+      "description": "Work in CMYK, HSV, YUV and other color spaces (gradient().hsv…).",
+      "verified": {
+        "status": "verified",
+        "checked": "2026-10-09",
+        "how": "Exact URL listed in the hyper-hydra README; hydra-colorspaces.js exists on the default branch. The repository has no tags, so only @latest is documented. jsDelivr itself was not reachable from the build container."
+      }
+    },
+    {
+      "id": "hydra-convolutions",
+      "name": "hydra-convolutions",
+      "author": "geikha (hyper-hydra)",
+      "license": "GPL-3.0",
+      "homepage": "https://github.com/geikha/hyper-hydra",
+      "url": "https://cdn.jsdelivr.net/gh/geikha/hyper-hydra@latest/hydra-convolutions.js",
+      "version": "latest",
+      "kind": "mixed",
+      "description": "Convolution filters (blur, sharpen, custom kernels). Experimental upstream.",
+      "verified": {
+        "status": "verified",
+        "checked": "2026-10-09",
+        "how": "Exact URL listed in the hyper-hydra README; hydra-convolutions.js exists on the default branch. The repository has no tags, so only @latest is documented. jsDelivr itself was not reachable from the build container."
+      }
+    },
+    {
+      "id": "hydra-gif",
+      "name": "hydra-gif",
+      "author": "geikha (hyper-hydra)",
+      "license": "GPL-3.0",
+      "homepage": "https://github.com/geikha/hyper-hydra",
+      "url": "https://cdn.jsdelivr.net/gh/geikha/hyper-hydra@latest/hydra-gif.js",
+      "version": "latest",
+      "kind": "js",
+      "description": "Load animated GIFs as sources.",
+      "verified": {
+        "status": "verified",
+        "checked": "2026-10-09",
+        "how": "Exact URL listed in the hyper-hydra README; hydra-gif.js exists on the default branch. The repository has no tags, so only @latest is documented. jsDelivr itself was not reachable from the build container."
+      }
+    },
+    {
+      "id": "hydra-glsl",
+      "name": "hydra-glsl",
+      "author": "geikha (hyper-hydra)",
+      "license": "GPL-3.0",
+      "homepage": "https://github.com/geikha/hyper-hydra",
+      "url": "https://cdn.jsdelivr.net/gh/geikha/hyper-hydra@latest/hydra-glsl.js",
+      "version": "latest",
+      "kind": "mixed",
+      "description": "Write GLSL inline as Hydra functions.",
+      "verified": {
+        "status": "verified",
+        "checked": "2026-10-09",
+        "how": "Exact URL listed in the hyper-hydra README; hydra-glsl.js exists on the default branch. The repository has no tags, so only @latest is documented. jsDelivr itself was not reachable from the build container."
+      }
+    },
+    {
+      "id": "hydra-outputs",
+      "name": "hydra-outputs",
+      "author": "geikha (hyper-hydra)",
+      "license": "GPL-3.0",
+      "homepage": "https://github.com/geikha/hyper-hydra",
+      "url": "https://cdn.jsdelivr.net/gh/geikha/hyper-hydra@latest/hydra-outputs.js",
+      "version": "latest",
+      "kind": "js",
+      "description": "Control how outputs render (layering, blending of o0–o3).",
+      "verified": {
+        "status": "verified",
+        "checked": "2026-10-09",
+        "how": "Exact URL listed in the hyper-hydra README; hydra-outputs.js exists on the default branch. The repository has no tags, so only @latest is documented. jsDelivr itself was not reachable from the build container."
+      }
+    },
+    {
+      "id": "hydra-src",
+      "name": "hydra-src",
+      "author": "geikha (hyper-hydra)",
+      "license": "GPL-3.0",
+      "homepage": "https://github.com/geikha/hyper-hydra",
+      "url": "https://cdn.jsdelivr.net/gh/geikha/hyper-hydra@latest/hydra-src.js",
+      "version": "latest",
+      "kind": "js",
+      "description": "Extra src() helpers (srcMask, srcAbs, …).",
+      "verified": {
+        "status": "verified",
+        "checked": "2026-10-09",
+        "how": "Exact URL listed in the hyper-hydra README; hydra-src.js exists on the default branch. The repository has no tags, so only @latest is documented. jsDelivr itself was not reachable from the build container."
+      }
+    },
+    {
+      "id": "hydra-text",
+      "name": "hydra-text",
+      "author": "geikha (hyper-hydra)",
+      "license": "GPL-3.0",
+      "homepage": "https://github.com/geikha/hyper-hydra",
+      "url": "https://cdn.jsdelivr.net/gh/geikha/hyper-hydra@latest/hydra-text.js",
+      "version": "latest",
+      "kind": "js",
+      "description": "Render text as a texture (text(), strokeText()).",
+      "verified": {
+        "status": "verified",
+        "checked": "2026-10-09",
+        "how": "Exact URL listed in the hyper-hydra README; hydra-text.js exists on the default branch. The repository has no tags, so only @latest is documented. jsDelivr itself was not reachable from the build container."
+      }
+    },
+    {
+      "id": "extra-shaders-all",
+      "name": "extra shaders: all",
+      "author": "Thomas Jourdan",
+      "license": "AGPL-3.0",
+      "homepage": "https://gitlab.com/metagrowing/extra-shaders-for-hydra",
+      "url": "https://metagrowing.org/extra-shaders-for-hydra/all.js",
+      "version": "unversioned",
+      "kind": "functions",
+      "description": "All of Thomas Jourdan’s extra shaders in one file (pattern, softpattern, color, noise, screen, wave).",
+      "verified": {
+        "status": "verified",
+        "checked": "2026-10-09",
+        "how": "Exact URL given in the project README; lib/all.js exists in the GitLab repository. metagrowing.org was not reachable from the build container."
+      }
+    },
+    {
+      "id": "extra-shaders-lib-pattern",
+      "name": "extra shaders: lib-pattern",
+      "author": "Thomas Jourdan",
+      "license": "AGPL-3.0",
+      "homepage": "https://gitlab.com/metagrowing/extra-shaders-for-hydra",
+      "url": "https://metagrowing.org/extra-shaders-for-hydra/lib-pattern.js",
+      "version": "unversioned",
+      "kind": "functions",
+      "description": "Op-art patterns (pulse, pulsetrain, hextile, …).",
+      "verified": {
+        "status": "verified",
+        "checked": "2026-10-09",
+        "how": "Exact URL given in the project README; lib/lib-pattern.js exists in the GitLab repository. metagrowing.org was not reachable from the build container."
+      }
+    },
+    {
+      "id": "extra-shaders-lib-softpattern",
+      "name": "extra shaders: lib-softpattern",
+      "author": "Thomas Jourdan",
+      "license": "AGPL-3.0",
+      "homepage": "https://gitlab.com/metagrowing/extra-shaders-for-hydra",
+      "url": "https://metagrowing.org/extra-shaders-for-hydra/lib-softpattern.js",
+      "version": "unversioned",
+      "kind": "functions",
+      "description": "Soft, osc-like patterns with smooth transitions.",
+      "verified": {
+        "status": "unverified",
+        "checked": "2026-10-09",
+        "how": "Not listed in the README: the URL follows the README’s pattern for lib-pattern.js and lib/lib-softpattern.js exists in the GitLab repository, but this exact URL was not confirmed. metagrowing.org was not reachable from the build container."
+      }
+    },
+    {
+      "id": "extra-shaders-lib-color",
+      "name": "extra shaders: lib-color",
+      "author": "Thomas Jourdan",
+      "license": "AGPL-3.0",
+      "homepage": "https://gitlab.com/metagrowing/extra-shaders-for-hydra",
+      "url": "https://metagrowing.org/extra-shaders-for-hydra/lib-color.js",
+      "version": "unversioned",
+      "kind": "functions",
+      "description": "Color filters for mixing and manipulating colors.",
+      "verified": {
+        "status": "unverified",
+        "checked": "2026-10-09",
+        "how": "Not listed in the README: the URL follows the README’s pattern for lib-pattern.js and lib/lib-color.js exists in the GitLab repository, but this exact URL was not confirmed. metagrowing.org was not reachable from the build container."
+      }
+    },
+    {
+      "id": "extra-shaders-lib-noise",
+      "name": "extra shaders: lib-noise",
+      "author": "Thomas Jourdan",
+      "license": "AGPL-3.0",
+      "homepage": "https://gitlab.com/metagrowing/extra-shaders-for-hydra",
+      "url": "https://metagrowing.org/extra-shaders-for-hydra/lib-noise.js",
+      "version": "unversioned",
+      "kind": "functions",
+      "description": "Noise inspired by F. Kenton Musgrave.",
+      "verified": {
+        "status": "unverified",
+        "checked": "2026-10-09",
+        "how": "Not listed in the README: the URL follows the README’s pattern for lib-pattern.js and lib/lib-noise.js exists in the GitLab repository, but this exact URL was not confirmed. metagrowing.org was not reachable from the build container."
+      }
+    },
+    {
+      "id": "extra-shaders-lib-screen",
+      "name": "extra shaders: lib-screen",
+      "author": "Thomas Jourdan",
+      "license": "AGPL-3.0",
+      "homepage": "https://gitlab.com/metagrowing/extra-shaders-for-hydra",
+      "url": "https://metagrowing.org/extra-shaders-for-hydra/lib-screen.js",
+      "version": "unversioned",
+      "kind": "functions",
+      "description": "Screen-space filters: blur, rasterize, dithering.",
+      "verified": {
+        "status": "unverified",
+        "checked": "2026-10-09",
+        "how": "Not listed in the README: the URL follows the README’s pattern for lib-pattern.js and lib/lib-screen.js exists in the GitLab repository, but this exact URL was not confirmed. metagrowing.org was not reachable from the build container."
+      }
+    },
+    {
+      "id": "extra-shaders-lib-wave",
+      "name": "extra shaders: lib-wave",
+      "author": "Thomas Jourdan",
+      "license": "AGPL-3.0",
+      "homepage": "https://gitlab.com/metagrowing/extra-shaders-for-hydra",
+      "url": "https://metagrowing.org/extra-shaders-for-hydra/lib-wave.js",
+      "version": "unversioned",
+      "kind": "functions",
+      "description": "Basic periodic functions: triangle, square, sawtooth, harmonics.",
+      "verified": {
+        "status": "unverified",
+        "checked": "2026-10-09",
+        "how": "Not listed in the README: the URL follows the README’s pattern for lib-pattern.js and lib/lib-wave.js exists in the GitLab repository, but this exact URL was not confirmed. metagrowing.org was not reachable from the build container."
+      }
+    }
+  ],
+  "kinds": {
+    "functions": "only registers Hydra functions with setFunction (they appear in every editor’s picker)",
+    "mixed": "registers functions and adds JavaScript globals or methods",
+    "js": "adds JavaScript globals or methods only; uses stay editable text"
+  }
+}

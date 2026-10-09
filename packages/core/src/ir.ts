@@ -105,8 +105,12 @@ export interface PluginRef {
   id: string
   name: string
   url?: string
+  /** pasted source (plugins added by pasting code instead of a URL) */
   src?: string
+  /** SRI string (`sha256-…`): the runtime refuses content that does not match (set for pinned URLs and pasted code) */
   integrity?: string
+  /** version shown in UIs, when known (`0.4.6`, `latest`) */
+  version?: string
 }
 
 export interface Sketch {

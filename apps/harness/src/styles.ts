@@ -9,7 +9,7 @@ button.warn{border-color:var(--hi-warn);color:var(--hi-warn)}
 .main{display:grid;grid-template-columns:minmax(300px,42%) 1fr;min-height:0}
 @media (max-width:760px){.main{grid-template-columns:1fr;grid-template-rows:45% 1fr}.stage-wrap{order:-1}}
 .panel{display:grid;grid-template-rows:auto 1fr;min-height:0;border-right:1px solid var(--hi-line)}
-.tabs{display:flex;gap:4px;padding:6px;border-bottom:1px solid var(--hi-line);overflow:auto}
+.tabs{display:flex;gap:4px;padding:6px;border-bottom:1px solid var(--hi-line);flex-wrap:wrap}
 .tabs button{flex:0 0 auto}
 .tabs button[aria-selected=true]{background:var(--hi-accent);color:#04201f;border-color:transparent}
 .tab{overflow:auto;padding:10px;min-height:0;display:none}

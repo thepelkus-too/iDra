@@ -16,14 +16,18 @@ packages/core/            @hydra-ipad/core — no UI framework
   src/validate.ts analyze.ts autoLayout.ts randomize.ts trust.ts normalize.ts
   src/library.ts            shared IndexedDB library (+ fallbacks, revisions, backup, cross-tab)
   src/runtime/              host.ts (createRuntime) · bridge.ts (frame side) · protocol.ts · script-cache.ts · frame-entry.ts
-  src/audio.ts hydra-audio.ts audio-panel.ts   engine (mic, file), Hydra-compatible `a`, panel
+  src/audio.ts hydra-audio.ts audio-panel.ts audio-sources.ts audio-chip.ts audio-bindings.ts audio-assets.ts
+                            engine + sources (mic, input device, file, stream, tab), Hydra-compatible `a` with beat detection, panel, chips
+  src/plugins.ts plugin-manager.ts plugin-id.ts   registry, installed plugins, manager UI / sheet, offline script cache
+  src/midi.ts midi-panel.ts runtime/midi-shim.ts  MIDI hub, on-screen controller, frame-side Web MIDI stand-in
+  plugins/registry.json     curated plugin list (URLs checked against each project's README)
   src/switcher.ts about.ts update-toast.ts capabilities.ts storage.ts ui.ts
   corpus/                   33 text-only sketches · src/corpus.ts   (import { corpus } from '@hydra-ipad/core/corpus')
   vite-plugin.mjs           hydraApp() — shared vite config for every app
 apps/shell/               the ONLY PWA: launcher + library UI, manifest, root-scope service worker
-apps/harness/             canvas + textarea + randomize + numbers + Diagnostics + Audio lab + isolation toggle
-scripts/                  build-all.mjs · e2e.mjs · live-edit-bench.mjs · serve.mjs · make-icons.mjs
-docs/                     FRONTEND_CONTRACT.md IR.md previews.md security.md audio.md live-edit.md ios-storage.md
+apps/harness/             canvas + textarea + randomize + numbers + Diagnostics + Audio lab + Plugins + MIDI + isolation toggle
+scripts/                  build-all.mjs · e2e.mjs · e2e-audio-plugins.mjs · live-edit-bench.mjs · serve.mjs · make-icons.mjs · fixtures/ (test-only)
+docs/                     FRONTEND_CONTRACT.md IR.md previews.md security.md audio.md plugins.md midi.md live-edit.md ios-storage.md
 vercel.json  .github/workflows/{ci,pages}.yml
 ```
 
@@ -31,12 +35,13 @@ vercel.json  .github/workflows/{ci,pages}.yml
 
 ```
 npm ci
-npm test                              # core unit tests (vitest; 260+ tests incl. the 33-sketch corpus)
+npm test                              # core unit tests (vitest; 300+ tests incl. the 33-sketch corpus)
 npm run typecheck
 npm run build:all                     # dist/: shell at the root + dist/<name>/ for every apps/* with a build script + apps.json + sw.js
 npm run serve                         # serve dist/ on :4173
 npm run dev --workspace=harness       # vite dev server for one app
 npm run test:e2e                      # Playwright/Chromium, iPad viewport, software WebGL
+npm run test:e2e:audio                # audio sources, plugins, MIDI (local CORS/no-CORS servers, fake devices); screenshots in test-results/ipad
 ```
 
 ## Adding a front-end
@@ -57,7 +62,7 @@ original text and a content hash, so unchanged statements (and unchanged calls i
 
 Deploy (Vercel per-branch previews, GitHub Pages fallback): **[docs/previews.md](docs/previews.md)**. Open the **site root** in Safari → Share → *Add to Home Screen*;
 editors then open inside the installed app. Storage in the installed app is separate from Safari's: **[docs/ios-storage.md](docs/ios-storage.md)**.
-Camera and microphone need HTTPS and a tap; audio on iOS: **[docs/audio.md](docs/audio.md)**; trust and isolation: **[docs/security.md](docs/security.md)**;
+Camera and microphone need HTTPS and a tap; audio on iOS: **[docs/audio.md](docs/audio.md)**; plugins: **[docs/plugins.md](docs/plugins.md)**; MIDI: **[docs/midi.md](docs/midi.md)**; trust and isolation: **[docs/security.md](docs/security.md)**;
 how numeric drags avoid recompiling: **[docs/live-edit.md](docs/live-edit.md)**.
 
 ## Branch / PR conventions
@@ -80,12 +85,13 @@ how numeric drags avoid recompiling: **[docs/live-edit.md](docs/live-edit.md)**.
 
 ## Known gaps
 
-Not implemented here by design (they belong to the next change, "audio and plugins"): streaming audio sources, the input-device picker, beat detection, the plugin manager UI and registry.
+Audio sources, plugins and MIDI are in (see their docs; the on-iPad checklist is at the end of docs/audio.md). Not bundled: an HLS library for non-Safari browsers.
 Also not done: host-side camera relay into the sandbox; the editors themselves; real-iPad verification of iOS audio (silent switch, interruptions), storage separation and Add-to-Home-Screen
 behaviour (documented, not testable in the container); Vercel dashboard steps (documented, not executed). See the end-of-session summary for more.
 
 ## Licence and third-party code
 
 AGPL-3.0-only (`LICENSE`). Bundled: **hydra-synth** (AGPL; https://github.com/ojack/hydra-synth), **regl** (MIT), **raf-loop** (MIT), **meyda** (MIT, host page only), **acorn** (MIT), **@dagrejs/dagre** (MIT).
+Test-only, never bundled: **hydra-midi 0.4.6** (MIT, `scripts/fixtures/hydra-midi/`). Plugins in `plugins/registry.json` are fetched by the user's browser from their own hosts, never shipped.
 The service-worker, silent-switch technique and everything else is original (the silent-switch idea follows activetheory/ios-silent-bypass, MIT, no code copied).
 **If you host a modified copy, the AGPL requires you to offer the corresponding source to its users** — the *About / Source* link (from `package.json` → `repository`) does that for unmodified deployments; update `repository` if you fork.

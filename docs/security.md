@@ -11,7 +11,9 @@ Sketches are arbitrary JavaScript and plugins are third-party scripts. All apps 
 * The frame's code is the bundled `hydra-frame.js` (hydra-synth + `src/runtime/bridge.ts`), inlined into `srcdoc` by the host: nothing is fetched from a CDN, it works offline, and module-script CORS problems of opaque origins do not arise (it is a classic script).
 * The **only** channel is `postMessage` (`src/runtime/protocol.ts`). The host only accepts messages whose `event.source` is its own iframe and treats them as data (never evals them); the frame only accepts messages from `window.parent`.
 * **The microphone is never given to the frame.** Audio is captured and analysed in the host; only `loudness.specific`/`total` numbers cross the boundary each frame (`HydraAudio` inside the frame turns them into `a.fft` with Hydra's formulas).
-* `loadScript(url)` and plugins go through the host (`ScriptCache`: network first, cached copy when offline, optional SRI check). The frame never fetches scripts itself.
+* `loadScript(url)` and plugins go through the host (`ScriptCache`: pinned URLs from the cache, floating ones network first with the cached copy offline; SRI check when the ref has `integrity`). The frame never fetches scripts itself. Plugin code is **never evaluated in the app page**: in inline mode the runtime refuses plugins and `loadScript` instead (see docs/plugins.md).
+* Inside the frame `localStorage`/`sessionStorage` are in-memory stand-ins (an opaque origin throws on them; some plugins read them while loading). They hold nothing of the app's.
+* **MIDI** reaches the frame only as data: the host owns Web MIDI (when the browser has it and the owner allowed it) and the on-screen controller, and forwards 3-byte messages to a stand-in `requestMIDIAccess` in the frame. The frame is never given real MIDI access or SysEx.
 * Inline mode (`isolation: 'inline'`) runs the same bridge in the host window, with the same structured-clone message semantics, but with **no isolation**: sketch code can read the library. It is for tests, debugging and the camera fallback below. Editors must gate it behind the trust prompt.
 
 ## What the sandbox does NOT protect against
@@ -21,7 +23,7 @@ Sketches are arbitrary JavaScript and plugins are third-party scripts. All apps 
 * **UI spoofing:** the frame draws pixels, so it can fake a dialog inside its own area (including the "Run it?" prompt). The trust prompt lives in the host's chrome, outside the frame.
 * **Popups/navigation:** `allow-popups` and `allow-top-navigation` are not granted, so these are blocked; the frame can still try to open windows from user gestures it receives only if you add those flags. Don't.
 * **Side channels** (timing, GPU fingerprinting) are out of scope.
-* **Supply chain:** hydra-synth and regl are bundled at build time from `package-lock.json`; plugins are only as trustworthy as their URL. Use `integrity` (`sha256-…`) on plugin refs.
+* **Supply chain:** hydra-synth and regl are bundled at build time from `package-lock.json`; plugins are only as trustworthy as their URL. The plugin manager shows the URL and SHA-256 before installing, records `integrity` (`sha256-…`) for pinned URLs and pasted code, and warns about `@latest` URLs, whose content can change under you.
 
 ## Trust gate
 

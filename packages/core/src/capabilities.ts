@@ -107,7 +107,7 @@ export async function checkStreamCors(url: string): Promise<{ ok: boolean; cors:
 
 export async function detectMidi(request = false): Promise<CapItem> {
   const nav = navigator as any
-  if (typeof nav.requestMIDIAccess !== 'function') return item('midi', 'Web MIDI', 'no', 'navigator.requestMIDIAccess does not exist in this browser (iOS Safari has no Web MIDI)')
+  if (typeof nav.requestMIDIAccess !== 'function' || nav.requestMIDIAccess.__hydraTouchShim) return item('midi', 'Web MIDI', 'no', 'navigator.requestMIDIAccess does not exist in this browser (iOS Safari has no Web MIDI). Sketches using hydra-midi still respond to the on-screen controller (⇄ menu › MIDI controller).')
   if (!request) return item('midi', 'Web MIDI', 'yes', 'API present; press "Request MIDI access" to list devices')
   try {
     const access = await nav.requestMIDIAccess()
@@ -115,6 +115,18 @@ export async function detectMidi(request = false): Promise<CapItem> {
     return item('midi', 'Web MIDI', 'yes', ins.length ? `inputs: ${ins.join(', ')}` : 'API works, no inputs connected')
   } catch (e) {
     return item('midi', 'Web MIDI', 'partial', `API present but access failed: ${(e as Error).name}`)
+  }
+}
+
+async function scriptCacheRow(): Promise<CapItem> {
+  const cs = (globalThis as any).caches as CacheStorage | undefined
+  if (!cs) return item('scriptcache', 'Offline plugin cache (Cache Storage)', 'no', 'Cache Storage unavailable here (needs a secure context): plugins and loadScript need the network every time')
+  try {
+    const c = await cs.open('hydra-ipad-scripts-v1')
+    const keys = await c.keys()
+    return item('scriptcache', 'Offline plugin cache (Cache Storage)', 'yes', `${keys.length} script(s) cached for offline use${keys.length ? ': ' + keys.slice(0, 4).map((k) => k.url.split('/').slice(-2).join('/')).join(', ') + (keys.length > 4 ? ' …' : '') : ''}`)
+  } catch (e) {
+    return item('scriptcache', 'Offline plugin cache (Cache Storage)', 'partial', `open failed: ${(e as Error).name}`)
   }
 }
 
@@ -158,7 +170,8 @@ export async function detectCapabilities(opts: DetectOptions = {}): Promise<Capa
   if (AC) {
     try {
       const ctx = new AC()
-      acDetail = `state=${ctx.state} sampleRate=${ctx.sampleRate} (starts "suspended" until a user gesture)`
+      const ms = (x: unknown) => (typeof x === 'number' && Number.isFinite(x) ? `${(x * 1000).toFixed(1)} ms` : 'n/a')
+      acDetail = `state=${ctx.state} sampleRate=${ctx.sampleRate} baseLatency=${ms(ctx.baseLatency)} outputLatency=${ms(ctx.outputLatency)} (starts "suspended" until a user gesture)`
       void ctx.close?.()
     } catch (e) {
       acDetail = `constructor failed: ${(e as Error).name}`
@@ -167,8 +180,14 @@ export async function detectCapabilities(opts: DetectOptions = {}): Promise<Capa
   items.push(item('audiocontext', 'AudioContext', AC ? 'yes' : 'no', acDetail))
   items.push(item('audiosession', 'navigator.audioSession (silent-switch bypass)', nav.audioSession ? 'yes' : 'no', nav.audioSession ? `type=${nav.audioSession.type}` : 'absent: the silent <audio> element fallback is used'))
   const gdm = md?.getDisplayMedia
-  items.push(item('displaymedia', 'getDisplayMedia', gdm ? 'partial' : 'no', gdm ? 'API present; whether it offers audio is only known after a prompt (iOS Safari does not support it)' : 'not available'))
-  items.push(item('midi', 'Web MIDI', (await detectMidi(opts.requestMidi)).status, (await detectMidi(opts.requestMidi)).detail))
+  items.push(item('displaymedia', 'getDisplayMedia (tab / screen audio)', gdm ? 'partial' : 'no', gdm ? 'API present: the audio panel offers "Tab or screen audio"; whether a tab’s audio is offered is only known after the prompt' : 'not available (iOS and iPadOS Safari): audio from other apps can only reach the page through the mic or an audio interface'))
+  const probeEl = typeof document !== 'undefined' ? document.createElement('audio') : undefined
+  const hls = probeEl?.canPlayType?.('application/vnd.apple.mpegurl') || ''
+  const mse = typeof (window as any).MediaSource !== 'undefined' || typeof (window as any).ManagedMediaSource !== 'undefined'
+  items.push(item('hls', 'HLS streams (.m3u8)', hls ? 'yes' : 'no', hls ? `native HLS (canPlayType=${hls}); analysis still needs CORS on the playlist and segments` : `no native HLS here${mse ? ' (MediaSource exists, but no HLS library is bundled)' : ''}: use an MP3/AAC/Ogg stream URL`))
+  items.push(await scriptCacheRow())
+  const midi = await detectMidi(opts.requestMidi)
+  items.push(item('midi', 'Web MIDI', midi.status, midi.detail))
   items.push(item('bc', 'BroadcastChannel', typeof BroadcastChannel !== 'undefined' ? 'yes' : 'no', typeof BroadcastChannel !== 'undefined' ? 'cross-app library notifications' : 'falls back to storage events'))
   items.push(await idbPersistence())
   items.push(item('captureStream', 'canvas.captureStream', typeof HTMLCanvasElement !== 'undefined' && 'captureStream' in HTMLCanvasElement.prototype ? 'yes' : 'no', 'present on recent iOS too, but the app does not use it (hydra-synth\'s stream capture is switched off)'))

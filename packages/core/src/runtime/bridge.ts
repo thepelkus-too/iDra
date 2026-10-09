@@ -1,6 +1,8 @@
 import { HydraAudio } from '../hydra-audio'
 import type { CatalogDelta } from '../catalog'
 import type { ErrorKind, FrameToHost, HostToFrame } from './protocol'
+import { pluginIdFromUrl } from '../plugin-id'
+import { MidiShim } from './midi-shim'
 
 // Frame-side half of the runtime. It owns the canvas, hydra-synth, the live-parameter table and the `a` object.
 // It is used unchanged in the sandboxed iframe (frame-entry.ts) and in inline mode (host.ts).
@@ -16,6 +18,54 @@ export interface BridgeEnv {
 
 const LIVE_NAME = '__hl'
 
+/** Replace throwing Web Storage (opaque-origin frames) with in-memory storage that lives as long as the frame. */
+export function installMemoryStorage(win: any): string[] {
+  const replaced: string[] = []
+  for (const name of ['localStorage', 'sessionStorage']) {
+    let ok = false
+    try {
+      ok = !!win[name] && typeof win[name].getItem === 'function'
+      if (ok) win[name].length
+    } catch {
+      ok = false
+    }
+    if (ok) continue
+    const m = new Map<string, string>()
+    const store = {
+      get length() {
+        return m.size
+      },
+      key: (i: number) => [...m.keys()][i] ?? null,
+      getItem: (k: string) => (m.has(String(k)) ? m.get(String(k))! : null),
+      setItem: (k: string, v: unknown) => void m.set(String(k), String(v)),
+      removeItem: (k: string) => void m.delete(String(k)),
+      clear: () => m.clear(),
+    }
+    try {
+      Object.defineProperty(win, name, { value: store, configurable: true, writable: true })
+      replaced.push(name)
+    } catch {
+      /* not configurable here */
+    }
+  }
+  return replaced
+}
+
+/**
+ * Evaluate plugin / loadScript text as a global script. Code with top-level `await` (not valid in a classic script) runs
+ * inside an async function instead and is awaited; there, top-level `var`/`function` declarations stay local, so such
+ * plugins publish through `window.x = …` or `setFunction`, as hydra plugins do.
+ */
+export async function evalScript(win: any, src: string): Promise<void> {
+  try {
+    ;(0, win.eval)(src)
+    return
+  } catch (e) {
+    if (!(e instanceof win.SyntaxError || (e as Error)?.name === 'SyntaxError') || !/\bawait\b/.test(src)) throw e
+  }
+  await (0, win.eval)(`(async () => {\n${src}\n})()`)
+}
+
 export class Bridge {
   private hydra: any
   private canvas?: HTMLCanvasElement
@@ -27,6 +77,9 @@ export class Bridge {
   private errorCounts = new Map<string, { n: number; t: number }>()
   private restoreConsole?: () => void
   private disposed = false
+  /** URLs already evaluated as plugins in this frame: a sketch's own `loadScript` of the same URL is not run twice */
+  private pluginUrls = new Set<string>()
+  private midi?: MidiShim
 
   constructor(private env: BridgeEnv) {}
 
@@ -54,7 +107,7 @@ export class Bridge {
         case 'time':
           return this.reply(msg.id, () => this.hydra?.synth?.time ?? 0)
         case 'plugin':
-          return this.reply(msg.id, () => this.plugin(msg.pluginId, msg.name, msg.src))
+          return this.reply(msg.id, () => this.plugin(msg.pluginId, msg.name, msg.src, msg.url))
         case 'catalog':
           return this.reply(msg.id, () => this.flushDelta(true))
         case 'fetched': {
@@ -71,6 +124,10 @@ export class Bridge {
           return
         case 'mouse':
           return this.setMouse(msg.x, msg.y, msg.buttons)
+        case 'midiInputs':
+          return this.midi?.setInputs(msg.inputs)
+        case 'midi':
+          return this.midi?.receive(msg.input, msg.data)
         case 'dispose':
           return this.dispose()
       }
@@ -155,6 +212,13 @@ export class Bridge {
     })
     synth.a = this.audio
     win.a = this.audio
+    // extensions look the renderer up the way hydra.ojack.xyz exposes it (hyper-hydra: window.hydraSynth with .regl)
+    win.hydraSynth = this.hydra
+    // Web MIDI: the frame never gets real MIDI access; the host forwards messages (see midi-shim.ts)
+    this.midi = new MidiShim(win)
+    // An opaque origin throws on localStorage/sessionStorage. Plugins read them at load time (hydra-midi keeps CC values
+    // in sessionStorage) and would fail to load, so give the frame per-frame memory storage instead.
+    installMemoryStorage(win)
     // catalog tracking: wrap setFunction so plugin-defined functions are reported to the host
     const orig = synth.setFunction
     const wrapped = (obj: any) => {
@@ -176,16 +240,23 @@ export class Bridge {
     // loadScript goes through the host so it can be cached and served offline
     win.loadScript = (url = '') =>
       new Promise<void>((resolve) => {
+        // already evaluated as a plugin (sketch.plugins) in this frame: its functions are there, don't run it twice
+        if (this.pluginUrls.has(String(url))) return resolve()
         const id = this.fetchId++
         this.pendingFetch.set(id, (r) => {
           if (r.ok && r.text !== undefined) {
-            try {
-              ;(0, win.eval)(r.text)
-            } catch (e: any) {
-              this.error('runtime', `loadScript ${url}: ${e?.message ?? e}`)
-            }
-          } else this.error('warning', `could not load script ${url}${r.error ? ': ' + r.error : ''}`)
-          resolve()
+            const prev = this.origin
+            this.origin = `plugin:${pluginIdFromUrl(String(url))}`
+            evalScript(win, r.text)
+              .catch((e: any) => this.error('runtime', `loadScript ${url}: ${e?.message ?? e}`))
+              .finally(() => {
+                this.origin = prev
+                resolve()
+              })
+          } else {
+            this.error('warning', `could not load script ${url}${r.error ? ': ' + r.error : ''}`)
+            resolve()
+          }
         })
         this.post({ t: 'fetch', id, url })
       })
@@ -316,14 +387,21 @@ export class Bridge {
     void win
   }
 
-  private plugin(pluginId: string, name: string, src: string) {
+  private async plugin(pluginId: string, name: string, src: string, url?: string) {
+    const win = this.env.win
     this.origin = `plugin:${pluginId}`
+    const before = new Set(Object.keys(win))
     try {
-      ;(0, this.env.win.eval)(src)
+      await evalScript(win, src)
     } finally {
       this.origin = 'plugin:inline'
     }
-    return { delta: this.flushDelta(true), name }
+    if (url) this.pluginUrls.add(url)
+    const delta = this.flushDelta(true)
+    const fnNames = new Set(delta.map((d) => d.name))
+    // JS-only plugins (hydra-midi's midi/note/cc, hyper-hydra helpers) add globals instead of catalog functions
+    const globals = Object.keys(win).filter((k) => !before.has(k) && !fnNames.has(k) && !k.startsWith('_')).slice(0, 60)
+    return { delta, name, globals }
   }
 
   /** Send newly registered functions to the host. With `all` also returns them to the caller. */
@@ -368,6 +446,7 @@ export class Bridge {
 
   dispose() {
     this.disposed = true
+    this.midi?.dispose()
     this.restoreConsole?.()
     try {
       this.hydra?.synth?.hush?.()

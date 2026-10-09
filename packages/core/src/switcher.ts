@@ -1,4 +1,5 @@
 import { getLibrary, type Library } from './library'
+import type { Sketch } from './ir'
 import { h, injectStyles, TOKENS_CSS } from './ui'
 
 // Editors live under one origin and one service-worker scope, so switching between them is plain link navigation
@@ -41,6 +42,9 @@ ${TOKENS_CSS}
 .hi-switch .menu a:hover,.hi-switch .menu a:focus-visible{background:var(--hi-bg)}
 .hi-switch .menu a[aria-current=page]{color:var(--hi-accent);font-weight:600}
 .hi-switch .menu small{color:var(--hi-dim)}
+.hi-switch .menu hr{border:0;border-top:1px solid var(--hi-line);margin:4px 6px}
+.hi-switch .menu button.tool{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;min-height:44px;padding:0 12px;border:0;border-radius:8px;background:none;color:inherit;font:inherit;text-align:left;cursor:pointer}
+.hi-switch .menu button.tool:hover,.hi-switch .menu button.tool:focus-visible{background:var(--hi-bg)}
 `
 
 export interface SwitcherOptions {
@@ -54,6 +58,13 @@ export interface SwitcherOptions {
   apps?: AppInfo[]
   /** called instead of navigating (tests) */
   navigate?: (url: string) => void
+  /** show "Plugins…" and "MIDI controller…" in the menu (default true) */
+  tools?: boolean
+  /**
+   * How the Plugins sheet reads and writes the open sketch. Without it the sheet edits the library copy of `sketchId`
+   * and reloads the page on close if the plugin list changed (so the editor picks it up).
+   */
+  sketchAccess?: { get(): Sketch | Promise<Sketch>; set(sketch: Sketch): void | Promise<void> }
 }
 
 export interface SwitcherHandle {
@@ -115,6 +126,27 @@ export function mountSwitcher(el: HTMLElement, opts: SwitcherOptions): SwitcherH
       url.hash = routeHash(sketchId)
       menu.appendChild(link(app.title || app.name, url.href, app.name === opts.current, app.description))
     }
+    if (opts.tools !== false) {
+      menu.appendChild(h('hr'))
+      menu.appendChild(tool('Plugins…', 'add Hydra extensions', 'plugins', async () => {
+        // loaded on demand: keeps the switcher light and avoids an import cycle (the sheets use siteRoot from here)
+        const { openPluginSheet } = await import('./plugin-manager')
+        openPluginSheet({ sketchId, sketch: opts.sketchAccess, library: lib })
+      }))
+      menu.appendChild(tool('MIDI controller…', 'faders, keys, pads', 'midi', async () => {
+        const { openMidiSheet } = await import('./midi-panel')
+        openMidiSheet()
+      }))
+    }
+  }
+  const tool = (label: string, small: string, key: string, run: () => Promise<void>) => {
+    const b = h('button', { type: 'button', role: 'menuitem', class: 'tool', 'data-tool': key }, label, h('small', {}, small))
+    b.addEventListener('click', () => {
+      wrap.classList.remove('open')
+      button.setAttribute('aria-expanded', 'false')
+      run().catch((e) => console.error(e))
+    })
+    return b
   }
   render()
   button.addEventListener('click', () => {
