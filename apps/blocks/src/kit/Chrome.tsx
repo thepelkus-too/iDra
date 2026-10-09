@@ -4,7 +4,7 @@ import { describe, detectMidi, mountAbout, mountAudioPanel, mountSwitcher, risky
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks'
 import { APP, APP_TITLE } from '../app'
 import { duplicateCurrent, exportFile, importAsNew, newBlankSketch, openSketch, copyCode } from './actions'
-import { ctx, useRunner, useStore } from './ctx'
+import { ctx, useBackdrop, useRunner, useStore } from './ctx'
 import { openMenu, type MenuItem } from './Menu'
 import { openSheet, toast } from './overlay'
 
@@ -66,6 +66,33 @@ export function UndoRedo() {
   )
 }
 
+/** The full-background toggle for the top bar, and the veil strength while it is on (contract §6 Backdrop). */
+export function BackdropButtons() {
+  const bd = useBackdrop()
+  if (!ctx.backdrop) return null
+  const on = bd.placement === 'backdrop'
+  return (
+    <>
+      <button
+        type="button"
+        class={`icon ${on ? 'on' : ''}`}
+        data-testid="backdrop-toggle"
+        aria-label="Full background preview"
+        aria-pressed={on}
+        title={on ? 'Preview: full background (tap for a floating window)' : 'Preview: floating window (tap to fill the background)'}
+        onClick={() => ctx.backdrop?.toggle()}
+      >
+        {on ? '▣' : '◧'}
+      </button>
+      {on && (
+        <button type="button" class="icon veil-btn" data-testid="veil" data-veil={bd.veil} aria-label={`Text backing: ${bd.veil}. Tap to change.`} title={`Text backing: ${bd.veil}`} onClick={() => ctx.backdrop?.cycleVeil()}>
+          <i class={`veil-swatch ${bd.veil}`} />
+        </button>
+      )}
+    </>
+  )
+}
+
 /** The ⋯ menu: document actions first, then whatever the editor adds. */
 export function openMoreMenu(el: HTMLElement, extra: MenuItem[] = []): void {
   openMenu(
@@ -79,6 +106,9 @@ export function openMoreMenu(el: HTMLElement, extra: MenuItem[] = []): void {
       { label: 'Export .json (with layout)', run: () => void exportFile('json').then((r) => r === 'downloaded' && toast('Saved to Downloads')), testid: 'menu-export-json' },
       { label: 'Copy code', run: () => void copyCode(), testid: 'menu-copy' },
       ...extra.map((x, i) => (i === 0 ? { ...x, sep: true } : x)),
+      ...(ctx.backdrop
+        ? [{ label: ctx.backdrop.on ? 'Preview: full background' : 'Preview: floating window', hint: ctx.backdrop.on ? 'tap for a window' : 'tap to fill', run: () => ctx.backdrop?.toggle(), testid: 'menu-backdrop' }]
+        : []),
       { label: 'Audio…', sep: true, run: () => openAudioSheet(), testid: 'menu-audio' },
       { label: 'About / Source', run: () => openAbout() },
     ],

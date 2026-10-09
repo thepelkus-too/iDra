@@ -62,6 +62,7 @@ export function App({ stage }: { stage: HTMLElement }) {
         <span class="runinfo" data-testid="runinfo">
           {s.phase === 'ok' ? `${s.recompiled ? 'compiled' : 'numbers only'} · ${s.ms?.toFixed(0)} ms` : s.phase === 'running' ? 'running…' : s.phase === 'error' ? 'error' : ''}
           {runner.trust.pending ? ' · safe mode' : ''}
+          {runner.status.fellBack ? ' · last good frame' : ''}
         </span>
       </footer>
       <OverlayHost />

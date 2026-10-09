@@ -3,7 +3,7 @@
 import type { Stmt } from '@hydra-ipad/core'
 import { useEffect, useRef, useState } from 'preact/hooks'
 import { historyOf, scrubTo, tidy, ui, useUi } from '../doc'
-import { Switcher, SketchName, UndoRedo, openMoreMenu } from '../kit/Chrome'
+import { BackdropButtons, Switcher, SketchName, UndoRedo, openMoreMenu } from '../kit/Chrome'
 import { codeBridge } from '../kit/CodeDrawer'
 import { newBlankSketch } from '../kit/actions'
 import { ctx, useRunner, useStore } from '../kit/ctx'
@@ -22,6 +22,7 @@ export function TopBar() {
       <Switcher />
       <SketchName />
       <span class="grow" />
+      <BackdropButtons />
       <UndoRedo />
       <button type="button" class={`btn ${st.palette ? 'on' : ''}`} data-testid="palette-toggle" aria-pressed={st.palette} onClick={() => ui.set({ palette: !st.palette })}>
         Blocks
@@ -184,7 +185,7 @@ export function Pip({ stage }: { stage: HTMLElement }) {
   // negative x = from the right edge
   const style = st.perform ? {} : { width: `${b.w}px`, height: `${(b.w * 9) / 16}px`, top: `${b.y}px`, ...(b.x < 0 ? { right: `${-b.x}px` } : { left: `${b.x}px` }) }
   return (
-    <div class={`pip ${st.perform ? 'perform' : ''}`} style={style} data-testid="pip">
+    <div class={`pip ${st.perform ? 'perform' : ''}`} style={style} data-testid="pip" data-hi-backdrop={st.perform ? undefined : 'stage'}>
       <div class="stage-slot" ref={slot} data-testid="stage-slot" />
       {st.perform ? (
         <button type="button" class="btn exit" data-testid="perform-exit" onClick={() => ui.set({ perform: false })}>
@@ -193,7 +194,7 @@ export function Pip({ stage }: { stage: HTMLElement }) {
       ) : (
         <>
           <div
-            class="pip-grip"
+            class="pip-grip" data-hi-backdrop="hide"
             aria-label="Move the output"
             data-no-undo-tap
             onPointerDown={(e) => {
@@ -218,7 +219,7 @@ export function Pip({ stage }: { stage: HTMLElement }) {
           </div>
           <button
             type="button"
-            class="icon pip-full"
+            class="icon pip-full" data-hi-backdrop="hide"
             aria-label="Full screen"
             data-testid="pip-full"
             data-no-undo-tap
@@ -229,7 +230,7 @@ export function Pip({ stage }: { stage: HTMLElement }) {
             ⛶
           </button>
           <div
-            class="pip-resize"
+            class="pip-resize" data-hi-backdrop="hide"
             aria-label="Resize the output"
             data-no-undo-tap
             onPointerDown={(e) => {

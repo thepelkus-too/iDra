@@ -3,7 +3,7 @@ import { newId } from '@hydra-ipad/core'
 import { useEffect, useRef, useState } from 'preact/hooks'
 import { appPrefs } from '../prefs'
 import { applyGraph, arrange, compileOf, graphOf, metaNow, posOf, tryApply, ui, useUi } from '../doc'
-import { Switcher, SketchName, UndoRedo, openMoreMenu } from '../kit/Chrome'
+import { BackdropButtons, Switcher, SketchName, UndoRedo, openMoreMenu } from '../kit/Chrome'
 import { codeBridge } from '../kit/CodeDrawer'
 import { ctx, useRunner, useStore } from '../kit/ctx'
 import { NumSlider } from '../kit/NumSlider'
@@ -22,6 +22,7 @@ export function TopBar() {
       <Switcher />
       <SketchName />
       <span class="grow" />
+      <BackdropButtons />
       <UndoRedo />
       <button type="button" class={`icon ${st.mode === 'lasso' ? 'on' : ''}`} data-testid="mode-lasso" aria-pressed={st.mode === 'lasso'} aria-label="Select with a rectangle" title="One finger on the canvas: pan, or draw a selection rectangle" onClick={() => ui.set({ mode: st.mode === 'lasso' ? 'pan' : 'lasso' })}>
         ⬚
@@ -207,12 +208,12 @@ export function Pip({ stage }: { stage: HTMLElement }) {
   // negative x = from the right edge
   const style = st.perform ? {} : { width: `${b.w}px`, height: `${(b.w * 9) / 16}px`, top: `${b.y}px`, ...(b.x < 0 ? { right: `${-b.x}px` } : { left: `${b.x}px` }) }
   return (
-    <div class={`pip ${st.perform ? 'perform' : ''}`} style={style} data-testid="pip">
+    <div class={`pip ${st.perform ? 'perform' : ''}`} style={style} data-testid="pip" data-hi-backdrop={st.perform ? undefined : 'stage'}>
       <div class="stage-slot" ref={slot} data-testid="stage-slot" />
       {!st.perform && (
         <>
           <div
-            class="pip-grip"
+            class="pip-grip" data-hi-backdrop="hide"
             aria-label="Move the output"
             data-no-undo-tap
             onPointerDown={(e) => {
@@ -236,7 +237,7 @@ export function Pip({ stage }: { stage: HTMLElement }) {
             {runner.status.fellBack && <span class="pill err">last good frame</span>}
           </div>
           <div
-            class="pip-resize"
+            class="pip-resize" data-hi-backdrop="hide"
             aria-label="Resize the output"
             data-no-undo-tap
             onPointerDown={(e) => {

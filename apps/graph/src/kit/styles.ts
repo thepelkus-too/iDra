@@ -125,4 +125,16 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px soli
 .meter i{display:block;height:100%;background:linear-gradient(90deg,#53c27a,#e6a23c,#e5645f)}
 
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+
+/* ---- backdrop toggle (contract §6) */
+.veil-btn{display:inline-flex;align-items:center;justify-content:center}
+.veil-swatch{display:inline-block;width:20px;height:20px;border-radius:4px;border:1px solid var(--hi-line);background:linear-gradient(90deg,#f2a65a,#5ac8c8)}
+.veil-swatch::after{content:"";display:block;width:100%;height:100%;border-radius:3px;background:rgba(8,10,14,.55)}
+.veil-swatch.light::after{background:rgba(8,10,14,.35)}
+.veil-swatch.strong::after{background:rgba(8,10,14,.78)}
+html.hi-backdrop .cm-editor,html.hi-backdrop .cm-gutters{background:transparent!important}
+html.hi-backdrop .cm-gutters{text-shadow:var(--hi-ink-shadow);color:#9aa3b2!important}
+html.hi-backdrop .cm-line{width:fit-content;max-width:100%;background:var(--hi-veil);border-radius:2px}
+html.hi-backdrop .cm-activeLine{background:rgba(20,60,60,var(--hi-veil-a,.55))!important}
+html.hi-backdrop .code-status,html.hi-backdrop .cd-head{background:var(--hi-veil)}
 `

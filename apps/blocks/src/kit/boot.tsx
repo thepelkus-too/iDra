@@ -1,7 +1,7 @@
 // Startup shared by the editors: pick the sketch from the route (contract §1), build the default view for a sketch this app
 // has never seen (§3), autosave (§2), run the preview with the trust gate (§6), follow `hashchange`, flush on pagehide.
 import * as core from '@hydra-ipad/core'
-import { applyAppBase, getAudioEngine, getLibrary, injectStyles, mountUpdateToast, parseRoute, routeHash, withMeta, type Sketch } from '@hydra-ipad/core'
+import { applyAppBase, createBackdrop, getAudioEngine, getLibrary, injectStyles, mountUpdateToast, parseRoute, routeHash, withMeta, type Sketch } from '@hydra-ipad/core'
 import { render, type ComponentType } from 'preact'
 import { APP } from '../app'
 import { codeBridge } from './CodeDrawer'
@@ -50,6 +50,11 @@ export async function boot(o: BootOptions): Promise<void> {
   stage.dataset.testid = 'stage'
   const store = new Store(first.sketch)
   const runner = new Runner(stage)
+  // full-background preview: one preference shared by every editor; the runtime renders at the screen's aspect while it is on
+  const backdrop = createBackdrop({ base: { width: 960, height: 540 }, setResolution: (w, h) => runner.rt?.setResolution(w, h) })
+  runner.size = () => backdrop.resolution()
+  runner.onStarted = () => backdrop.refresh()
+  ctx.backdrop = backdrop
   ctx.store = store
   ctx.runner = runner
   ctx.lib = lib
@@ -113,7 +118,7 @@ export async function boot(o: BootOptions): Promise<void> {
   mountUpdateToast({ onBeforeReload: () => lib.flush() })
   const App = o.App
   render(<App stage={stage} />, document.getElementById('app')!)
-  const handles = { store, runner, lib, audio: ctx.audio, ctx, core, ...(o.expose ?? {}) }
+  const handles = { store, runner, backdrop, lib, audio: ctx.audio, ctx, core, ...(o.expose ?? {}) }
   ;(window as unknown as Record<string, unknown>).__app = handles
   ;(window as unknown as Record<string, unknown>)[`__${APP}`] = handles
   o.onLoad?.(first.sketch)

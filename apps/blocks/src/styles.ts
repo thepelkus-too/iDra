@@ -182,4 +182,17 @@ button.on,.btn.on{border-color:var(--hi-accent);color:var(--hi-accent);backgroun
 .starter{display:flex;flex-direction:column;align-items:flex-start;gap:4px;padding:10px;text-align:left;min-height:120px}
 .starter small{color:var(--hi-dim)}
 .starter code{font:11px var(--mono);white-space:pre;color:#cfd3da;overflow:hidden;max-height:70px}
+
+/* ---- backdrop (contract §6): the output fills the screen behind everything; panels sit on a veil, stacked top to bottom
+   so the switcher's drop-down opens over what is below it. The output's ancestors carry no transform/filter/contain. */
+html.hi-backdrop .app{background:transparent}
+html.hi-backdrop .topbar{position:relative;z-index:20;background:var(--hi-veil);border-color:var(--hi-veil-line)}
+html.hi-backdrop .topbar .name{background:var(--hi-veil);border-color:var(--hi-veil-line)}
+html.hi-backdrop .foot{position:relative;z-index:1;background:var(--hi-veil);border-color:var(--hi-veil-line)}
+html.hi-backdrop .foot .runinfo,html.hi-backdrop .foot a{text-shadow:var(--hi-ink-shadow)}
+html.hi-backdrop .codepane{z-index:1;background:transparent;border-color:var(--hi-veil-line)}
+html.hi-backdrop .workspace{z-index:1;background-color:transparent;background-image:radial-gradient(rgba(255,255,255,.14) 1px,transparent 1px)}
+html.hi-backdrop .palette,html.hi-backdrop .selbar{background:var(--hi-veil);border-color:var(--hi-veil-line)}
+html.hi-backdrop .ws-empty,html.hi-backdrop .loose-tag{text-shadow:var(--hi-ink-shadow);color:var(--hi-text)}
+html.hi-backdrop .stage-slot>.stage{width:100%;height:100%}
 `

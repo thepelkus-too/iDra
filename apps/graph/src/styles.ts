@@ -187,4 +187,17 @@ button.on,.btn.on{border-color:var(--hi-accent);color:var(--hi-accent);backgroun
 .pins .numslider{height:52px;background:rgba(0,0,0,.55);font-size:14px}
 .pins .hint{color:#ccc;background:rgba(0,0,0,.55);padding:8px 12px;border-radius:10px;font-size:13px}
 .codepane .codedrawer{position:absolute;inset:0}
+
+/* ---- backdrop (contract §6): the output fills the screen behind everything; panels sit on a veil, stacked top to bottom
+   so the switcher's drop-down opens over what is below it. The output's ancestors carry no transform/filter/contain. */
+html.hi-backdrop .app{background:transparent}
+html.hi-backdrop .topbar{position:relative;z-index:5;background:var(--hi-veil);border-color:var(--hi-veil-line)}
+html.hi-backdrop .topbar .name{background:var(--hi-veil);border-color:var(--hi-veil-line)}
+html.hi-backdrop .foot{position:relative;z-index:1;background:var(--hi-veil);border-color:var(--hi-veil-line)}
+html.hi-backdrop .foot .runinfo,html.hi-backdrop .foot a{text-shadow:var(--hi-ink-shadow)}
+html.hi-backdrop .codepane{z-index:1;background:transparent;border-color:var(--hi-veil-line)}
+html.hi-backdrop .canvas{z-index:1;background-color:transparent;background-image:radial-gradient(rgba(255,255,255,.14) 1px,transparent 1px)}
+html.hi-backdrop .palette,html.hi-backdrop .selbar{background:var(--hi-veil);border-color:var(--hi-veil-line)}
+html.hi-backdrop .node{box-shadow:0 4px 18px rgba(0,0,0,.6)}
+html.hi-backdrop .stage-slot>.stage{width:100%;height:100%}
 `
