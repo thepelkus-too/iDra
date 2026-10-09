@@ -1,5 +1,5 @@
 // Process-wide handles the components share. Set once in main.tsx (tests set their own).
-import { catalog, getAudioEngine, getLibrary, type AudioEngine, type Catalog, type Library, type Sketch } from '@hydra-ipad/core'
+import { catalog, getAudioEngine, getLibrary, type AudioEngine, type BackdropController, type BackdropState, type Catalog, type Library, type Sketch } from '@hydra-ipad/core'
 import { useEffect, useState } from 'preact/hooks'
 import type { Runner } from './runner'
 import { Store, type CommitOpts } from './store'
@@ -10,6 +10,8 @@ export interface Ctx {
   lib: Library
   audio: AudioEngine
   catalog: Catalog
+  /** full-background preview (absent in unit tests: the preview is then a panel) */
+  backdrop?: BackdropController
 }
 
 export const ctx: Ctx = {
@@ -37,4 +39,11 @@ export function useRunner(): Runner {
   const [, set] = useState(0)
   useEffect(() => ctx.runner.subscribe(() => set((v) => v + 1)), [])
   return ctx.runner
+}
+
+/** The preview placement and veil, re-rendering on change. */
+export function useBackdrop(): BackdropState {
+  const [, set] = useState(0)
+  useEffect(() => ctx.backdrop?.subscribe(() => set((v) => v + 1)), [])
+  return ctx.backdrop?.state ?? { placement: 'panel', veil: 'medium' }
 }

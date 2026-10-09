@@ -1,5 +1,5 @@
 import * as core from '@hydra-ipad/core'
-import { applyAppBase, getAudioEngine, getLibrary, injectStyles, mountUpdateToast, parseRoute, routeHash, withMeta, type Sketch } from '@hydra-ipad/core'
+import { applyAppBase, createBackdrop, getAudioEngine, getLibrary, injectStyles, mountUpdateToast, parseRoute, routeHash, withMeta, type Sketch } from '@hydra-ipad/core'
 import { render } from 'preact'
 import { App } from './App'
 import { ctx } from './ctx'
@@ -42,8 +42,13 @@ async function boot() {
   stage.dataset.testid = 'stage'
   const store = new Store(first.sketch)
   const runner = new Runner(stage)
+  // full-background preview: one preference shared by every editor; the runtime renders at the screen's aspect while it is on
+  const backdrop = createBackdrop({ base: { width: 960, height: 540 }, setResolution: (w, h) => runner.rt?.setResolution(w, h) })
+  runner.size = () => backdrop.resolution()
+  runner.onStarted = () => backdrop.refresh()
   ctx.store = store
   ctx.runner = runner
+  ctx.backdrop = backdrop
   ctx.lib = lib
   ctx.audio = getAudioEngine()
 
@@ -105,7 +110,7 @@ async function boot() {
 
   mountUpdateToast({ onBeforeReload: () => lib.flush() })
   render(<App stage={stage} />, document.getElementById('app')!)
-  ;(window as unknown as Record<string, unknown>).__stack = { store, runner, lib, audio: ctx.audio, thumbs, ctx, core }
+  ;(window as unknown as Record<string, unknown>).__stack = { store, runner, backdrop, lib, audio: ctx.audio, thumbs, ctx, core }
 
   await runner.start()
   runner.run(true, first.sketch)

@@ -1098,6 +1098,92 @@ if (want('11')) await block('11', async () => {
   await S.close()
 })
 
+// ============================================================================================================ 12. full-background preview
+if (want('12')) await block('12', async () => {
+  const S = await startS({ viewport: { width: 820, height: 1180 } })
+  const { page, touch } = S
+  await importAndOpen(page, S.base, TARGET, 'Backdrop')
+  await waitForPicture(page)
+  await sleep(300)
+  /** the size of the frame's canvas, read from a screenshot of it (the frame is cross-origin) */
+  const canvasSize = () => page.evaluate(async () => {
+    const url = await window.__stack.runner.rt.screenshot({ type: 'image/jpeg', quality: 0.5 })
+    const img = new Image()
+    await new Promise((r) => ((img.onload = r), (img.src = url)))
+    return [img.naturalWidth, img.naturalHeight]
+  })
+  const geometry = () => page.evaluate(() => {
+    const r = (sel) => {
+      const b = document.querySelector(sel).getBoundingClientRect()
+      return [Math.round(b.x), Math.round(b.y), Math.round(b.width), Math.round(b.height)]
+    }
+    return { pane: r('[data-testid=preview-pane]'), scroll: r('[data-testid=stack-scroll]'), vw: innerWidth, vh: innerHeight }
+  })
+  await check('12a', 'backdrop: the preview fills the screen behind the editor, the stack takes the whole area, the frame is not re-created and renders at the screen\'s aspect', async () => {
+    const frame = await page.evaluateHandle(() => document.querySelector('.preview-pane iframe'))
+    assert.deepEqual(await canvasSize(), [960, 540])
+    await touch.tap('[data-testid=backdrop-toggle]')
+    await page.waitForSelector('html.hi-backdrop .app.backdrop')
+    await sleep(600)
+    const g = await geometry()
+    assert.deepEqual(g.pane, [0, 0, g.vw, g.vh], 'preview covers the viewport')
+    assert.equal(g.scroll[2], g.vw, 'stack is full width')
+    assert.ok(g.scroll[3] > g.vh * 0.75, `stack is (almost) full height: ${g.scroll[3]}`)
+    assert.ok(await page.evaluate((f) => f.isConnected && document.querySelector('.preview-pane iframe') === f, frame), 'same iframe')
+    assert.deepEqual(await canvasSize(), [820, 1180])
+    // the editor is still on top: a number opens the keypad, and the preview takes no touches
+    assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector('.preview-pane')).pointerEvents), 'none')
+    await touch.tap('[data-fn=rotate] [role=spinbutton]')
+    await page.waitForSelector('.keypad')
+    await touch.tap('.scrim')
+    await shot(page, '12-backdrop-portrait-blocks.png')
+    // the editor switcher's drop-down opens over the strip and the stack, and its items take the tap
+    await touch.tap('.hi-switch > button')
+    await page.waitForSelector('.hi-switch .menu a, .hi-switch .menu button', { state: 'visible' })
+    const onTop = await page.evaluate(() => {
+      const items = [...document.querySelectorAll('.hi-switch .menu a, .hi-switch .menu button')]
+      return items.every((el) => {
+        const r = el.getBoundingClientRect()
+        return el.contains(document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2))
+      }) && items.length > 0
+    })
+    assert.ok(onTop, 'switcher items are on top')
+    await shot(page, '12-backdrop-switcher.png')
+    await touch.tap('.hi-switch > button')
+    await touch.tap('[data-testid=veil]')
+    assert.equal(await page.locator('[data-testid=veil]').getAttribute('data-veil'), 'strong')
+    await shot(page, '12-backdrop-portrait-strong.png')
+    await touch.tap('[data-testid=veil]')
+    await touch.tap('[data-testid=mode-code]')
+    await page.waitForSelector('.cm-content')
+    await sleep(300)
+    assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector('.cm-editor')).backgroundColor), 'rgba(0, 0, 0, 0)')
+    await shot(page, '12-backdrop-portrait-code.png')
+    await touch.tap('[data-testid=mode-blocks]')
+    return `canvas ${(await canvasSize()).join('×')}`
+  })
+  await check('12b', 'backdrop: rotating re-fits the render size; the choice survives a reload and is shared with the other editors; turning it off restores the panel', async () => {
+    await page.setViewportSize({ width: 1180, height: 820 })
+    await sleep(800)
+    assert.deepEqual(await canvasSize(), [1180, 820])
+    const g = await geometry()
+    assert.deepEqual(g.pane, [0, 0, 1180, 820])
+    await shot(page, '12-backdrop-landscape-blocks.png')
+    await page.reload()
+    await waitForPicture(page)
+    assert.ok(await page.locator('html.hi-backdrop').count(), 'still on after reload')
+    assert.equal(await page.evaluate(() => localStorage.getItem('hydra-core:previewPlacement')), '"backdrop"')
+    assert.deepEqual(await canvasSize(), [1180, 820])
+    await touch.tap('[data-testid=backdrop-toggle]')
+    await sleep(500)
+    assert.equal(await page.locator('html.hi-backdrop').count(), 0)
+    assert.deepEqual(await canvasSize(), [960, 540])
+    const g2 = await geometry()
+    assert.ok(g2.pane[2] < 1180 * 0.7, `panel beside the stack again: ${g2.pane}`)
+  })
+  assert.deepEqual(S.errors.filter((e) => !/Permissions policy/.test(e)), [], '12: no page errors')
+})
+
 // ============================================================================================================ summary
 const md = ['# Acceptance run', '', `Chromium (software WebGL / SwiftShader), touch emulation via CDP. Generated ${new Date().toISOString().slice(0, 10)}.`, '', '| # | check | result | note |', '|---|---|---|---|']
 for (const r of results) md.push(`| ${r.id} | ${r.title} | ${r.ok ? 'pass' : '**FAIL**'} | ${String(r.note ?? '').replace(/\|/g, '/').slice(0, 300)} |`)

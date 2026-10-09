@@ -45,6 +45,7 @@ node apps/stack/e2e/acceptance.mjs [--skip-build] [--only=1,2,6]   # real Chromi
 | 🎲 | top bar | `randomSketch(seed)`; the seed is shown. **Long-press**: mutate the active chain (gentle / normal / bold), roll again, choose a seed, add a random chain. |
 | **Blocks \| Code** | top bar | the same sketch as text (CodeMirror 6, Hydra-aware completion). Edits are parsed back on a pause or on blur; selecting a block highlights its text and the other way round. A syntax error keeps the blocks on the last good version and says so. |
 | ⌘Z · ⇧⌘Z · ⌘Enter · ⌘D | hardware keyboard | undo · redo · run again · duplicate the selected row |
+| ◧ / ▣ | top bar | preview as a **panel** (beside the stack in landscape, on top in portrait) or as the **full background**: the live output fills the screen behind the stack and the code, like hydra.ojack.xyz, and the stack takes the whole area. The choice is shared with the other editors and survives reloads. While it is on, the swatch next to it sets how dark the backing behind text is (light · medium · strong). |
 | Apple Pencil | everywhere | Pointer Events: `pen` behaves like touch. *Pencil pressure* (⋯ menu, off by default) makes a hard press scrub 4× finer. |
 
 Chain strip (under the top bar): **Setup** (sources, bpm, speed, render), one chip per chain in source order labelled by output,
@@ -109,7 +110,7 @@ Chromium with software WebGL (SwiftShader) and touch emulation through `Input.di
 
 Plus checks for the strip flags, setup sheet, dice and mutate, open / import / export, raw editing, error attribution and the
 last-good-frame fallback, the trust gate, the audio chip meter, the picker with thumbnails and plugins, unknown calls, six layouts
-down to 320 pt (Slide Over), the picture-in-picture preview, Apple Pencil input, texture kinds, selection sync, MIDI / camera
+down to 320 pt (Slide Over), the picture-in-picture preview, the full-background preview (12a/12b), Apple Pencil input, texture kinds, selection sync, MIDI / camera
 banners, statement reordering, thumbnails (160×90) and completion.
 
 ## Screenshots
@@ -124,6 +125,7 @@ banners, statement reordering, thumbnails (160×90) and completion.
 | ![audio chip: bin picker and meter](shots/09-audio-chip.jpg) | ![function picker with thumbnails](shots/09-picker.jpg) |
 | ![chain strip flags](shots/08-strip-flags.jpg) | ![trust gate](shots/09-trust-gate.jpg) |
 | ![error: last good frame](shots/09-error-last-good-frame.jpg) | ![Slide Over, 320 pt](shots/10-layout-slide-over-320.jpg) |
+| ![full background, blocks](shots/12-backdrop-landscape-blocks.jpg) | ![full background, code](shots/12-backdrop-portrait-code.jpg) |
 
 ## Known issues
 
