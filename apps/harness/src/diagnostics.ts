@@ -48,7 +48,7 @@ export function mountDiagnostics(el: HTMLElement, getIsolation: () => string): v
   void probeSandboxedFrame
 }
 
-/** Audio lab tab: mic, file, stream URL (CORS check), meters, monitor, notes. */
+/** Audio lab tab: the audio panel (every source), a stand-alone CORS check for a stream URL, notes. */
 export function mountAudioLab(el: HTMLElement): void {
   const url = h('input', { type: 'text', placeholder: 'https://…/stream.mp3', 'aria-label': 'Stream URL', style: 'flex:1;min-width:200px' })
   const result = h('div', { class: 'status' })
@@ -65,10 +65,11 @@ export function mountAudioLab(el: HTMLElement): void {
     result,
     h('h3', {}, 'Notes'),
     h('ul', { class: 'status' },
-      h('li', {}, 'Devices with a hardware silent switch (iPhones, some older iPads) mute Web Audio output on iOS. The app plays a silent loop and sets audioSession to “playback” to get around that; modern iPads have no such switch, so it has no effect there.'),
-      h('li', {}, 'While the microphone is active iOS may route playback to the earpiece or lower its volume.'),
-      h('li', {}, 'Audio from other apps cannot be captured by a web page. Use the mic (acoustic pickup) or a USB-C audio interface with a loopback or line-in.'),
-      h('li', {}, 'Streams need CORS headers (Access-Control-Allow-Origin) or Web Audio refuses to analyse them. Streaming playback itself arrives in a later change.'),
+      h('li', {}, 'Silent switch (iPhones, some older iPads): the app sets audioSession to “playback” and plays a silent loop from the Start tap, so Web Audio is heard with the switch on silent. Modern iPads have no switch.'),
+      h('li', {}, 'While the microphone is active iOS may route playback to the earpiece or lower its volume. With mic and speakers both on, the panel warns about feedback.'),
+      h('li', {}, 'Audio from other apps cannot be captured by a web page on iPad. Use the mic (acoustic pickup) or a USB-C audio interface (Input device…).'),
+      h('li', {}, 'Streams need CORS headers (Access-Control-Allow-Origin) for analysis. Without them the panel offers “Play without analysis”. HLS (.m3u8) plays natively only in Safari.'),
+      h('li', {}, 'If iOS suspends audio (a call, Siri, another app), a “tap to resume” button appears in the panel.'),
     ),
   )
 }

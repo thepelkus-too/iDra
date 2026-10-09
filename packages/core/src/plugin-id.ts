@@ -19,8 +19,10 @@ export function pluginIdFromUrl(url: string): string {
     const scoped = parts[npm + 1].startsWith('@') && parts[npm + 2]
     const noVersion = (x: string) => x.replace(/(.)@.*$/, '$1')
     id = scoped ? `${parts[npm + 1]}-${noVersion(parts[npm + 2])}` : noVersion(parts[npm + 1])
-  } else if (/^(index|main|dist|bundle)(\.min)?\.m?js$/i.test(parts[parts.length - 1] ?? '') && parts.length > 1) {
-    id = parts[parts.length - 2].replace(/@.*$/, '')
+  } else if (/^(index|main|dist|bundle|plugin)(\.min)?\.m?js$/i.test(parts[parts.length - 1] ?? '') && parts.length > 1) {
+    // `<name>[@version]/dist/index.js`: the nearest directory that is not a build folder names it
+    const dirs = parts.slice(0, -1).filter((d) => !/^(dist|build|lib|src|umd|esm|cjs|min)$/i.test(d))
+    id = (dirs[dirs.length - 1] ?? parts[parts.length - 2]).replace(/(.)@.*$/, '$1')
   } else {
     id = (parts[parts.length - 1] ?? 'plugin').replace(/(\.min)?\.m?js$/i, '')
   }

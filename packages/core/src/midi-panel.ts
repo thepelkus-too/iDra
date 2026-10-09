@@ -189,3 +189,38 @@ export function midiBanner(sketch: Sketch, opts: MidiBannerOptions = {}): HTMLEl
 export function diagnosticsHref(current = 'app', base?: string): string {
   return new URL('harness/?tab=diag', siteRoot(current, base)).href
 }
+
+const SHEET_CSS = `
+.hi-midi-sheet{position:fixed;inset:0;z-index:2000;background:rgba(0,0,0,.45);display:flex;align-items:flex-end;justify-content:center}
+.hi-midi-sheet>.box{background:var(--hi-bg);color:var(--hi-text);width:min(100%,620px);max-height:92vh;overflow:auto;border-radius:16px 16px 0 0;padding:12px 14px calc(14px + env(safe-area-inset-bottom));box-shadow:0 -10px 40px rgba(0,0,0,.4);display:grid;gap:8px}
+.hi-midi-sheet .head{display:flex;align-items:center;gap:10px}
+.hi-midi-sheet .head h2{margin:0;font:600 17px system-ui,-apple-system,sans-serif;flex:1}
+.hi-midi-sheet .head button{min-height:40px;min-width:44px;border-radius:10px;border:1px solid var(--hi-line);background:var(--hi-panel);color:var(--hi-text);font:inherit}
+.hi-midi-sheet .hi-midi{max-width:none}
+`
+
+let openSheet: { close(): void; element: HTMLElement } | undefined
+
+/**
+ * The on-screen controller as a bottom sheet, from any editor (⇄ menu › MIDI controller). The sheet does not cover the
+ * top of the screen, so the preview stays visible while you play; tapping outside closes it. Only one is open at a time.
+ */
+export function openMidiSheet(opts: MidiControllerOptions & { title?: string } = {}): { close(): void; element: HTMLElement } {
+  if (openSheet) return openSheet
+  injectStyles('midi-panel', CSS)
+  injectStyles('midi-sheet', SHEET_CSS)
+  const box = h('div', { class: 'box' })
+  const closeBtn = h('button', { type: 'button', 'aria-label': 'Close', 'data-role': 'sheet-close' }, 'Done')
+  box.append(h('div', { class: 'head' }, h('h2', {}, opts.title ?? 'MIDI controller'), closeBtn))
+  const back = h('div', { class: 'hi-midi-sheet', role: 'dialog', 'aria-label': opts.title ?? 'MIDI controller', 'data-role': 'midi-sheet' }, box)
+  const ctl = mountMidiController(box, opts)
+  const close = () => {
+    ctl.destroy()
+    back.remove()
+    openSheet = undefined
+  }
+  closeBtn.addEventListener('click', close)
+  back.addEventListener('pointerdown', (e) => e.target === back && close())
+  document.body.appendChild(back)
+  return (openSheet = { close, element: back })
+}

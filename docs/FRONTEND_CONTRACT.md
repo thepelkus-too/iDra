@@ -103,6 +103,34 @@ Until the owner accepts, run `rt.run(sketch, { safe: true })` (recognised chains
 * `catalog.subscribe(cb)` re-renders your function picker when a plugin registers functions (`catalog.refresh(delta)` is called by the runtime for you). Show functions whose `origin` starts with `plugin:` under their own group (`catalog.groups()`). Inputs of other types (vec2/vec3/int) are generic: `InputDef.type` + `Value` `vec4` (2–4 numbers).
 * All runtime calls are **asynchronous** (`run`, `hush`, `screenshot`, `time`, `loadPlugin`, `getCatalogDelta`, …); `setLive` is fire-and-forget.
 
+### 7a. Additions (audio sources, plugins, MIDI)
+
+Everything below is **additive**: nothing above changed, and an editor that ignores it keeps working.
+
+* **Audio bindings.** For a parameter's "bind to audio" UI use `audioBindings()`: `list()` (fft0…fftN with band names, `vol`; `beat` is meter-only),
+  `chip(id, { scale, offset, smooth?, threshold? })` → a Value, `identify(value)` → `{ id, opts }` or undefined, and
+  `subscribe(id, cb, { fps })` for live meter values. `audioChip(bin, scale, offset)` is unchanged; `audioSignalChip` builds the
+  smoothed (`js`) and threshold (`fn`) variants. `parseAudioBinding(value)` reads all forms. Show `js`/`fn` source as before when a value is
+  not a chip.
+* **Audio panel.** `mountAudioPanel(el)` now has input device, stream URL, tab audio (where supported) and "Other apps…" sources, a
+  *tap to resume* control and feedback hint. Same call, nothing to do. If you build your own panel, read `engine.needsResume`, `engine.hint`,
+  `engine.analysis` (`'ok' | 'waiting' | 'blocked' | 'off'`) and `engine.lastError` (`AudioStartError`, `.canPlayOnly` for streams without CORS).
+* **Switcher tools.** `mountSwitcher` adds *Plugins…* and *MIDI controller…* to the ⇄ menu (opt out with `tools: false`). Pass
+  `sketchAccess: { get: () => currentSketch, set: (s) => { /* your store */ } }` so the Plugins sheet edits your in-memory sketch; without it the
+  sheet edits the saved copy and **reloads the page** on close when the plugin list changed.
+* **Plugins.** `sketch.plugins` is the list of `PluginRef`s (`{ id, name, url?, src?, integrity?, version? }`); the runtime loads them in order
+  before every full run (never in safe mode). Use `withPlugin` / `withoutPlugin`; never drop `plugins` when you rebuild a sketch (spread it).
+  `toCode` prepends `await loadScript(url)` for URL plugins whose line is not already in the code. Function pickers: keep using
+  `catalog.subscribe` + `catalog.groups()`; plugin functions arrive with `origin: 'plugin:<id>'`.
+* **Runtime.** `createRuntime` forwards the page's MIDI hub by default (`midi: null` turns that off) and refuses plugins in inline mode
+  (it reports a warning and runs the rest). `PluginResult` gains `globals`, `shadows`, `warning`. Runtime warnings now include
+  "plugin X replaces the built-in function …", "… is not pinned to a version", and the no-Web-MIDI warning: show `kind: 'warning'` errors.
+* **MIDI.** Optional: `midiBanner(sketch, { onController })` returns the "Web MIDI isn't available…" banner (or null) to put near your preview;
+  `midiChip({ kind, index, channel?, min?, max? })` / `parseMidiChip` for MIDI bindings (a `js` value such as `cc(1).range(0, 1)`).
+* **Diagnostics link.** `diagnosticsHref(appName)` → the harness's Diagnostics tab (`harness/?tab=diag`).
+
+See docs/audio.md, docs/plugins.md and docs/midi.md.
+
 ## 8. Fast numeric edits
 
 On a numeric drag call `rt.setLive(liveId(call.id, argIndex), value)` for instant feedback (no recompile, coalesced to one message per frame), update the IR with `setArg`, and `autosave`. `rt.run(sketch)` after any edit is always correct: when only numbers changed it detects identical code and just updates the live table (`RunResult.recompiled === false`). Only plain `num` args of catalog-known `float` inputs are live; everything else recompiles. See `docs/live-edit.md`.

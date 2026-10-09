@@ -10,6 +10,9 @@ import {
   importText,
   injectStyles,
   liveId,
+  midiBanner,
+  mountMidiController,
+  mountPluginManager,
   mountAbout,
   mountSwitcher,
   mountUpdateToast,
@@ -65,19 +68,24 @@ const top = h('div', { class: 'top' }, switcherHost, nameInput, runBtn, diceBtn,
 
 const banner = h('div', { class: 'banner', hidden: true, id: 'trust-banner' })
 const camBanner = h('div', { class: 'banner', hidden: true, id: 'camera-banner' })
+const midiHost = h('div', { id: 'midi-banner-host' })
 const textarea = h('textarea', { class: 'code', id: 'code', spellcheck: false, autocapitalize: 'off', autocomplete: 'off', 'aria-label': 'Hydra code' }) as HTMLTextAreaElement
 const status = h('div', { class: 'status', id: 'status' })
 const facts = h('div', { class: 'status', id: 'facts' })
 const corpusSel = h('select', { id: 'corpus', 'aria-label': 'Load a corpus sketch' }, h('option', { value: '' }, 'load corpus sketch…'), ...corpus.map((c) => h('option', { value: c.name }, c.name))) as HTMLSelectElement
-const codeTab = h('div', { class: 'tab on', id: 'tab-code' }, banner, camBanner, textarea, h('div', { class: 'row' }, corpusSel), facts, status)
+const codeTab = h('div', { class: 'tab on', id: 'tab-code' }, banner, camBanner, midiHost, textarea, h('div', { class: 'row' }, corpusSel), facts, status)
 const knobsTab = h('div', { class: 'tab', id: 'tab-knobs' })
 const diagTab = h('div', { class: 'tab', id: 'tab-diag' })
 const audioTab = h('div', { class: 'tab', id: 'tab-audio' })
+const pluginsTab = h('div', { class: 'tab', id: 'tab-plugins' })
+const midiTab = h('div', { class: 'tab', id: 'tab-midi' })
 const tabs = [
   ['code', 'Code', codeTab],
   ['knobs', 'Numbers', knobsTab],
   ['diag', 'Diagnostics', diagTab],
   ['audio', 'Audio lab', audioTab],
+  ['plugins', 'Plugins', pluginsTab],
+  ['midi', 'MIDI', midiTab],
 ] as const
 const tabBar = h('div', { class: 'tabs', role: 'tablist' })
 for (const [id, label, el] of tabs) {
@@ -95,7 +103,7 @@ for (const [id, label, el] of tabs) {
 const stage = h('div', { class: 'stage', id: 'stage' })
 const errorsEl = h('div', { class: 'errors', id: 'errors', 'aria-live': 'polite' })
 const main = h('div', { class: 'main' },
-  h('div', { class: 'panel' }, tabBar, h('div', { style: 'min-height:0;overflow:hidden;display:grid' }, codeTab, knobsTab, diagTab, audioTab)),
+  h('div', { class: 'panel' }, tabBar, h('div', { style: 'min-height:0;overflow:hidden;display:grid' }, codeTab, knobsTab, diagTab, audioTab, pluginsTab, midiTab)),
   h('div', { class: 'stage-wrap' }, stage, errorsEl),
 )
 const foot = h('div', { class: 'foot' })
@@ -103,6 +111,36 @@ root.append(top, main, foot)
 mountAbout(foot, { build: typeof __COMMIT__ === 'string' && __COMMIT__ ? `commit ${__COMMIT__.slice(0, 7)}` : 'local build' })
 mountDiagnostics(diagTab, () => isolation)
 mountAudioLab(audioTab)
+mountMidiController(midiTab)
+midiTab.append(h('p', { class: 'status' }, 'Every preview on this page receives these messages through its Web MIDI stand-in, so hydra-midi sketches respond even where the browser has no Web MIDI (iPadOS Safari). Load the hydra-midi plugin (Plugins tab), then for example: await midi.start({ input: "*", channel: "*" }); osc(cc(1).range(1, 60)).out()'))
+
+// ------------------------------------------------------------------ plugins tab: manager + the functions each plugin added
+
+// the manager edits the open sketch in place (no reload): new plugin list → save, show, run
+const sketchAccess = {
+  get: () => sketch,
+  set: async (s: Sketch) => {
+    persist(s)
+    showSketchText(s)
+    await runNow(true)
+  },
+}
+const fnList = h('div', { id: 'fn-list', class: 'status' })
+function renderFnList() {
+  fnList.textContent = ''
+  for (const g of catalog.groups()) {
+    if (g.origin === 'builtin') {
+      fnList.append(h('div', {}, h('strong', {}, 'built-in: '), `${g.fns.length} functions`))
+      continue
+    }
+    fnList.append(h('div', { 'data-origin': g.origin }, h('strong', {}, `${g.origin}: `), g.fns.map((f) => `${f.name} (${f.type})`).join(', ')))
+  }
+}
+catalog.subscribe(() => renderFnList())
+renderFnList()
+const pluginMgrHost = h('div', {})
+pluginsTab.append(pluginMgrHost, h('h3', {}, 'Functions in this page’s catalog'), fnList)
+let pluginMgr: ReturnType<typeof mountPluginManager> | undefined
 mountUpdateToast()
 
 // ------------------------------------------------------------------ errors
@@ -144,10 +182,17 @@ function updateCameraBanner() {
   )
 }
 
+function updateMidiBanner() {
+  midiHost.textContent = ''
+  const b = midiBanner(sketch, { onController: () => (document.getElementById('tabbtn-midi') as HTMLElement | null)?.click() })
+  if (b) midiHost.append(b)
+}
+
 async function runNow(force = false) {
   const need = !trusted && (await lib.needsTrust(sketch))
   banner.hidden = !need
   updateCameraBanner()
+  updateMidiBanner()
   const r = await rt.run(sketch, { safe: need || safeToggle.checked, force })
   const problems = validate(sketch, catalog).filter((p) => p.severity !== 'info')
   status.textContent = `${r.ok ? 'ran' : 'failed'} · ${r.recompiled ? 'recompiled' : 'numbers only'} · ${r.ms.toFixed(0)} ms · ${isolation}${r.skipped.length ? ` · ${r.skipped.length} skipped (safe mode)` : ''}${problems.length ? ` · ${problems.length} problem(s): ${problems[0].message}` : ''}`
@@ -266,11 +311,13 @@ async function boot() {
   if (!s) s = await lib.create('Untitled', 'osc(20, 0.1, 0.8).out()\n')
   if (location.hash !== routeHash(s.id)) history.replaceState(null, '', routeHash(s.id))
   sketch = s
-  mountSwitcher(switcherHost, { current: APP, sketchId: s.id })
+  mountSwitcher(switcherHost, { current: APP, sketchId: s.id, sketchAccess })
+  pluginMgr = mountPluginManager(pluginMgrHost, { sketch: sketchAccess })
   sketch = withMeta(sketch, APP, { lastOpened: Date.now() })
   showSketchText(sketch)
   renderBanner()
-  const tab = prefs.get<string>('tab')
+  // ?tab=diag (the "Diagnostics" links from other apps and the MIDI banner) wins over the remembered tab
+  const tab = new URLSearchParams(location.search).get('tab') ?? prefs.get<string>('tab')
   if (tab && tab !== 'code') (document.getElementById(`tabbtn-${tab}`) as HTMLElement | null)?.click()
   await startRuntime()
   await runNow()
@@ -286,6 +333,7 @@ async function boot() {
         sketch = ns
         trusted = false
         showSketchText(ns)
+        void pluginMgr?.refresh()
         await runNow(true)
         renderKnobs()
       }

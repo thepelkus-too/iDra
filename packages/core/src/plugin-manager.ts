@@ -73,7 +73,7 @@ export async function probePlugin(ref: PluginRef, opts: { timeoutMs?: number } =
   const host = h('div', { 'aria-hidden': 'true', style: 'position:fixed;left:-9999px;top:0;width:64px;height:64px;overflow:hidden;opacity:0;pointer-events:none' })
   document.body.appendChild(host)
   const cat = Catalog.fromHydra()
-  const rt = createRuntime(host, { width: 64, height: 64, catalog: cat, allowCamera: false, requestTimeoutMs: opts.timeoutMs ?? 15000 })
+  const rt = createRuntime(host, { midi: null, width: 64, height: 64, catalog: cat, allowCamera: false, requestTimeoutMs: opts.timeoutMs ?? 15000 })
   try {
     await rt.ready
     const r = await rt.loadPlugin(ref)

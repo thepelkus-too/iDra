@@ -60,6 +60,8 @@ describe('registry', () => {
     expect(pluginIdFromUrl('https://cdn.jsdelivr.net/npm/hydra-midi@0.4.6/dist/index.js')).toBe('hydra-midi')
     expect(pluginIdFromUrl('https://cdn.jsdelivr.net/gh/geikha/hyper-hydra@latest/hydra-blend.js')).toBe('hydra-blend')
     expect(pluginIdFromUrl('https://unpkg.com/@scope/thing@1.0.0/index.js')).toBe('scope-thing')
+    expect(pluginIdFromUrl('http://127.0.0.1:8080/hydra-midi@0.4.6/dist/index.js')).toBe('hydra-midi')
+    expect(pluginIdFromUrl('https://example.com/e2e-plugin@1.0.0/plugin.js')).toBe('e2e-plugin')
     expect(versionFromUrl('https://cdn.jsdelivr.net/npm/hydra-midi@0.4.6/dist/index.js')).toBe('0.4.6')
     expect(versionFromUrl('https://cdn.jsdelivr.net/gh/geikha/hyper-hydra@latest/hydra-blend.js')).toBe('latest')
     expect(isPinnedScriptUrl('https://cdn.jsdelivr.net/gh/geikha/hyper-hydra@latest/hydra-blend.js')).toBe(false)

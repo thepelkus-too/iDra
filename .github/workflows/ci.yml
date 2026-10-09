@@ -22,3 +22,12 @@ jobs:
         run: |
           npx playwright install --with-deps chromium
           node scripts/e2e.mjs --skip-build
+      - name: e2e audio, plugins, MIDI (Chromium, fake devices, local servers)
+        run: node scripts/e2e-audio-plugins.mjs --skip-build
+      - name: iPad-viewport screenshots and metrics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ipad-e2e
+          path: test-results/ipad
+          if-no-files-found: ignore

@@ -8,7 +8,7 @@ import type { ErrorKind, FrameToHost, HostToFrame, Transport } from './protocol'
 import { Bridge } from './bridge'
 import { getScriptCache, ScriptCache, verifyIntegrity } from './script-cache'
 import { emitPluginLoaded } from '../plugins'
-import { usesMidi, webMidiAvailable, type MidiHub } from '../midi'
+import { getMidiHub, usesMidi, webMidiAvailable, type MidiHub } from '../midi'
 
 export type Isolation = 'iframe' | 'inline'
 
@@ -37,8 +37,11 @@ export interface RuntimeOptions {
    * sandboxed frame, so inline runs report a warning and continue without them. Tests set it.
    */
   pluginsInHostPage?: boolean
-  /** page-wide MIDI hub (`getMidiHub()`): its inputs and messages are forwarded into the frame's Web MIDI shim */
-  midi?: MidiHub
+  /**
+   * MIDI hub whose inputs and messages are forwarded into the frame's Web MIDI shim. Default: the page-wide
+   * `getMidiHub()`, so the on-screen controller and forwarded devices reach every preview. `null` turns forwarding off.
+   */
+  midi?: MidiHub | null
 }
 
 export interface RunOptions {
@@ -183,6 +186,7 @@ export function createRuntime(container: HTMLElement, opts: RuntimeOptions = {})
   const height = opts.height ?? 720
   const timeoutMs = opts.requestTimeoutMs ?? 15000
   const scripts = opts.scriptCache ?? getScriptCache()
+  const midiHub = opts.midi === null ? undefined : (opts.midi ?? getMidiHub())
   const hostPagePlugins = isolation === 'inline' && !opts.transport && !opts.pluginsInHostPage
   const warnedLatest = new Set<string>()
   const shadowLog: string[] = []
@@ -253,7 +257,7 @@ export function createRuntime(container: HTMLElement, opts: RuntimeOptions = {})
         break
       case 'ready':
         if (opts.audio) send({ t: 'audioSettings', settings: opts.audio.settings })
-        if (opts.midi) send({ t: 'midiInputs', inputs: opts.midi.inputs() })
+        if (midiHub) send({ t: 'midiInputs', inputs: midiHub.inputs() })
         readyResolve()
         break
       case 'fatal':
@@ -349,7 +353,7 @@ export function createRuntime(container: HTMLElement, opts: RuntimeOptions = {})
     unsubs.push(a.onSettings((s) => send({ t: 'audioSettings', settings: s })))
   }
   function wireMidi() {
-    const hub = opts.midi
+    const hub = midiHub
     if (!hub) return
     unsubs.push(hub.onInputs((inputs) => send({ t: 'midiInputs', inputs })))
     unsubs.push(hub.onMessage((input, data) => send({ t: 'midi', input, data })))
@@ -436,7 +440,7 @@ export function createRuntime(container: HTMLElement, opts: RuntimeOptions = {})
       if (!safe && !midiWarned.has(sk.id) && !webMidiAvailable() && usesMidi(sk)) {
         // never fail silently: the sketch's MIDI inputs would just sit at 0
         midiWarned.add(sk.id)
-        emitError('warning', `Web MIDI isn't available in this browser, so MIDI inputs won't respond${opts.midi ? '; the on-screen controller (⇄ menu › MIDI controller) still sends MIDI' : ''}. Diagnostics shows what this browser supports.`)
+        emitError('warning', `Web MIDI isn't available in this browser, so MIDI inputs won't respond${midiHub ? '; the on-screen controller (⇄ menu › MIDI controller) still sends MIDI' : ''}. Diagnostics shows what this browser supports.`)
       }
       const full = toRunnable(sk, { safe, live: true, catalog: cat })
       for (const s of sk.stmts) if (s.k === 'source') sources.set(s.slot, srcKey(s))
