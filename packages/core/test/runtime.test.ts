@@ -40,7 +40,8 @@ const mk = (extra: Record<string, unknown> = {}) => {
   document.body.appendChild(container)
   const catalog = Catalog.fromHydra()
   MSG_LOG = []
-  const opts: any = MODE === 'inline' ? { isolation: 'inline', hydraLoader: async () => MockHydra } : { transport: loopbackTransport(MSG_LOG) }
+  // inline mode refuses plugins by default (they never run in the host page); these tests opt in to exercise the bridge
+  const opts: any = MODE === 'inline' ? { isolation: 'inline', hydraLoader: async () => MockHydra, pluginsInHostPage: true } : { transport: loopbackTransport(MSG_LOG) }
   const rt = createRuntime(container, { catalog, ...opts, ...extra } as any)
   return { rt, catalog, container }
 }

@@ -9,6 +9,7 @@ import {
   type Value,
 } from './ir'
 import { isSafeExpression } from './safe-expr'
+import { loadScriptUrls } from './plugin-id'
 
 // ---------------------------------------------------------------- pieces with relative marks
 
@@ -339,7 +340,7 @@ export function toCodeWithMap(sketch: Sketch, opts: CodegenOptions = {}): { code
   const ctx = makeCtx(sketch, opts)
   const pieces: Piece[] = []
   let prev: Stmt | undefined
-  let code = ''
+  let code = pluginPreamble(sketch)
   const map: CodeMap = {}
   sketch.stmts.forEach((s, i) => {
     const sep = !ctx.fresh && s.src ? (i === 0 ? s.src.before : s.src.before) : defaultSep(prev, s)
@@ -352,6 +353,24 @@ export function toCodeWithMap(sketch: Sketch, opts: CodegenOptions = {}): { code
   })
   const tail = !ctx.fresh && sketch.src ? sketch.src.tail : sketch.stmts.length ? '\n' : ''
   return { code: code + tail, map }
+}
+
+/**
+ * Lines for plugins added through the plugin manager (`sketch.plugins`), so the exported text runs on hydra.ojack.xyz:
+ * `await loadScript('<url>')` per URL plugin, unless a statement already loads that URL (imported text keeps its own
+ * lines byte-for-byte), and a comment for pasted-code plugins, which plain text cannot carry.
+ */
+export function pluginPreamble(sketch: Sketch): string {
+  const plugins = sketch.plugins ?? []
+  if (!plugins.length) return ''
+  const already = new Set<string>()
+  for (const s of sketch.stmts) if (s.k === 'raw') for (const u of loadScriptUrls(s.code)) already.add(u)
+  let out = ''
+  for (const p of plugins) {
+    if (p.url && !already.has(p.url)) out += `await loadScript(${quote(p.url)})\n`
+    else if (!p.url && p.src !== undefined) out += `// plugin "${(p.name || p.id).replace(/[\r\n]+/g, ' ')}" is pasted code saved with the sketch; plain text cannot include it\n`
+  }
+  return out && sketch.stmts.length ? out + '\n' : out
 }
 
 export function toCode(sketch: Sketch, opts: CodegenOptions = {}): string {

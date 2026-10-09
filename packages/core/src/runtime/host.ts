@@ -6,7 +6,9 @@ import { contentHash, type PluginRef, type Sketch, type Stmt } from '../ir'
 import type { AudioEngine } from '../audio'
 import type { ErrorKind, FrameToHost, HostToFrame, Transport } from './protocol'
 import { Bridge } from './bridge'
-import { ScriptCache, verifyIntegrity } from './script-cache'
+import { getScriptCache, ScriptCache, verifyIntegrity } from './script-cache'
+import { emitPluginLoaded } from '../plugins'
+import { usesMidi, webMidiAvailable, type MidiHub } from '../midi'
 
 export type Isolation = 'iframe' | 'inline'
 
@@ -30,6 +32,13 @@ export interface RuntimeOptions {
   requestTimeoutMs?: number
   /** allow the frame to use the camera (iframe `allow` attribute). Default true. */
   allowCamera?: boolean
+  /**
+   * Inline mode only: let plugins and `loadScript` run in this (host) page. Default false: plugin code runs only in the
+   * sandboxed frame, so inline runs report a warning and continue without them. Tests set it.
+   */
+  pluginsInHostPage?: boolean
+  /** page-wide MIDI hub (`getMidiHub()`): its inputs and messages are forwarded into the frame's Web MIDI shim */
+  midi?: MidiHub
 }
 
 export interface RunOptions {
@@ -59,6 +68,14 @@ export interface PluginResult {
   error?: string
   delta: CatalogDelta[]
   from?: 'network' | 'cache' | 'inline'
+  /** JavaScript globals the plugin added (JS-only plugins such as hydra-midi: `midi`, `note`, `cc`) */
+  globals?: string[]
+  /** existing functions (built-ins or another plugin's) that this plugin replaced */
+  shadows?: string[]
+  /** hex SHA-256 of the evaluated code, when known */
+  hash?: string
+  /** e.g. "@latest: may change" */
+  warning?: string
 }
 
 export interface Runtime {
@@ -165,7 +182,11 @@ export function createRuntime(container: HTMLElement, opts: RuntimeOptions = {})
   const width = opts.width ?? 1280
   const height = opts.height ?? 720
   const timeoutMs = opts.requestTimeoutMs ?? 15000
-  const scripts = opts.scriptCache ?? new ScriptCache()
+  const scripts = opts.scriptCache ?? getScriptCache()
+  const hostPagePlugins = isolation === 'inline' && !opts.transport && !opts.pluginsInHostPage
+  const warnedLatest = new Set<string>()
+  const shadowLog: string[] = []
+  const midiWarned = new Set<string>()
 
   const errorListeners = new Set<(e: RuntimeError) => void>()
   const errors: RuntimeError[] = []
@@ -232,6 +253,7 @@ export function createRuntime(container: HTMLElement, opts: RuntimeOptions = {})
         break
       case 'ready':
         if (opts.audio) send({ t: 'audioSettings', settings: opts.audio.settings })
+        if (opts.midi) send({ t: 'midiInputs', inputs: opts.midi.inputs() })
         readyResolve()
         break
       case 'fatal':
@@ -252,12 +274,25 @@ export function createRuntime(container: HTMLElement, opts: RuntimeOptions = {})
         break
       case 'catalog':
         delta.push(...m.delta)
+        for (const d of m.delta) {
+          // a plugin defining a name that exists already (a built-in, or another plugin's) replaces it: say so
+          const prev = cat.get(d.name)
+          if (prev && prev.origin !== d.origin) {
+            shadowLog.push(d.name)
+            emitError('warning', `${d.origin.replace(/^plugin:/, 'plugin ')} replaces ${prev.origin === 'builtin' ? 'the built-in' : `${prev.origin.replace(/^plugin:/, '')}’s`} function "${d.name}"`)
+          }
+        }
         cat.refresh(m.delta)
         break
       case 'fetch':
         void (async () => {
           try {
+            if (hostPagePlugins) throw new Error('loadScript is disabled in inline mode (no isolation); switch the preview back to the sandboxed frame')
             const r = await scripts.get(m.url)
+            if (r.warning && !warnedLatest.has(m.url)) {
+              warnedLatest.add(m.url)
+              emitError('warning', r.warning)
+            }
             send({ t: 'fetched', id: m.id, ok: true, text: r.text })
           } catch (e: any) {
             send({ t: 'fetched', id: m.id, ok: false, error: String(e?.message ?? e) })
@@ -309,8 +344,15 @@ export function createRuntime(container: HTMLElement, opts: RuntimeOptions = {})
   function wireAudio() {
     const a = opts.audio
     if (!a) return
+    // one small message per analysis frame: 24 Bark bands + total (the frame applies Hydra's bins/cutoff/scale/smooth)
     unsubs.push(a.onFrame((f) => send({ t: 'audio', vol: f.vol, specific: f.specific })))
     unsubs.push(a.onSettings((s) => send({ t: 'audioSettings', settings: s })))
+  }
+  function wireMidi() {
+    const hub = opts.midi
+    if (!hub) return
+    unsubs.push(hub.onInputs((inputs) => send({ t: 'midiInputs', inputs })))
+    unsubs.push(hub.onMessage((input, data) => send({ t: 'midi', input, data })))
   }
 
   const startP = start()
@@ -319,6 +361,7 @@ export function createRuntime(container: HTMLElement, opts: RuntimeOptions = {})
     readyReject?.(e)
   })
   wireAudio()
+  wireMidi()
 
   // ---- pointer forwarding
   let pointerOn: ((ev: PointerEvent) => void) | undefined
@@ -359,12 +402,12 @@ export function createRuntime(container: HTMLElement, opts: RuntimeOptions = {})
   // ---- run
   const srcKey = (s: Extract<Stmt, { k: 'source' }>) => JSON.stringify([s.init.kind, s.init.arg ?? null, s.init.argsSrc ?? null])
 
-  async function ensurePlugins(sketch: Sketch): Promise<string | undefined> {
+  /** Load the sketch's plugins in order. A failure is reported (with the URL) and the sketch runs without that plugin. */
+  async function ensurePlugins(sketch: Sketch): Promise<void> {
     for (const p of sketch.plugins ?? []) {
       const r = await loadPlugin(p)
-      if (!r.ok) return `plugin "${p.name || p.id}": ${r.error}`
+      if (!r.ok) emitError('runtime', `plugin "${p.name || p.id}"${p.url ? ` (${p.url})` : ''} did not load: ${r.error}. The sketch runs without it; its functions show as unknown calls.`)
     }
-    return undefined
   }
 
   async function execute(input: Sketch | string, o: RunOptions): Promise<RunResult> {
@@ -389,9 +432,11 @@ export function createRuntime(container: HTMLElement, opts: RuntimeOptions = {})
       code = key = rawText
     } else {
       const sk = sketch!
-      if (!safe) {
-        const err = await ensurePlugins(sk)
-        if (err) emitError('runtime', err)
+      if (!safe) await ensurePlugins(sk)
+      if (!safe && !midiWarned.has(sk.id) && !webMidiAvailable() && usesMidi(sk)) {
+        // never fail silently: the sketch's MIDI inputs would just sit at 0
+        midiWarned.add(sk.id)
+        emitError('warning', `Web MIDI isn't available in this browser, so MIDI inputs won't respond${opts.midi ? '; the on-screen controller (⇄ menu › MIDI controller) still sends MIDI' : ''}. Diagnostics shows what this browser supports.`)
       }
       const full = toRunnable(sk, { safe, live: true, catalog: cat })
       for (const s of sk.stmts) if (s.k === 'source') sources.set(s.slot, srcKey(s))
@@ -456,24 +501,41 @@ export function createRuntime(container: HTMLElement, opts: RuntimeOptions = {})
 
   async function loadPlugin(ref: PluginRef): Promise<PluginResult> {
     await ready
+    const fail = (error: string, extra: Partial<PluginResult> = {}): PluginResult => {
+      emitPluginLoaded({ id: ref.id, url: ref.url, functions: [], globals: [], shadows: [], error })
+      return { ok: false, error, delta: [], ...extra }
+    }
+    // plugin code is third-party: it never runs in the host page
+    if (hostPagePlugins) return fail('plugins run only in the sandboxed preview, not in inline mode (no isolation)')
     try {
       let src = ref.src
       let from: PluginResult['from'] = 'inline'
+      let warning: string | undefined
       if (src === undefined) {
-        if (!ref.url) return { ok: false, error: 'plugin has neither src nor url', delta: [] }
+        if (!ref.url) return fail('plugin has neither src nor url')
         const r = await scripts.get(ref.url)
         src = r.text
         from = r.from
+        warning = r.warning
+        if (warning && !warnedLatest.has(ref.url)) {
+          warnedLatest.add(ref.url)
+          emitError('warning', warning)
+        }
       }
-      if (ref.integrity && !(await verifyIntegrity(src, ref.integrity))) return { ok: false, error: 'integrity check failed', delta: [], from }
+      if (ref.integrity && !(await verifyIntegrity(src, ref.integrity))) return fail('its content changed since you approved it (integrity check failed)', { from })
       const hash = contentHash(src)
-      if (loadedPlugins.get(ref.id) === hash) return { ok: true, delta: [], from }
-      const out = await request<{ delta: CatalogDelta[] }>((id) => ({ t: 'plugin', id, pluginId: ref.id, name: ref.name, src: src! }))
+      if (loadedPlugins.get(ref.id) === hash) return { ok: true, delta: [], from, warning }
+      const shadowStart = shadowLog.length
+      const out = await request<{ delta: CatalogDelta[]; globals?: string[] }>((id) => ({ t: 'plugin', id, pluginId: ref.id, name: ref.name, src: src!, url: ref.url }))
       loadedPlugins.set(ref.id, hash)
       lastKey = undefined // functions changed: next run must re-evaluate
-      return { ok: true, delta: out?.delta ?? [], from }
+      const d = out?.delta ?? []
+      const shadows = shadowLog.slice(shadowStart)
+      const globals = out?.globals ?? []
+      emitPluginLoaded({ id: ref.id, url: ref.url, functions: d.map((x) => x.name), globals, shadows, from })
+      return { ok: true, delta: d, from, globals, shadows, warning }
     } catch (e: any) {
-      return { ok: false, error: String(e?.message ?? e), delta: [] }
+      return fail(String(e?.message ?? e))
     }
   }
 
