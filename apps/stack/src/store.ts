@@ -87,7 +87,7 @@ export class Store {
     const prev = this.sketch
     if (next === prev) return
     const source = opts.source ?? 'edit'
-    if (!opts.view && source === 'edit') {
+    if (!opts.view && (source === 'edit' || source === 'code')) {
       const now = Date.now()
       const merge = !!opts.coalesce && this.lastKey === opts.coalesce && now - this.lastAt < this.coalesceMs && this.past.length > 0
       if (!merge) {
@@ -114,7 +114,7 @@ export class Store {
     this.lastKey = undefined
   }
 
-  private restore(from: Sketch, source: 'undo' | 'redo'): Sketch {
+  private restore(from: Sketch): Sketch {
     // only the content comes back; names, plugins and every app's meta stay as they are now
     return { ...this.sketch, stmts: from.stmts, src: from.src }
   }
@@ -124,7 +124,7 @@ export class Store {
     if (!snap) return false
     this.future.push(this.sketch)
     this.lastKey = undefined
-    this.commit(this.restore(snap, 'undo'), { source: 'undo' })
+    this.commit(this.restore(snap), { source: 'undo' })
     return true
   }
   redo(): boolean {
@@ -132,7 +132,7 @@ export class Store {
     if (!snap) return false
     this.past.push(this.sketch)
     this.lastKey = undefined
-    this.commit(this.restore(snap, 'redo'), { source: 'redo' })
+    this.commit(this.restore(snap), { source: 'redo' })
     return true
   }
 

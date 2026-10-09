@@ -209,6 +209,8 @@ export class Runner {
   }
 
   private async runOnce(sketch: Sketch, force: boolean): Promise<void> {
+    // edits that arrive while the runtime is still starting are picked up by the run that follows start()
+    if (!this.rt) return
     const { safe } = await this.decide(sketch)
     const d = describe(sketch)
     if (!d.usesCamera) this.cameraDenied = false

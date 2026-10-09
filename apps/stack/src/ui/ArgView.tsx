@@ -124,7 +124,8 @@ function KindMenu({ a, anchor, close }: { a: ArgInfo; anchor: HTMLElement; close
   const v = getArg(sketch, a.refd) ?? DEFAULT
   const cur = kindOf(v)
   const kinds = a.kinds ?? kindsFor(a.input)
-  const defs = defsBefore(sketch, a.stmtId)
+  // only definitions that fit the slot: texture chains for a texture input, numbers / functions / arrays for a number input
+  const defs = defsBefore(sketch, a.stmtId).filter((d) => (a.input?.type === 'sampler2D' ? d.value.k === 'tex' || d.value.k === 'js' : d.value.k !== 'tex'))
   const def = a.input ? defaultNumber(a.input) : undefined
   const isTexInput = a.input?.type === 'sampler2D'
   const plain = asPlainRef(v)

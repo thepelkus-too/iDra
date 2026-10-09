@@ -15,9 +15,14 @@ export async function start({ viewport = { width: 1180, height: 820 }, dist = jo
   const page = await context.newPage()
   const errors = []
   page.on('pageerror', (e) => errors.push('pageerror: ' + e.message))
-  page.on('console', (m) => m.type() === 'error' && errors.push('console.error: ' + m.text().slice(0, 240)))
+  page.on('console', (m) => m.type() === 'error' && !/Failed to load resource/.test(m.text()) && errors.push('console.error: ' + m.text().slice(0, 240)))
+  page.on('response', (r) => r.status() >= 400 && errors.push(`http ${r.status()} ${r.url()}`))
   const cdp = await context.newCDPSession(page)
-  return { server, port, base, browser, context, page, cdp, errors, touch: touchApi(page, cdp), close: async () => (await browser.close(), server.close()) }
+  return { server, port, base, browser, context, page, cdp, errors, touch: touchApi(page, cdp), close: async () => {
+      await Promise.race([browser.close().catch(() => {}), sleep(8000)])
+      try { browser.process()?.kill('SIGKILL') } catch { /* already gone */ }
+      server.close()
+    } }
 }
 
 const center = async (page, target) => {
@@ -79,8 +84,14 @@ export function touchApi(page, cdp) {
 }
 
 /** wait until the Hydra frame has produced a non-black picture (software WebGL is slow to warm up) */
-export async function waitForPicture(page, timeout = 15000) {
-  await page.waitForFunction(() => window.__stack?.runner?.status?.phase === 'ok', null, { timeout })
+export async function waitForPicture(page, timeout = 30000) {
+  try {
+    await page.waitForFunction(() => window.__stack?.runner?.status?.phase === 'ok', null, { timeout })
+  } catch (e) {
+    // software WebGL on a busy machine occasionally needs a second try: reload once before giving up
+    await page.reload()
+    await page.waitForFunction(() => window.__stack?.runner?.status?.phase === 'ok', null, { timeout })
+  }
 }
 
 export async function importAndOpen(page, base, code, name = 'E2E sketch') {

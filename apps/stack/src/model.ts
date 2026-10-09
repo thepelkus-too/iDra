@@ -196,6 +196,8 @@ function sameKindOk(a: Value | undefined, input: { type: string } | undefined): 
 export function replaceFn(sketch: Sketch, callId: string, fn: string, cat: Catalog = defaultCatalog): Sketch {
   return updateCall(sketch, callId, (c) => {
     if (c.fn === fn) return c
+    // renaming to a name the catalog does not know (a plugin that has not loaded): the arguments are the user's, keep them as written
+    if (!cat.has(fn)) return { ...c, fn }
     const inputs = cat.inputs(fn)
     const fresh = newCall(fn, cat)
     const args: Value[] = inputs.map((inp, i) => (sameKindOk(c.args[i], inp) ? c.args[i] : (fresh.args[i] ?? DEFAULT)))
@@ -262,7 +264,13 @@ export function respace(sketch: Sketch, touched: Iterable<string>): Sketch {
   let changed = false
   const stmts = sketch.stmts.map((s, i) => {
     if (!ids.has(s.id) || !s.src) return s
-    const before = i === 0 ? '' : s.src.before.includes('\n') ? s.src.before : defaultSep(sketch.stmts[i - 1], s)
+    const newlines = (t: string) => (t.match(/\n/g) ?? []).length
+    let before = ''
+    if (i > 0) {
+      // keep the author's spacing when it already separates enough (a blank line between chains), otherwise use core's default
+      const want = defaultSep(sketch.stmts[i - 1], s)
+      before = newlines(s.src.before) >= newlines(want) && (want === ' ' || s.src.before.length > 0) ? s.src.before : want
+    }
     if (before === s.src.before) return s
     changed = true
     return { ...s, src: { ...s.src, before } } as Stmt

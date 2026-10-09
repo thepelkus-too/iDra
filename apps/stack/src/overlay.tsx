@@ -2,7 +2,7 @@
 // render, so an open editor follows the sketch (undo while it is open, the preview updating, ...).
 import type { ComponentChildren } from 'preact'
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks'
-import { ctx, useStore } from './ctx'
+import { useStore } from './ctx'
 
 type Render = (close: () => void) => ComponentChildren
 
@@ -29,7 +29,7 @@ interface ToastSpec {
 }
 
 const state = {
-  popover: null as PopoverSpec | null,
+  popovers: [] as PopoverSpec[],
   sheet: null as SheetSpec | null,
   toasts: [] as ToastSpec[],
   hud: null as { x: number; y: number; text: string; sub?: string } | null,
@@ -47,20 +47,25 @@ const rectOf = (a: Element | RectLike): RectLike => {
   return a
 }
 
-export function openPopover(anchor: Element | RectLike, render: Render, opts: { width?: number; label?: string; onClose?: () => void } = {}): void {
-  closePopover()
-  state.popover = { id: seq++, anchor: rectOf(anchor), render, width: opts.width ?? 320, label: opts.label, onClose: opts.onClose }
+export function openPopover(anchor: Element | RectLike, render: Render, opts: { width?: number; label?: string; onClose?: () => void; stack?: boolean } = {}): void {
+  // a popover opened from another popover (the keypad over a function editor) sits on top of it; anything else replaces what is open
+  if (!opts.stack) closeAllPopovers()
+  state.popovers = [...state.popovers, { id: seq++, anchor: rectOf(anchor), render, width: opts.width ?? 320, label: opts.label, onClose: opts.onClose }]
   emit()
 }
+/** Close the topmost popover. */
 export function closePopover(): void {
-  const p = state.popover
+  const p = state.popovers[state.popovers.length - 1]
   if (!p) return
-  state.popover = null
+  state.popovers = state.popovers.slice(0, -1)
   emit()
   p.onClose?.()
 }
+export function closeAllPopovers(): void {
+  while (state.popovers.length) closePopover()
+}
 export function popoverOpen(): boolean {
-  return !!state.popover
+  return state.popovers.length > 0
 }
 
 export function openSheet(title: string, render: Render, opts: { onClose?: () => void; wide?: boolean } = {}): void {
@@ -102,7 +107,7 @@ export const hud = {
 }
 
 export function closeAllOverlays(): void {
-  closePopover()
+  closeAllPopovers()
   closeSheet()
 }
 
@@ -117,7 +122,7 @@ function useOverlays(): void {
 
 const MARGIN = 8
 
-function Popover({ spec }: { spec: PopoverSpec }) {
+function Popover({ spec, level }: { spec: PopoverSpec; level: number }) {
   const ref = useRef<HTMLDivElement>(null)
   const [pos, setPos] = useState<{ left: number; top: number; maxH: number; arrowX: number; above: boolean }>({ left: 0, top: 0, maxH: 400, arrowX: 20, above: false })
   useStore() // follow the sketch while open
@@ -141,13 +146,13 @@ function Popover({ spec }: { spec: PopoverSpec }) {
   }, [spec.id, spec.anchor, spec.width])
   return (
     <>
-      <div class="scrim clear" data-testid="popover-scrim" onPointerDown={closePopover} />
+      <div class="scrim clear" data-testid="popover-scrim" style={{ zIndex: 2 + level * 2 }} onPointerDown={closePopover} />
       <div
         ref={ref}
         class="popover"
         role="dialog"
         aria-label={spec.label}
-        style={{ left: `${pos.left}px`, top: `${pos.top}px`, width: `${Math.min(spec.width, window.innerWidth - MARGIN * 2)}px`, maxHeight: `${pos.maxH}px` }}
+        style={{ zIndex: 3 + level * 2, left: `${pos.left}px`, top: `${pos.top}px`, width: `${Math.min(spec.width, window.innerWidth - MARGIN * 2)}px`, maxHeight: `${pos.maxH}px` }}
       >
         <div class={`arrow ${pos.above ? 'down' : 'up'}`} style={{ left: `${pos.arrowX}px` }} />
         {spec.render(closePopover)}
@@ -179,18 +184,20 @@ export function OverlayHost() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        if (state.popover) closePopover()
+        if (state.popovers.length) closePopover()
         else if (state.sheet) closeSheet()
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [])
-  const { popover, sheet, toasts, hud: h } = state
+  const { popovers, sheet, toasts, hud: h } = state
   return (
     <div class="overlays">
       {sheet && <Sheet key={sheet.id} spec={sheet} />}
-      {popover && <Popover key={popover.id} spec={popover} />}
+      {popovers.map((p, i) => (
+        <Popover key={p.id} spec={p} level={i} />
+      ))}
       {h && (
         <div class="hud" style={{ left: `${h.x}px`, top: `${h.y}px` }}>
           <b>{h.text}</b>
@@ -220,4 +227,3 @@ export function OverlayHost() {
   )
 }
 
-void ctx

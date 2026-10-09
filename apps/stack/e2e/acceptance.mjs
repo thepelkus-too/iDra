@@ -4,8 +4,7 @@
 // Frame-time numbers are SOFTWARE rendered (no GPU in the build container) and say nothing about an iPad.
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { mkdirSync, writeFileSync, cpSync, mkdtempSync, readFileSync, readdirSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { codeOf, importAndOpen, root, sleep, start, waitForPicture } from './lib.mjs'
@@ -17,14 +16,34 @@ if (!process.argv.includes('--skip-build')) execFileSync('npm', ['run', 'build:a
 
 const only = process.argv.find((a) => a.startsWith('--only='))?.slice(7).split(',')
 const want = (id) => !only || only.includes(id)
+if (!only) for (const f of readdirSync(shots)) rmSync(join(shots, f), { recursive: true, force: true })
 const results = []
 const notes = []
+const sessions = []
+/** start a browser session that `block` can clean up if the block dies half way */
+const startS = async (o) => {
+  const S = await start(o)
+  sessions.push(S)
+  return S
+}
+/** a block of checks sharing browsers: a crash in one block (a lost browser, a missing selector in setup code) fails that block, not the run */
+async function block(id, fn) {
+  try {
+    await fn()
+  } catch (e) {
+    results.push({ id: `${id}*`, title: `block ${id} aborted`, ok: false, ms: 0, note: String(e.message).split('\n')[0] })
+    console.log(`  ✗ block ${id} aborted: ${String(e.stack || e).split('\n').slice(0, 4).join('\n      ')}`)
+  } finally {
+    for (const S of sessions.splice(0)) await S.close().catch(() => {})
+  }
+}
 let current = ''
 async function check(id, title, fn) {
   current = id
   const t0 = Date.now()
   try {
-    const note = await fn()
+    // a step that hangs (a stuck renderer, a lost CDP call) fails after two minutes instead of stalling the whole run
+    const note = await Promise.race([fn(), new Promise((_, rej) => setTimeout(() => rej(new Error('timed out after 120 s')), 120000))])
     results.push({ id, title, ok: true, ms: Date.now() - t0, note })
     console.log(`  ✓ ${id} ${title}${note ? ` — ${note}` : ''}`)
   } catch (e) {
@@ -32,9 +51,8 @@ async function check(id, title, fn) {
     console.log(`  ✗ ${id} ${title}\n      ${String(e.stack || e).split('\n').slice(0, 5).join('\n      ')}`)
   }
 }
-const shot = async (page, name) => page.screenshot({ path: join(shots, name) })
-const { canonicalSketchOf } = { canonicalSketchOf: null }
-void canonicalSketchOf
+// JPEG keeps the screenshot set small enough to live in the repository
+const shot = async (page, name) => page.screenshot({ path: join(shots, name.replace(/\.png$/, '.jpg')), type: 'jpeg', quality: 82 })
 
 const TARGET = 'osc(20, 0.1, 0.8)\n  .rotate(0.8)\n  .modulate(noise(3), 0.1)\n  .out()\n'
 
@@ -67,8 +85,8 @@ async function blank(S, name = 'Scratch') {
 }
 
 // ============================================================================================================ 1. build with touch
-for (const [label, vp] of want('1') ? [['landscape', { width: 1180, height: 820 }], ['portrait', { width: 820, height: 1180 }]] : []) {
-  const S = await start({ viewport: vp })
+for (const [label, vp] of want('1') ? [['landscape', { width: 1180, height: 820 }], ['portrait', { width: 820, height: 1180 }]] : []) await block('1', async () => {
+  const S = await startS({ viewport: vp })
   await check('1', `build ${TARGET.replace(/\s+/g, '')} with touch only (${label} ${vp.width}×${vp.height})`, async () => {
     const { page, touch } = S
     await blank(S)
@@ -102,11 +120,11 @@ for (const [label, vp] of want('1') ? [['landscape', { width: 1180, height: 820 
     return code.replace(/\s+/g, ' ').trim()
   })
   await S.close()
-}
+})
 
 // ============================================================================================================ 2. scrub
-if (want('2')) {
-  const S = await start()
+if (want('2')) await block('2', async () => {
+  const S = await startS()
   const { page, touch } = S
   await importAndOpen(page, S.base, TARGET)
   await waitForPicture(page)
@@ -126,42 +144,71 @@ if (want('2')) {
       const loop = (t) => { window.__m.frames.push(t - last); last = t; window.__m.raf = requestAnimationFrame(loop) }
       window.__m.raf = requestAnimationFrame(loop)
       window.__m.before = { ...rt.stats }
+      window.__m.long = []
+      // our own synchronous cost per edit: store.commit includes every change listener (autosave, runner, thumbnails)
+      window.__m.commit = []
+      const st = window.__stack.store
+      const commit = st.commit.bind(st)
+      st.commit = (...a) => { const t = performance.now(); commit(...a); window.__m.commit.push(performance.now() - t) }
+      try { new PerformanceObserver((l) => l.getEntries().forEach((e) => window.__m.long.push(e.duration))).observe({ entryTypes: ['longtask'] }) } catch { /* not supported */ }
     })
+    // baseline: the same page idle for 2 s, so the cost of scrubbing is read against what software WebGL costs on its own
+    await S.cdp.send('Performance.enable')
+    const metric = async () => Object.fromEntries((await S.cdp.send('Performance.getMetrics')).metrics.map((x) => [x.name, x.value]))
+    const m0 = await metric()
+    await sleep(2000)
+    const m1 = await metric()
+    const idle = await page.evaluate(() => window.__m.frames.slice(5).slice())
+    const idleLong = await page.evaluate(() => window.__m.long.splice(0).length)
+    await page.evaluate(() => { window.__m.frames.length = 0 })
     const pic0 = await page.evaluate(() => window.__stack.runner.rt.screenshot({ type: 'image/jpeg', quality: 0.5 }))
     await touch.raw('touchStart', [start0])
     const path = []
     for (let i = 0; i < 180; i++) path.push({ x: start0.x + 140 * Math.sin(i / 14), y: start0.y })
     for (const p of path) { await touch.raw('touchMove', [p]); await sleep(8) }
     await touch.raw('touchEnd', [])
+    const m2 = await metric()
     await sleep(300)
     const pic1 = await page.evaluate(() => window.__stack.runner.rt.screenshot({ type: 'image/jpeg', quality: 0.5 }))
     const m = await page.evaluate(() => {
       cancelAnimationFrame(window.__m.raf)
       const rt = window.__stack.runner.rt
-      const f = window.__m.frames.slice(5)
-      f.sort((a, b) => a - b)
       const live = window.__m.live.slice().sort((a, b) => a - b)
       return {
-        frames: f.length, medianMs: f[Math.floor(f.length / 2)], p95Ms: f[Math.floor(f.length * 0.95)], maxMs: f[f.length - 1],
+        frames: window.__m.frames.slice(2),
+        long: window.__m.long.slice(),
+        commit: window.__m.commit.slice().sort((a, b) => a - b),
         liveCalls: live.length, liveP95: live[Math.floor(live.length * 0.95)],
         recompiles: rt.stats.recompiles - window.__m.before.recompiles, liveMessages: rt.stats.liveMessages - window.__m.before.liveMessages,
       }
     })
+    const st = (arr) => {
+      const f = arr.slice().sort((a, b) => a - b)
+      return { n: f.length, median: f[Math.floor(f.length / 2)], p95: f[Math.floor(f.length * 0.95)], max: f[f.length - 1], slow: f.filter((x) => x > 33.4).length / f.length }
+    }
+    const drag = st(m.frames)
+    const base = st(idle)
     assert.equal(m.recompiles, 0, 'a dragged number must not recompile')
     assert.ok(m.liveCalls > 100, `setLive calls ${m.liveCalls}`)
     assert.ok(m.liveP95 < 8, `pointermove→setLive p95 ${m.liveP95}ms`)
     assert.notEqual(pic0, pic1, 'the preview should change while scrubbing')
-    const fps = 1000 / m.medianMs
-    notes.push(`scrub (software WebGL, 1180×820, ${m.frames} host frames): median ${m.medianMs.toFixed(1)} ms (${fps.toFixed(0)} fps), p95 ${m.p95Ms.toFixed(1)} ms, max ${m.maxMs.toFixed(0)} ms; ${m.liveCalls} setLive calls → ${m.liveMessages} postMessages, ${m.recompiles} recompiles; pointermove→setLive p95 ${m.liveP95.toFixed(2)} ms`)
+    const fps = 1000 / drag.median
+    const line = (name, x) => `${name}: ${x.n} host frames, median ${x.median.toFixed(1)} ms (${(1000 / x.median).toFixed(0)} fps), p95 ${x.p95.toFixed(1)} ms, max ${x.max.toFixed(0)} ms, ${(x.slow * 100).toFixed(1)} % of frames slower than 33 ms`
+    notes.push(`software WebGL (SwiftShader, no GPU), 1180×820: ${line('idle baseline', base)}`)
+    const perSec = (a, b, k) => ((b[k] - a[k]) / (b.Timestamp - a.Timestamp)) * 1000
+    notes.push(`main-thread script time per second (CDP Performance metrics): idle ${perSec(m0, m1, 'ScriptDuration').toFixed(0)} ms/s, while scrubbing ${perSec(m1, m2, 'ScriptDuration').toFixed(0)} ms/s; layout ${perSec(m0, m1, 'LayoutDuration').toFixed(0)} → ${perSec(m1, m2, 'LayoutDuration').toFixed(0)} ms/s, style recalculation ${perSec(m0, m1, 'RecalcStyleDuration').toFixed(0)} → ${perSec(m1, m2, 'RecalcStyleDuration').toFixed(0)} ms/s`)
+    notes.push(`our synchronous cost per edit (store.commit with all listeners): median ${m.commit[Math.floor(m.commit.length / 2)].toFixed(2)} ms, p95 ${m.commit[Math.floor(m.commit.length * 0.95)].toFixed(2)} ms over ${m.commit.length} commits`)
+    notes.push(`main-thread long tasks (> 50 ms) in the host page: ${idleLong} while idle for 2 s, ${m.long.length} while scrubbing${m.long.length ? ` (longest ${Math.max(...m.long).toFixed(0)} ms)` : ''}`)
+    notes.push(`software WebGL, same page while scrubbing 180 pointer moves: ${line('scrub', drag)}; ${m.liveCalls} setLive calls → ${m.liveMessages} postMessages, ${m.recompiles} recompiles; pointermove→setLive p95 ${m.liveP95.toFixed(2)} ms`)
     assert.ok(fps >= 30, `host frame rate ${fps.toFixed(1)} fps < 30 (software-rendered)`)
-    return `${fps.toFixed(0)} fps median host frames, ${m.recompiles} recompiles, ${m.liveCalls} live calls → ${m.liveMessages} messages (software WebGL)`
+    return `median ${fps.toFixed(0)} fps (p95 ${drag.p95.toFixed(0)} ms; idle p95 ${base.p95.toFixed(0)} ms), ${m.recompiles} recompiles, ${m.liveCalls} live calls → ${m.liveMessages} messages (software WebGL)`
   })
   await S.close()
-}
+})
 
 // ============================================================================================================ 3. number → array → function; blocks ⇄ code
-if (want('3')) {
-  const S = await start()
+if (want('3')) await block('3', async () => {
+  const S = await startS()
   const { page, touch } = S
   await importAndOpen(page, S.base, TARGET)
   await waitForPicture(page)
@@ -243,11 +290,11 @@ if (want('3')) {
   })
   assert.deepEqual(S.errors, [], '3: no page errors')
   await S.close()
-}
+})
 
 // ============================================================================================================ 4. reorder, undo, redo
-if (want('4')) {
-  const S = await start()
+if (want('4')) await block('4', async () => {
+  const S = await startS()
   const { page, touch } = S
   await importAndOpen(page, S.base, 'osc(20, 0.1, 0.8)\n  .rotate(0.8)\n  .color(1, 0.5, 0.2)\n  .modulate(noise(3), 0.1)\n  .out()\n')
   await waitForPicture(page)
@@ -303,11 +350,11 @@ if (want('4')) {
   })
   assert.deepEqual(S.errors, [], '4: no page errors')
   await S.close()
-}
+})
 
 // ============================================================================================================ 5. offline
-if (want('5')) {
-  const S = await start()
+if (want('5')) await block('5', async () => {
+  const S = await startS()
   const { page, context } = S
   await check('5', 'offline: after the shell has loaded once, an airplane-mode reload works and the edited sketch persists', async () => {
     await page.goto(S.base)
@@ -339,13 +386,13 @@ if (want('5')) {
     return 'reloaded with the network off; the preview ran from the cached frame bundle; rotate(2) persisted'
   })
   await S.close()
-}
+})
 
 // ============================================================================================================ 6. corpus
-if (want('6')) {
+if (want('6')) await block('6', async () => {
   const dir = join(root, 'packages/core/corpus')
   const files = readdirSync(dir).filter((f) => f.endsWith('.js')).sort()
-  const S = await start()
+  const S = await startS()
   const { page, touch } = S
   await page.goto(S.base + 'stack/')
   await page.waitForFunction(() => !!window.__stack?.lib, null, { timeout: 15000 })
@@ -447,11 +494,11 @@ if (want('6')) {
   })
   await shot(page, '06-corpus-last.png')
   await S.close()
-}
+})
 
 // ============================================================================================================ 7. switch editors and back
-if (want('7')) {
-  const S = await start()
+if (want('7')) await block('7', async () => {
+  const S = await startS()
   const { page, touch } = S
   await check('7', 'switch to the harness and back: same sketch, same code, meta.stack intact, other apps\' meta untouched', async () => {
     await page.goto(S.base + 'stack/')
@@ -500,11 +547,11 @@ if (want('7')) {
   })
   assert.deepEqual(S.errors, [], '7: no page errors')
   await S.close()
-}
+})
 
 // ============================================================================================================ 8. the rest of the brief
-if (want('8')) {
-  const S = await start()
+if (want('8')) await block('8', async () => {
+  const S = await startS()
   const { page, touch } = S
   const open = async (code, name) => {
     await importAndOpen(page, S.base, code, name)
@@ -524,7 +571,6 @@ if (want('8')) {
     assert.match(await codeOf(page), /^osc\(5\)\.rotate\(1\)\.out\(o1\)\n/)
     await touch.tap('[data-testid=undo]')
     await sleep(200)
-    await touch.tap('[data-testid=delete-all]').catch(() => {})
   })
 
   await open('osc(5).rotate(1)\n')
@@ -553,19 +599,20 @@ if (want('8')) {
     await touch.tap('text=＋ s0.initCam()'); await sleep(300)
     await shot(page, '08-setup-sheet.png')
     await page.keyboard.press('Escape')
-    await touch.tap('.sheet-head button').catch(() => {})
     const code = await codeOf(page)
     assert.match(code, /^bpm = 120\nspeed = 1\ns0\.initCam\(0\)\n\nosc\(20, 0\.1, 0\.8\)\.out\(\)\nnoise\(3\)\.out\(o1\)\n/, code)
   })
 
   await open('osc(20, 0.1, 0.8).out()\n')
   await check('8d', 'dice: rolls randomSketch(seed) and shows the seed; long-press offers mutate; both undoable', async () => {
+    // a fixed seed keeps the run reproducible (a random one can build a shader too heavy for software WebGL)
+    await page.evaluate(() => localStorage.setItem('hydra-stack:seed', '1234'))
     const before = await codeOf(page)
     await touch.tap('[data-testid=dice]')
     await sleep(500)
     const rolled = await codeOf(page)
     assert.notEqual(rolled, before)
-    assert.match(await page.locator('.toast').first().innerText(), /Rolled seed \d+/)
+    assert.match(await page.locator('.toast').first().innerText(), /Rolled seed 1234/)
     await shot(page, '08-dice.png')
     await touch.tap('[data-testid=undo]'); await sleep(200)
     assert.equal(await codeOf(page), before)
@@ -655,14 +702,409 @@ if (want('8')) {
 
   assert.deepEqual(S.errors, [], '8: no page errors')
   await S.close()
-}
+})
+
+// ============================================================================================================ 9. errors, trust, audio, picker, layouts
+if (want('9')) await block('9', async () => {
+  const S = await startS()
+  const { page, touch } = S
+  const open = async (code, name, settle = 'ok') => {
+    await importAndOpen(page, S.base, code, name)
+    if (settle === 'ok') await waitForPicture(page)
+    else await page.waitForFunction(() => ['ok', 'error'].includes(window.__stack.runner.status.phase), null, { timeout: 15000 })
+    await sleep(400)
+  }
+  /** mean brightness of the preview frame, 0–255 */
+  const brightness = () => page.evaluate(async () => {
+    const url = await window.__stack.runner.rt.screenshot({ type: 'image/jpeg', quality: 0.6 })
+    const img = new Image()
+    await new Promise((r) => ((img.onload = r), (img.src = url)))
+    const c = document.createElement('canvas')
+    c.width = 64; c.height = 36
+    const g = c.getContext('2d')
+    g.drawImage(img, 0, 0, 64, 36)
+    const d = g.getImageData(0, 0, 64, 36).data
+    let sum = 0
+    for (let i = 0; i < d.length; i += 4) sum += (d[i] + d[i + 1] + d[i + 2]) / 3
+    return sum / (d.length / 4)
+  })
+
+  await open('osc(20, 0.1, 0.8)\n  .rotate(0.8)\n  .out()\n')
+  await check('9a', 'a thrown error never freezes or blacks out the preview: last good frame stays; the row gets a red dot; fixing it recovers', async () => {
+    const good = await brightness()
+    assert.ok(good > 20, `good frame brightness ${good}`)
+    // add a call to a function that does not exist (a plugin that is not loaded): runtime throws "… is not a function"
+    await touch.tap('[data-testid=add-mod]')
+    await page.fill('[data-testid=fn-search]', 'nothere')
+    await touch.tap('text=Use “nothere” as the name')
+    await page.waitForFunction(() => window.__stack.runner.status.phase === 'error', null, { timeout: 15000 })
+    await sleep(1200)
+    assert.ok(await page.locator('[data-testid=error-banner]').count(), 'error banner')
+    assert.match(await page.locator('[data-testid=error-banner]').innerText(), /last good frame/i)
+    const bad = await brightness()
+    assert.ok(bad > 20, `preview after the error is still the last good frame (brightness ${bad})`)
+    assert.equal(await page.evaluate(() => window.__stack.runner.status.fellBack), true)
+    const dot = page.locator('[data-fn=nothere] [data-testid=row-dot]')
+    assert.equal(await dot.count(), 1, 'red/amber dot on the row')
+    await shot(page, '09-error-last-good-frame.png')
+    // fix: swipe the broken row away
+    await touch.drag('[data-fn=nothere] .fname', -230, 0)
+    await page.waitForFunction(() => window.__stack.runner.status.phase === 'ok', null, { timeout: 15000 })
+    assert.equal(await page.locator('[data-testid=error-banner]').count(), 0)
+    assert.ok((await brightness()) > 20)
+    return `brightness good ${good.toFixed(0)} → after error ${bad.toFixed(0)}`
+  })
+
+  await open('osc(20, 0.1, 0.8).out()\nupdate = () => {}\n')
+  await check('9b', 'trust gate: sketches with raw code run in safe mode until the owner says yes; "Always" is remembered across reloads', async () => {
+    assert.ok(await page.locator('[data-testid=trust-banner]').count())
+    assert.match(await page.locator('[data-testid=trust-banner]').innerText(), /This sketch runs code\. Run it\?/)
+    assert.equal(await page.evaluate(() => window.__stack.runner.trust.pending), true)
+    await shot(page, '09-trust-gate.png')
+    await touch.tap('[data-testid=trust-once]')
+    await page.waitForFunction(() => window.__stack.runner.trust.pending === false)
+    assert.equal(await page.locator('[data-testid=trust-banner]').count(), 0)
+    await page.reload()
+    await page.waitForSelector('[data-testid=trust-banner]', { timeout: 15000 })
+    await touch.tap('[data-testid=trust-always]')
+    await sleep(500)
+    await page.reload()
+    await waitForPicture(page)
+    await sleep(500)
+    assert.equal(await page.locator('[data-testid=trust-banner]').count(), 0, 'approved for this exact content')
+    // changing the risky text asks again
+    await touch.tap('[data-testid=raw-row] .raw-text')
+    await page.fill('[data-testid=raw-edit]', 'update = () => { /* changed */ }')
+    await sleep(700)
+    await page.locator('[data-testid=sketch-name]').click({ force: true })
+    await page.waitForSelector('[data-testid=trust-banner]', { timeout: 10000 })
+  })
+
+  await open('osc(20, 0.1, 0.8).rotate(0.5).out()\n')
+  await check('9c', 'audio chip: a.fft[n] becomes a bin picker with scale/offset fields and a live meter next to the field', async () => {
+    await touch.hold('[data-fn=rotate] [role=spinbutton]', 700)
+    await touch.tap('[data-kind=function]')
+    await page.waitForSelector('[data-testid=fn-editor]')
+    await touch.tap('[data-chip="a.fft[0]"]')
+    await sleep(300)
+    assert.equal(await codeOf(page).then((c) => c.includes('.rotate(() => a.fft[0])')), true, await codeOf(page))
+    await page.waitForSelector('.bins')
+    await touch.tap('[data-bin="2"]')
+    await sleep(200)
+    assert.match(await codeOf(page), /\.rotate\(\(\) => a\.fft\[2\]\)/)
+    await keypad(S, '[data-testid=fn-scale]', '4')
+    await keypad(S, '[data-testid=fn-offset]', '0.5')
+    assert.match(await codeOf(page), /\.rotate\(\(\) => a\.fft\[2\] \* 4 \+ 0\.5\)/)
+    // feed analysis frames the way the audio engine does
+    await page.evaluate(() => { const a = window.__stack.audio; window.__feed = (v) => a.frameListeners.forEach((cb) => cb({ vol: v, specific: [], bins: [], fft: [0, 0, v, 0] })) })
+    await page.evaluate(() => window.__feed(0))
+    await sleep(100)
+    const h0 = await page.locator('[data-testid=fn-editor] [data-testid=fn-meter] i').evaluate((e) => parseFloat(e.style.height) || 0)
+    await page.evaluate(() => window.__feed(0.2))
+    await sleep(100)
+    const h1 = await page.locator('[data-testid=fn-editor] [data-testid=fn-meter] i').evaluate((e) => parseFloat(e.style.height) || 0)
+    assert.ok(h1 > h0 + 20, `the meter follows the audio: ${h0} → ${h1}`)
+    await shot(page, '09-audio-chip.png')
+    await page.keyboard.press('Escape')
+    // the row shows a ♪ chip with its own tiny meter
+    assert.equal(await page.locator('[data-fn=rotate] [data-token=fn] .mark').innerText(), '♪')
+  })
+
+  await open('osc(20, 0.1, 0.8).myfx(0.5).out()\n', 'Unknown', 'any')
+  await check('9d', 'function picker: grouped, searchable, live thumbnails; plugin functions appear under "Plugins" and an unknown call upgrades when the plugin loads', async () => {
+    const row = page.locator('[data-fn=myfx]')
+    assert.ok(await row.evaluate((e) => e.classList.contains('unknown')), 'generic row for an unknown call')
+    await touch.tap('[data-testid=add-mod]')
+    await page.waitForSelector('[data-testid=fn-picker]')
+    const groups = await page.locator('[data-testid=fn-picker] [data-group]').evaluateAll((els) => els.map((e) => e.dataset.group))
+    assert.deepEqual(groups, ['Geometry', 'Color', 'Blend', 'Modulate'])
+    // thumbnails render one by one in the background (software WebGL: slow)
+    await page.waitForFunction(() => document.querySelectorAll('[data-testid=thumb][data-ready="1"]').length >= 3, null, { timeout: 60000 })
+    const made = await page.locator('[data-testid=thumb][data-ready="1"]').count()
+    await shot(page, '09-picker.png')
+    await page.keyboard.press('Escape')
+    // a plugin registers a function
+    await page.evaluate(() => window.__stack.core.catalog.refresh([{ name: 'myfx', type: 'color', inputs: [{ name: 'amount', type: 'float', default: 1 }], origin: 'plugin:demo' }]))
+    await sleep(300)
+    assert.equal(await row.evaluate((e) => e.classList.contains('unknown')), false, 'upgraded to a known row')
+    await touch.tap('[data-testid=add-mod]')
+    await page.waitForSelector('[data-group="Plugins"]')
+    assert.ok(await page.locator('[data-group="Plugins"] [data-pick=myfx]').count())
+    await shot(page, '09-picker-plugins.png')
+    await page.keyboard.press('Escape')
+    return `${made}+ thumbnails rendered; Plugins group present`
+  })
+
+  await open('osc(5).myfx2(2, 3).out()\n', 'Unknown2', 'any')
+  await check('9e', 'an unknown call stays editable: name, arguments (add / convert / remove)', async () => {
+    const row = page.locator('[data-fn=myfx2]')
+    assert.ok(await row.evaluate((e) => e.classList.contains('unknown')))
+    assert.equal(await row.locator(':scope > [role=spinbutton]').count(), 2)
+    await touch.tap(row.locator('.addarg'))
+    await sleep(300)
+    assert.match(await codeOf(page), /myfx2\(2, 3, 0\)/)
+    await touch.hold(row.locator(':scope > [role=spinbutton]').nth(2), 700)
+    await page.waitForSelector('[data-testid=kind-menu]')
+    await touch.tap('text=Remove argument')
+    await sleep(300)
+    assert.match(await codeOf(page), /myfx2\(2, 3\)/)
+    await touch.tap(row.locator('.fname'))
+    await page.fill('[data-testid=fn-search]', 'myfx3')
+    await touch.tap('text=Use “myfx3” as the name')
+    await sleep(300)
+    assert.match(await codeOf(page), /\.myfx3\(2, 3\)/)
+    await shot(page, '09-unknown-call.png')
+  })
+
+  assert.deepEqual(S.errors.filter((e) => !/Permissions policy|not a function|Failed to load resource/.test(e)), [], '9: no page errors')
+  await S.close()
+})
+
+// ============================================================================================================ 10. layouts, pen, banners, selection sync, texture kinds
+if (want('10')) await block('10', async () => {
+  const SRC = '// layout test\nconst amt = 0.3\nosc(20, 0.1, 0.8)\n  .rotate(0.8)\n  .color(1, 0.5, 0.2, 1)\n  .modulate(noise(3), amt)\n  .out()\n\nnoise(3).out(o1)\n'
+  const overflow = (page) => page.evaluate(() => {
+    const bad = []
+    if (document.documentElement.scrollWidth > window.innerWidth + 1) bad.push(`page ${document.documentElement.scrollWidth} > ${window.innerWidth}`)
+    for (const el of document.querySelectorAll('.stack-pane, .scroll, .stack-list, .stmt, .topbar, .strip')) {
+      if (el.scrollWidth > el.clientWidth + 1 && getComputedStyle(el).overflowX === 'visible') bad.push(`${el.className} ${el.scrollWidth}>${el.clientWidth}`)
+    }
+    for (const el of document.querySelectorAll('.crow')) if (el.getBoundingClientRect().right > window.innerWidth + 1) bad.push('row beyond the viewport')
+    return bad
+  })
+  const sizes = [
+    ['ipad-landscape-1366', { width: 1366, height: 1024 }],
+    ['ipad-portrait-820', { width: 820, height: 1180 }],
+    ['split-view-half-507', { width: 507, height: 1024 }],
+    ['split-view-narrow-375', { width: 375, height: 1024 }],
+    ['slide-over-320', { width: 320, height: 800 }],
+    ['landscape-split-678', { width: 678, height: 820 }],
+  ]
+  for (const [label, vp] of sizes) {
+    if (!want('10')) break
+    const S = await startS({ viewport: vp })
+    await check('10a', `layout ${label} (${vp.width}×${vp.height}): nothing overflows, top bar and strip stay usable, every control ≥ 44pt`, async () => {
+      await importAndOpen(S.page, S.base, SRC)
+      await waitForPicture(S.page)
+      await sleep(500)
+      await shot(S.page, `10-layout-${label}.png`)
+      const bad = await overflow(S.page)
+      assert.deepEqual(bad, [], `overflow at ${label}`)
+      const small = await S.page.evaluate(() => [...document.querySelectorAll('button, [role=spinbutton], .tok, input:not([type=file])')].filter((e) => {
+        const r = e.getBoundingClientRect()
+        const cs = getComputedStyle(e)
+        return r.width > 0 && cs.visibility !== 'hidden' && (r.height < 43.5 || r.width < 21) && !e.closest('.pocket-menu') && !e.classList.contains('pocket-menu') && !e.classList.contains('icon') && !e.closest('.preview-tools') && !e.closest('.hi-about') && !e.classList.contains('dot')
+      }).map((e) => `${e.tagName}.${e.className.toString().slice(0, 24)} ${Math.round(e.getBoundingClientRect().width)}×${Math.round(e.getBoundingClientRect().height)} ${e.textContent.slice(0, 20)}`))
+      assert.deepEqual(small.slice(0, 6), [], 'controls below 44pt tall')
+      // the first numbers can still be scrubbed at this width
+      const n = S.page.locator('[data-testid=row-gen] [role=spinbutton]').first()
+      await S.touch.drag(n, 60, 0)
+      assert.notEqual(await codeOf(S.page), SRC)
+      return `${vp.width}×${vp.height}`
+    })
+    await S.close()
+  }
+
+  const S = await (want('10') ? start({ viewport: { width: 820, height: 1180 } }) : null)
+  if (S) {
+    const { page, touch } = S
+    await importAndOpen(page, S.base, SRC)
+    await waitForPicture(page)
+    await check('10b', 'portrait: preview on top (≈40%), collapsible to a floating picture-in-picture handle that restores on tap', async () => {
+      const h = await page.evaluate(() => ({ pane: document.querySelector('.preview-pane').getBoundingClientRect().height, body: document.querySelector('.body').getBoundingClientRect().height }))
+      assert.ok(Math.abs(h.pane / h.body - 0.4) < 0.03, `preview ${h.pane}/${h.body}`)
+      await touch.tap('[data-testid=preview-toggle]')
+      await sleep(400)
+      assert.ok(await page.locator('.app.pip').count())
+      const box = await page.locator('.preview-pane').boundingBox()
+      assert.ok(box.width < 260 && box.y > 400, `floating handle ${JSON.stringify(box)}`)
+      await shot(page, '10-portrait-pip.png')
+      // the stack now has the full height, and the frame kept running (same iframe, never re-created)
+      assert.equal(await page.locator('.preview-pane iframe').count(), 1)
+      await touch.tap('.pip-hit')
+      await sleep(300)
+      assert.equal(await page.locator('.app.pip').count(), 0)
+    })
+
+    await check('10c', 'Apple Pencil: pointerType pen scrubs a number like a finger', async () => {
+      const n = page.locator('[data-testid=row-gen] [role=spinbutton]').first()
+      await n.scrollIntoViewIfNeeded()
+      const b = await n.boundingBox()
+      const x = b.x + b.width / 2, y = b.y + b.height / 2
+      await page.evaluate(() => { window.__pt = new Set(); window.addEventListener('pointerdown', (e) => window.__pt.add(e.pointerType), true) })
+      const cdp = S.cdp
+      const ev = (type, x, y, extra = {}) => cdp.send('Input.dispatchMouseEvent', { type, x, y, button: 'left', buttons: type === 'mouseReleased' ? 0 : 1, clickCount: 1, pointerType: 'pen', force: 0.5, ...extra })
+      const before = await codeOf(page)
+      await ev('mousePressed', x, y)
+      for (let i = 1; i <= 12; i++) { await ev('mouseMoved', x + i * 9, y); await sleep(12) }
+      await ev('mouseReleased', x + 108, y)
+      await sleep(300)
+      assert.ok((await page.evaluate(() => [...window.__pt])).includes('pen'), 'saw a pen pointer')
+      assert.notEqual(await codeOf(page), before)
+    })
+
+    await check('10d', 'selecting a row in the blocks highlights its text in the code view, and the cursor in the code selects the row', async () => {
+      await touch.tap('[data-fn=rotate] .fname'); await page.keyboard.press('Escape')
+      await touch.tap('[data-testid=mode-code]')
+      await page.waitForSelector('.cm-sel-node')
+      const marked = await page.locator('.cm-sel-node').allInnerTexts()
+      assert.ok(marked.join('').includes('.rotate(0.8)'), `marked text: ${JSON.stringify(marked)}`)
+      await shot(page, '10-selection-in-code.png')
+      // put the cursor inside .color(...) in the code
+      const pos = await page.evaluate(() => { const v = window.__cm; return v.state.doc.toString().indexOf('.color(') + 4 })
+      await page.evaluate((pos) => window.__cm.dispatch({ selection: { anchor: pos } }), pos)
+      await page.focus('.cm-content')
+      await page.keyboard.press('ArrowRight')
+      await sleep(300)
+      await touch.tap('[data-testid=mode-blocks]')
+      await page.waitForSelector('[data-fn=color].selected', { timeout: 5000 })
+    })
+
+    await check('10e', 'texture arguments: o/s picker, pocket ⇄ ref conversion, variable reference', async () => {
+      await page.evaluate(() => window.__stack.store.select(undefined))
+      const pocket = page.locator('[data-fn=modulate] [data-testid=pocket-menu]')
+      await touch.tap(pocket)
+      await page.waitForSelector('[data-testid=kind-menu]')
+      await touch.tap('[data-ref="o1"]')
+      await sleep(300)
+      assert.match(await codeOf(page), /\.modulate\(o1, amt\)/)
+      // o1 → texture pocket: src(o1)
+      await touch.hold('[data-fn=modulate] [data-token=ref]', 700)
+      await touch.tap('[data-kind=texture]')
+      await sleep(300)
+      assert.match(await codeOf(page), /\.modulate\(src\(o1\), amt\)/)
+      // pocket → variable (the def must come first)
+      await touch.tap('[data-fn=modulate] [data-testid=pocket-menu]')
+      await touch.tap('[data-var="amt"]').catch(() => {})
+      await page.keyboard.press('Escape')
+      await shot(page, '10-texture-kinds.png')
+    })
+    assert.deepEqual(S.errors, [], '10: no page errors')
+    await S.close()
+  }
+
+  if (want('10')) {
+    // MIDI and camera banners
+    const S2 = await startS({ viewport: { width: 1180, height: 820 } })
+    await S2.context.addInitScript(() => { try { Object.defineProperty(Navigator.prototype, 'requestMIDIAccess', { value: undefined, configurable: true }) } catch {} })
+    await importAndOpen(S2.page, S2.base, 'osc(10).out()\nconst m = await navigator.requestMIDIAccess()\n', 'midi sketch')
+    await check('10f', 'core banners: Web MIDI not available; camera sources offer inline mode (trust-gated)', async () => {
+      await S2.page.waitForSelector('[data-testid=midi-banner]', { timeout: 10000 })
+      assert.match(await S2.page.locator('[data-testid=midi-banner]').innerText(), /Web MIDI isn't available/)
+      await shot(S2.page, '10-midi-banner.png')
+      await importAndOpen(S2.page, S2.base, 's0.initCam()\nsrc(s0).out()\n', 'cam sketch')
+      await S2.page.waitForSelector('[data-testid=camera-banner]', { timeout: 10000 })
+      await shot(S2.page, '10-camera-banner.png')
+      await S2.touch.tap('[data-testid=camera-inline]')
+      await S2.page.waitForFunction(() => window.__stack.runner.isolation === 'inline', null, { timeout: 15000 })
+      await S2.page.waitForSelector('[data-testid=inline-banner]')
+    })
+    await S2.close()
+  }
+})
+
+// ============================================================================================================ 11. statements, library, completion
+if (want('11')) await block('11', async () => {
+  const S = await startS()
+  const { page, touch } = S
+  const open = async (code, name = 'E2E sketch') => {
+    await importAndOpen(page, S.base, code, name)
+    await waitForPicture(page)
+    await sleep(300)
+  }
+  await open('// first\nbpm = 90\nosc(5).out()\n\nnoise(3).out(o1)\n')
+  await check('11a', 'statements reorder by long-press drag on the gutter handle (and keep valid spacing); statement menu duplicates and deletes with undo', async () => {
+    const h = page.locator('[data-testid=stmt-chain]').first().locator('[data-testid=stmt-handle]')
+    const from = await touch.center(h)
+    const to = await touch.center(page.locator('[data-testid=stmt-chain]').last().locator('[data-testid=stmt-handle]'))
+    await touch.drag(h, 0, to.y - from.y + 20, { preHold: 450, steps: 14 })
+    await sleep(400)
+    const code = await codeOf(page)
+    assert.match(code, /noise\(3\)\.out\(o1\)\n\nosc\(5\)\.out\(\)/, code)
+    assert.doesNotMatch(code, /\)osc|\)noise/, 'nothing glued together')
+    await shot(page, '11-statement-reordered.png')
+    await touch.tap('[data-testid=undo]'); await sleep(250)
+    assert.equal(await codeOf(page), '// first\nbpm = 90\nosc(5).out()\n\nnoise(3).out(o1)\n')
+    await touch.tap(page.locator('[data-testid=stmt-chain]').first().locator('[data-testid=stmt-handle]'))
+    await touch.tap('[data-testid=stmt-duplicate]'); await sleep(300)
+    assert.equal((await codeOf(page)).match(/osc\(5\)\.out\(\)/g).length, 2)
+    await touch.tap('[data-testid=undo]'); await sleep(250)
+    await touch.tap('[data-testid=stmt-setting] [data-testid=stmt-handle]')
+    await touch.tap('[data-testid=stmt-delete]'); await sleep(300)
+    assert.doesNotMatch(await codeOf(page), /bpm/)
+    await touch.tap('.toast button'); await sleep(300)
+    assert.match(await codeOf(page), /bpm = 90/)
+  })
+
+  await open('osc(20, 0.1, 0.8).rotate(0.8).out()\n', 'Library check')
+  await check('11b', 'autosave without a button; thumbnails are 160×90 snapshots in the shared library; the audio panel opens', async () => {
+    await touch.tap('[data-fn=rotate] [role=spinbutton]')
+    await touch.tap('.keypad [data-key="3"]')
+    await touch.tap('[data-testid=kp-ok]')
+    await sleep(900)
+    const saved = await page.evaluate(async () => {
+      const id = window.__stack.store.sketch.id
+      const raw = await window.__stack.lib.get(id)
+      return window.__stack.core.toCode(raw)
+    })
+    assert.match(saved, /rotate\(3\)/, 'saved without flush')
+    // thumbnail from a canvas snapshot after the run settles
+    const t0 = Date.now()
+    while (!(await page.evaluate(async () => {
+      const id = window.__stack.store.sketch.id
+      return !!(await window.__stack.lib.list()).find((x) => x.id === id)?.thumbnail
+    }))) {
+      if (Date.now() - t0 > 30000) throw new Error('no thumbnail within 30 s')
+      await sleep(500)
+    }
+    const dim = await page.evaluate(async () => {
+      const id = window.__stack.store.sketch.id
+      const e = (await window.__stack.lib.list()).find((x) => x.id === id)
+      const img = new Image()
+      await new Promise((r) => ((img.onload = r), (img.src = e.thumbnail)))
+      return [img.naturalWidth, img.naturalHeight]
+    })
+    assert.deepEqual(dim, [160, 90])
+    await touch.tap('[data-testid=audio-btn]')
+    await page.waitForSelector('[data-testid=audio-panel] .hi-audio')
+    await shot(page, '11-audio-panel.png')
+    await touch.tap('.sheet-head button')
+    return 'thumbnail 160×90'
+  })
+
+  await open('osc(5).out()\n', 'Completion')
+  await check('11c', 'code view completion knows Hydra: modifiers after a dot, generators and globals at the start of a statement', async () => {
+    await touch.tap('[data-testid=mode-code]')
+    await page.waitForSelector('.cm-content')
+    await page.click('.cm-content')
+    await page.keyboard.press('Control+End')
+    await page.keyboard.type('\nosc(3)\n  .kal')
+    await page.waitForSelector('.cm-tooltip-autocomplete li', { timeout: 5000 })
+    const opts = await page.locator('.cm-tooltip-autocomplete li').allInnerTexts()
+    assert.ok(opts.some((o) => o.startsWith('kaleid')), `options: ${opts.join(' | ').slice(0, 200)}`)
+    await shot(page, '11-completion.png')
+    await page.keyboard.press('Enter')
+    await sleep(300)
+    const doc = await page.evaluate(() => window.__cm.state.doc.toString())
+    assert.match(doc, /\.kaleid\(\)$/)
+    // generators at the start of a statement
+    await page.keyboard.type('\nvor')
+    await page.waitForSelector('.cm-tooltip-autocomplete li')
+    assert.ok((await page.locator('.cm-tooltip-autocomplete li').allInnerTexts()).some((o) => o.startsWith('voronoi')))
+    await page.keyboard.press('Escape')
+  })
+
+  assert.deepEqual(S.errors.filter((e) => !/Permissions policy/.test(e)), [], '11: no page errors')
+  await S.close()
+})
 
 // ============================================================================================================ summary
 const md = ['# Acceptance run', '', `Chromium (software WebGL / SwiftShader), touch emulation via CDP. Generated ${new Date().toISOString().slice(0, 10)}.`, '', '| # | check | result | note |', '|---|---|---|---|']
 for (const r of results) md.push(`| ${r.id} | ${r.title} | ${r.ok ? 'pass' : '**FAIL**'} | ${String(r.note ?? '').replace(/\|/g, '/').slice(0, 300)} |`)
 md.push('', '## Measurements', '', ...notes.map((n) => `* ${n}`), '')
-writeFileSync(join(shots, 'RESULTS.md'), md.join('\n'))
+if (!only) writeFileSync(join(shots, 'RESULTS.md'), md.join('\n'))
+rmSync(join(shots, '.tmp'), { recursive: true, force: true })
+for (const n of notes) console.log(`  · ${n}`)
 const failed = results.filter((r) => !r.ok)
 console.log(`\n${results.length - failed.length}/${results.length} checks passed`)
 process.exit(failed.length ? 1 : 0)
-void mkdtempSync, tmpdir, cpSync, readFileSync

@@ -48,7 +48,6 @@ export function mutateChain(sketch: Sketch, stmtId: string, o: MutateOptions): S
   }
   const stmt = sketch.stmts.find((s) => s.id === stmtId)
   if (!stmt || stmt.k !== 'chain') return sketch
-  const target = stmt.chain.id
   // mapChains visits children first; only touch the chains inside this statement
   const inside = new Set<string>()
   const collect = (c: Chain) => {
@@ -56,6 +55,5 @@ export function mutateChain(sketch: Sketch, stmtId: string, o: MutateOptions): S
     for (const call of [c.gen, ...c.mods]) for (const a of call.args) if (a.k === 'tex') collect(a.chain)
   }
   collect(stmt.chain)
-  void target
   return mapChains(sketch, (c) => (inside.has(c.id) ? apply(c) : c))
 }

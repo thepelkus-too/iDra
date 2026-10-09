@@ -151,7 +151,7 @@ export function ArrEditor({ refd, title, hint, def }: ArrEditorProps) {
                   onClose={close}
                 />
               ),
-              { width: 260, label: name, onClose: () => ctx.store.endGroup() },
+              { width: 260, label: name, stack: true, onClose: () => ctx.store.endGroup() },
             )
           }
         />
@@ -201,7 +201,7 @@ export function ArrEditor({ refd, title, hint, def }: ArrEditorProps) {
                   openPopover(
                     e.currentTarget as HTMLElement,
                     (close) => <Keypad title={`step ${i + 1}`} value={getValueAt(refd, i, val)} def={def} hint={hint} onChange={(n) => setBar(i, n)} onClose={close} />,
-                    { width: 260, onClose: () => ctx.store.endGroup() },
+                    { width: 260, stack: true, onClose: () => ctx.store.endGroup() },
                   )
                 }
               >

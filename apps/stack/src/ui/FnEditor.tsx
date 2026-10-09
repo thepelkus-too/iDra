@@ -1,12 +1,12 @@
 // Mini editor for a function value: chips that insert into a one-line expression, a scale/offset pair that wraps it as
 // `() => expr * scale + offset`, free-text editing, and, for `a.fft[n]`, a bin picker with a live meter.
-import { audioChip, type Hint, type InputDef } from '@hydra-ipad/core'
-import { fnv } from '@hydra-ipad/core'
+import { audioChip, fnv, mountAudioPanel, parseAudioChip, type Hint, type InputDef } from '@hydra-ipad/core'
 import { useEffect, useRef, useState } from 'preact/hooks'
 import { composeFn, fmt, parseFnWrap } from '../conv'
 import { ctx, edit, useStore } from '../ctx'
 import { getArg, refKey, setArg, type ArgRef } from '../model'
-import { openSheet } from '../overlay'
+import { openPopover, openSheet } from '../overlay'
+import { Keypad } from './Keypad'
 import { Scrub } from './Scrub'
 
 export const FN_CHIPS: Array<{ label: string; expr: string }> = [
@@ -35,15 +35,19 @@ export function syntaxOk(expr: string): boolean {
   }
 }
 
-/** Short label for a function chip in a row. */
+/** Short label for a function chip in a row. Audio chips are recognised with core's `parseAudioChip`. */
 export function fnLabel(src: string): { text: string; audio?: { bin: number; scale: number; offset: number } } {
+  const chip = parseAudioChip({ k: 'fn', src })
+  if (chip) {
+    const scale = chip.scale !== 1 ? ` ×${fmt(chip.scale)}` : ''
+    const offset = chip.offset !== 0 ? ` ${chip.offset < 0 ? '−' : '+'}${fmt(Math.abs(chip.offset))}` : ''
+    return { text: `fft[${chip.bin}]${scale}${offset}`, audio: chip }
+  }
   const w = parseFnWrap(src)
   if (!w) return { text: src.length > 28 ? src.slice(0, 27) + '…' : src }
-  const m = AUDIO_BODY.exec(w.body)
   let t = w.body.replace(/Math\./g, '')
   if (w.scale !== 1) t += ` ×${fmt(w.scale)}`
   if (w.offset !== 0) t += ` ${w.offset < 0 ? '−' : '+'}${fmt(Math.abs(w.offset))}`
-  if (m) return { text: `fft[${m[1]}]${w.scale !== 1 ? ` ×${fmt(w.scale)}` : ''}${w.offset !== 0 ? ` ${w.offset < 0 ? '−' : '+'}${fmt(Math.abs(w.offset))}` : ''}`, audio: { bin: Number(m[1]), scale: w.scale, offset: w.offset } }
   return { text: t.length > 34 ? t.slice(0, 33) + '…' : t }
 }
 
@@ -225,14 +229,10 @@ export function FnEditor({ refd, title, hint }: FnEditorProps) {
   )
 }
 
-// small indirection so FnEditor can open the keypad without importing the popover module cyclically at the top
-import { openPopover } from '../overlay'
-import { Keypad } from './Keypad'
 function openKeypadFor(el: HTMLElement, title: string, value: number, def: number, hint: Hint, onChange: (n: number) => void) {
-  openPopover(el, (close) => <Keypad title={title} value={value} def={def} hint={hint} onChange={onChange} onClose={close} />, { width: 260, label: title })
+  openPopover(el, (close) => <Keypad title={title} value={value} def={def} hint={hint} onChange={onChange} onClose={close} />, { width: 260, label: title, stack: true, onClose: () => ctx.store.endGroup() })
 }
 
-import { mountAudioPanel } from '@hydra-ipad/core'
 /** core's audio panel inside a sheet. */
 export function AudioMount({ onDone }: { onDone?: () => void }) {
   const host = useRef<HTMLDivElement>(null)

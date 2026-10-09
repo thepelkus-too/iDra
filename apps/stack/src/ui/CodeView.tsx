@@ -198,9 +198,16 @@ export function CodeView({ active }: { active: boolean }) {
 
   // follow the sketch (undo, dice, edits made in the blocks)
   const sk = ctx.store.sketch
+  const lastId = useRef(sk.id)
   useEffect(() => {
     const v = view.current
     if (!v) return
+    // another sketch was opened: whatever was half typed belongs to the old one
+    if (lastId.current !== sk.id) {
+      lastId.current = sk.id
+      dirty.current = false
+      clearTimeout(timer.current)
+    }
     const { code, map: m } = toCodeWithMap(sk)
     map.current = m
     const cur = v.state.doc.toString()

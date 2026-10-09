@@ -3,6 +3,7 @@
 import { createRuntime, catalog, type FnDef, type Runtime } from '@hydra-ipad/core'
 
 const SKIP = new Set(['src', 'prev'])
+const IDLE_MS = 20000
 
 export function thumbSource(f: FnDef): string | undefined {
   if (SKIP.has(f.name)) return undefined
@@ -23,8 +24,10 @@ export class Thumbs {
   private host?: HTMLElement
   private busy = false
   private dead = false
+  private idleTimer: ReturnType<typeof setTimeout> | undefined
   /** how many thumbnails were produced (for tests) */
   made = 0
+  lastError = ''
 
   has(name: string): boolean {
     return this.cache.has(name)
@@ -52,8 +55,8 @@ export class Thumbs {
     try {
       const host = document.createElement('div')
       host.setAttribute('aria-hidden', 'true')
-      // off-screen but really laid out, so the canvas keeps rendering
-      host.style.cssText = 'position:fixed;left:-300px;top:0;width:128px;height:128px;opacity:0;pointer-events:none;overflow:hidden'
+      // behind the page but inside the viewport: browsers throttle or pause cross-origin iframes that are scrolled or moved out of view
+      host.style.cssText = 'position:fixed;left:0;bottom:0;width:128px;height:128px;z-index:-1;pointer-events:none;overflow:hidden'
       document.body.appendChild(host)
       this.host = host
       this.rt = createRuntime(host, { isolation: 'iframe', width: 128, height: 128, catalog })
@@ -85,7 +88,8 @@ export class Thumbs {
                 url = await rt.thumbnail(64)
                 this.made++
               }
-            } catch {
+            } catch (e) {
+              this.lastError = String((e as Error)?.message ?? e)
               this.dead = true
             }
           }
@@ -98,6 +102,9 @@ export class Thumbs {
       }
     } finally {
       this.busy = false
+      // a second WebGL context is expensive on a tablet: let it go when nobody is looking at the picker
+      clearTimeout(this.idleTimer)
+      this.idleTimer = setTimeout(() => this.release(), IDLE_MS)
       if (this.dead) {
         for (const [n, w] of this.waiting) for (const cb of w) cb(undefined), this.cache.set(n, null)
         this.waiting.clear()
@@ -106,8 +113,19 @@ export class Thumbs {
     }
   }
 
+  /** Drop the hidden runtime (the cache stays); the next request creates a fresh one. */
+  release(): void {
+    if (this.busy || this.queue.length) return
+    this.rt?.dispose()
+    this.host?.remove()
+    this.rt = undefined
+    this.host = undefined
+  }
+
   dispose(): void {
     this.dead = true
+    clearTimeout(this.idleTimer)
+    this.release()
     this.rt?.dispose()
     this.host?.remove()
   }

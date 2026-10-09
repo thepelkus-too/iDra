@@ -4,7 +4,7 @@ html,body{overflow:hidden;height:100%}
 body{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
 input,textarea{-webkit-user-select:text;user-select:text}
 #app{height:100%}
-.app{height:100%;display:grid;grid-template-rows:auto auto minmax(0,1fr);background:var(--hi-bg)}
+.app{height:100%;display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:auto auto minmax(0,1fr);background:var(--hi-bg)}
 button{min-height:44px;min-width:44px;border-radius:10px;border:1px solid var(--hi-line);background:var(--hi-panel);color:var(--hi-text);padding:0 12px;cursor:pointer}
 button:disabled{opacity:.4}
 button:focus-visible,.tok:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px solid var(--hi-accent);outline-offset:1px}
@@ -12,9 +12,9 @@ button:focus-visible,.tok:focus-visible,input:focus-visible,textarea:focus-visib
 .btn.primary{background:var(--hi-accent);color:#04201f;border-color:transparent;font-weight:600}
 .btn.danger,.item.danger{color:var(--bad)}
 .btn.wide{width:100%}
-.btn.sm{min-height:36px;min-width:36px;padding:0 10px}
+.btn.sm{min-height:44px;min-width:44px;padding:0 10px}
 .icon{width:44px;padding:0;font-size:18px;line-height:1}
-.icon.small{width:36px;min-height:36px;min-width:36px;font-size:15px;background:rgba(0,0,0,.55);border-color:rgba(255,255,255,.2)}
+.icon.small{width:44px;min-height:44px;min-width:44px;font-size:15px;background:rgba(0,0,0,.55);border-color:rgba(255,255,255,.2)}
 .linkish{border:0;background:none;color:var(--hi-accent);min-height:32px;padding:0 4px;text-decoration:underline}
 .lbl{color:var(--hi-dim);font-size:12px;margin-right:2px}
 .note{color:var(--hi-dim);font-size:12.5px;margin:6px 2px}
@@ -29,16 +29,16 @@ button:focus-visible,.tok:focus-visible,input:focus-visible,textarea:focus-visib
 .seg{display:inline-flex;border:1px solid var(--hi-line);border-radius:10px;overflow:hidden}
 .seg button{border:0;border-radius:0;background:var(--hi-bg)}
 .seg button.on{background:var(--hi-accent);color:#04201f;font-weight:600}
-.seg.small button{min-height:36px;padding:0 10px;font-size:13px}
+.seg.small button{min-height:44px;padding:0 10px;font-size:13px}
 .dice{white-space:nowrap}
 .seedno{font:12px var(--mono);color:var(--hi-dim)}
 
 /* ---- strip */
 .strip{display:flex;align-items:center;gap:6px;padding:4px 8px;border-bottom:1px solid var(--hi-line);background:var(--hi-bg)}
-.chips-scroll{display:flex;align-items:center;gap:6px;overflow-x:auto;flex:1;scrollbar-width:none;-webkit-overflow-scrolling:touch;padding:2px 0}
+.chips-scroll{min-width:0;display:flex;align-items:center;gap:6px;overflow-x:auto;flex:1;scrollbar-width:none;-webkit-overflow-scrolling:touch;padding:2px 0}
 .chips-scroll::-webkit-scrollbar{display:none}
 .chipwrap{display:inline-flex;gap:4px;align-items:center;flex:0 0 auto}
-.chipbtn{display:inline-flex;align-items:center;gap:6px;white-space:nowrap;min-height:40px;font-size:14px}
+.chipbtn{display:inline-flex;align-items:center;gap:6px;white-space:nowrap;min-height:44px;font-size:14px}
 .chipbtn b{font-family:var(--mono)}
 .chipbtn small{color:var(--hi-dim);font-family:var(--mono)}
 .chipbtn.on{border-color:var(--hi-accent);background:rgba(90,200,200,.14)}
@@ -72,7 +72,8 @@ button:focus-visible,.tok:focus-visible,input:focus-visible,textarea:focus-visib
 .pip-hit{position:absolute;inset:0;background:transparent;border:0;border-radius:0;z-index:1}
 .foot{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:0 10px;border-top:1px solid var(--hi-line);background:var(--hi-panel);min-height:34px}
 .foot .runinfo{font:11px var(--mono);color:var(--hi-dim);white-space:nowrap}
-.about-slot .hi-about a{padding:6px 2px}
+.about-slot .hi-about a{padding:0 2px;min-height:44px;display:inline-flex;align-items:center}
+.topbar .hi-switch>button{min-height:44px}
 
 /* ---- statements */
 .stack-list{display:flex;flex-direction:column;gap:8px}
@@ -139,20 +140,20 @@ button:focus-visible,.tok:focus-visible,input:focus-visible,textarea:focus-visib
 .meter i{position:absolute;left:0;bottom:0;background:var(--ok);display:block}
 .meter.v i{width:100%;height:0}
 .meter.h i{height:100%;width:0}
-.dot{min-width:22px;width:22px;min-height:44px;height:44px;padding:0;border:0;background:transparent;display:inline-flex;align-items:center;justify-content:center;margin-left:-4px}
+.dot{min-width:28px;width:28px;min-height:44px;height:44px;padding:0;border:0;background:transparent;display:inline-flex;align-items:center;justify-content:center;margin-left:-4px}
 .dot i{display:block;width:9px;height:9px;border-radius:50%}
 .dot.err i{background:var(--bad)}
 .dot.warn i{background:var(--warn)}
 .addrow{padding:0 0 0 20px}
-.add{min-height:40px;border-style:dashed;color:var(--hi-dim);background:transparent;font-size:14px}
+.add{min-height:44px;border-style:dashed;color:var(--hi-dim);background:transparent;font-size:14px}
 .chain.nested .rows{border-left:2px solid #394253;margin-left:2px}
 .pocket{display:inline-flex;flex-direction:column;align-items:stretch;position:relative;border:1px solid #3a4558;border-radius:10px;background:rgba(138,180,248,.05);padding:2px 2px 2px 4px;margin:2px 4px;min-width:150px;max-width:100%;font-size:14px}
 .pocket .crow{font-size:15px;min-height:46px}
 .pocket .crow.mod{padding-left:10px}
 .pocket .chain.nested .rows{border-left:0;margin:0}
 .pocket .addrow{padding:0 0 0 6px}
-.pocket .add{min-height:34px;font-size:13px}
-.pocket-menu{position:absolute;right:2px;bottom:2px;min-width:30px;min-height:30px;width:30px;height:30px;padding:0;border-radius:8px;font-size:14px;background:rgba(0,0,0,.35);color:var(--hi-dim);z-index:1}
+.pocket .add{min-height:44px;font-size:13px}
+.pocket-menu{position:absolute;right:2px;bottom:2px;min-width:44px;min-height:44px;width:44px;height:44px;padding:0;border-radius:10px;font-size:16px;background:rgba(0,0,0,.35);color:var(--hi-dim);z-index:1}
 
 /* ---- other rows */
 .defrow{display:flex;flex-wrap:wrap;align-items:center;min-height:52px;font:16px var(--mono);padding-left:4px}
@@ -236,7 +237,7 @@ button:focus-visible,.tok:focus-visible,input:focus-visible,textarea:focus-visib
 .ed-head small{color:var(--hi-dim);font-family:system-ui}
 .ed-src{color:var(--hi-dim);font-size:11px;max-width:60%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}
-.chip{min-height:40px;padding:0 12px;border-radius:999px;font:14px var(--mono);background:var(--hi-bg)}
+.chip{min-height:44px;padding:0 12px;border-radius:999px;font:14px var(--mono);background:var(--hi-bg)}
 .chip.on{border-color:var(--hi-accent);background:rgba(90,200,200,.16);color:var(--hi-text)}
 .expr-row{display:flex;align-items:center;gap:6px}
 .expr-row .big{font:15px var(--mono);color:var(--hi-dim)}
@@ -251,7 +252,7 @@ button:focus-visible,.tok:focus-visible,input:focus-visible,textarea:focus-visib
 .barcol.head{background:rgba(90,200,200,.1);outline:1px solid rgba(90,200,200,.5)}
 .bartrack{height:120px;width:100%;background:var(--hi-bg);border-radius:8px;position:relative;touch-action:none;display:flex;align-items:flex-end;overflow:hidden}
 .barfill{width:100%;background:var(--c-arr);opacity:.8;border-radius:6px 6px 0 0}
-.barval{min-height:36px;width:100%;padding:0;font:13px var(--mono);color:var(--c-num)}
+.barval{min-height:44px;width:100%;padding:0;font:13px var(--mono);color:var(--c-num)}
 .mods{display:flex;flex-wrap:wrap;gap:10px 14px;margin-top:10px;align-items:center}
 .mod{display:inline-flex;align-items:center;gap:4px}
 .mod .x{min-width:30px;min-height:30px;width:30px;padding:0;border:0;background:transparent;color:var(--hi-dim)}

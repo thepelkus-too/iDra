@@ -69,4 +69,14 @@ describe('Store', () => {
     expect(seen).toEqual(['edit', 'undo', 'load'])
     expect(st.canUndo).toBe(false)
   })
+
+  test('edits that come from the code view are undoable too, and typing bursts are one step', () => {
+    const st = new Store(base())
+    const id = rotId(st.sketch)
+    st.commit(setArg(st.sketch, { call: id, i: 0 }, num(1)), { source: 'code', coalesce: 'code' })
+    st.commit(setArg(st.sketch, { call: id, i: 0 }, num(2)), { source: 'code', coalesce: 'code' })
+    expect(st.past.length).toBe(1)
+    st.undo()
+    expect(toCode(st.sketch)).toContain('rotate(0.8)')
+  })
 })

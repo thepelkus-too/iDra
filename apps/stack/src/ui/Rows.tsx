@@ -21,11 +21,10 @@ import {
 import { createContext } from 'preact'
 import { useContext, useMemo, useRef, useState } from 'preact/hooks'
 import type { RefObject } from 'preact'
-import { fmt, kindsFor, type Kind } from '../conv'
+import type { Kind } from '../conv'
 import { ctx, edit, useStore } from '../ctx'
-import { LONG_MS, useHandle, usePress, useSwipe } from '../gestures'
+import { useHandle, usePress, useSwipe } from '../gestures'
 import {
-  defsBefore,
   duplicateMod,
   duplicateStmt,
   insertMod,
@@ -43,13 +42,15 @@ import {
   stmtOf,
   updateStmt,
   uniqueName,
+  updateCall,
 } from '../model'
 import { closePopover, openPopover, toast } from '../overlay'
 import { focusNode } from '../nav'
 import type { RowProblem } from '../problems'
-import { ArgView, argInfoFor, openKindMenu, type ArgInfo } from './ArgView'
+import { ArgView, argInfoFor, type ArgInfo } from './ArgView'
 import { openMenu, type MenuItem } from './Menu'
 import { FnPicker, RefPicker, useCatalogVersion } from './Picker'
+import { Keypad } from './Keypad'
 import { Scrub } from './Scrub'
 
 // ---------------------------------------------------------------- shared view state
@@ -120,9 +121,9 @@ function CallRow({ call, chainId, index, count, stmtId, nested, depth, rows }: C
     }
     items.push({
       label: 'Insert modifier below…',
-      run: () => openFnPicker(el, 'mod', undefined, (name) => insertAt(chainId, pos === 'gen' ? 0 : modIndex + 1, name)),
+      run: () => openFnPicker(el, 'mod', undefined, (name) => insertAt(chainId, pos === 'gen' ? 0 : modIndex + 1, name), true),
     })
-    if (pos === 'mod') items.push({ label: 'Insert modifier above…', run: () => openFnPicker(el, 'mod', undefined, (name) => insertAt(chainId, modIndex, name)) })
+    if (pos === 'mod') items.push({ label: 'Insert modifier above…', run: () => openFnPicker(el, 'mod', undefined, (name) => insertAt(chainId, modIndex, name), true) })
     items.push({ label: pos === 'gen' ? 'Change generator…' : 'Change function…', run: () => openFnPicker(el, pos, call.fn, (name) => edit((s) => replaceFn(s, call.id, name, ctx.catalog)), !def) })
     if (pos === 'mod') items.push({ label: 'Delete', danger: true, sep: true, run: del, testid: 'menu-delete' })
     openMenu(el, items, `${pos === 'gen' ? '' : '.'}${call.fn}`)
@@ -211,7 +212,6 @@ function removeArg(s: Sketch, callId: string, i: number): Sketch {
 function addArg(s: Sketch, callId: string): Sketch {
   return edit0(s, callId, (c) => ({ ...c, args: [...c.args, num(0)] }))
 }
-import { updateCall } from '../model'
 const edit0 = updateCall
 
 // ---------------------------------------------------------------- chains
@@ -240,11 +240,17 @@ export function ChainView({ chain, stmtId, nested, depth }: { chain: Chain; stmt
   const rows = useRef<HTMLDivElement>(null)
   const count = 1 + chain.mods.length
   const add = (el: Element) =>
-    openFnPicker(el, 'mod', undefined, (name) => {
-      const c = newCall(name, ctx.catalog)
-      edit((s) => insertMod(s, chain.id, chain.mods.length, c))
-      ctx.store.select(c.id)
-    })
+    openFnPicker(
+      el,
+      'mod',
+      undefined,
+      (name) => {
+        const c = newCall(name, ctx.catalog)
+        edit((s) => insertMod(s, chain.id, chain.mods.length, c))
+        ctx.store.select(c.id)
+      },
+      true,
+    )
   return (
     <div class={`chain ${nested ? 'nested' : ''}`} data-chain={chain.id} data-depth={depth}>
       <div class="rows" ref={rows}>
@@ -669,8 +675,6 @@ const SETTING_HINT: Record<string, Hint> = { bpm: { min: 1, max: 240, step: 1, i
 function SettingBody({ stmt }: { stmt: Extract<Stmt, { k: 'setting' }> }) {
   const hint = SETTING_HINT[stmt.name]
   const set = (v: number) => edit((s) => updateStmt(s, stmt.id, (x) => (x.k === 'setting' ? { ...x, v } : x)), { coalesce: `set:${stmt.id}` })
-  const a: ArgInfo = { owner: stmt.id, fn: '', name: stmt.name, refd: { def: stmt.id }, hint, depth: 0, stmtId: stmt.id }
-  void a
   return (
     <div class="crow plain" data-testid="setting-row">
       <span class="tok fname">{stmt.name}</span>
@@ -689,7 +693,6 @@ function SettingBody({ stmt }: { stmt: Extract<Stmt, { k: 'setting' }> }) {
   )
 }
 
-import { Keypad } from './Keypad'
 function openKeypadFor(el: HTMLElement, title: string, value: number, def: number, hint: Hint, onChange: (n: number) => void): void {
   openPopover(el, () => <Keypad title={title} value={value} def={def} hint={hint} onChange={onChange} onClose={closePopover} />, { width: 268, label: title, onClose: () => (ctx.store.endGroup(), ctx.runner.run()) })
 }
@@ -784,9 +787,3 @@ export function addStatement(kind: 'chain' | 'var-number' | 'var-function' | 'va
   setTimeout(() => focusNode(stmt.id), 60)
 }
 
-void LONG_MS
-void fmt
-void kindsFor
-void defsBefore
-void closePopover
-void openKindMenu

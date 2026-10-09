@@ -1,13 +1,11 @@
 // Top bar, chain strip, banners and the sheets (open another sketch, import, setup, menu).
-import { describe, detectMidi, mountAbout, mountSwitcher, riskyParts, type CapItem, type LibraryEntry, type Stmt } from '@hydra-ipad/core'
+import { describe, detectMidi, mountAbout, mountSwitcher, newId, riskyParts, toCode, type CapItem, type LibraryEntry, type Stmt } from '@hydra-ipad/core'
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks'
 import {
-  codeOf,
   copyCode,
   currentSeed,
   duplicateCurrent,
   exportJs,
-  fileNameFor,
   importAsNew,
   mutateActive,
   newBlankSketch,
@@ -17,9 +15,9 @@ import {
 import { ctx, edit, useRunner, useStore } from '../ctx'
 import { usePress } from '../gestures'
 import { setOut, updateStmt } from '../model'
-import { closePopover, closeSheet, openPopover, openSheet, toast } from '../overlay'
+import { closeSheet, openPopover, openSheet, toast } from '../overlay'
 import { appPrefs } from '../prefs'
-import { autoView, stripOf, type StackMeta, APP, metaOf } from '../view'
+import { autoView, metaOf, stripOf } from '../view'
 import { focusNode } from '../nav'
 import { AudioMount } from './FnEditor'
 import { Keypad } from './Keypad'
@@ -180,7 +178,7 @@ export function ChainStrip() {
       const last = renders[renders.length - 1]
       edit((s) => updateStmt(s, last.id, (x) => (x.k === 'render' ? { ...x, target } : x)))
     } else if (mode === 'all' || target !== 'o0') {
-      edit((s) => ({ ...s, stmts: [...s.stmts, { id: `s${Math.random().toString(36).slice(2, 8)}`, k: 'render', target } as Stmt] }))
+      edit((s) => ({ ...s, stmts: [...s.stmts, { id: newId('s'), k: 'render', target } as Stmt] }))
     }
     ctx.store.setView({ renderMode: mode })
   }
@@ -284,7 +282,7 @@ export function Banners() {
   const [showParts, setShowParts] = useState(false)
   const [midi, setMidi] = useState<CapItem | undefined>()
   const [dismissed, setDismissed] = useState<Record<string, boolean>>({})
-  const usesMidi = useMemo(() => /requestMIDIAccess|\bmidi\b/i.test(sk.stmts.map((s) => (s.k === 'raw' ? s.code : '')).join('\n')), [sk])
+  const usesMidi = useMemo(() => /requestMIDIAccess|\bmidi\b/i.test(toCode(sk)), [sk])
   useEffect(() => {
     if (!usesMidi) return setMidi(undefined)
     midiProbe ??= detectMidi(false)
@@ -544,8 +542,3 @@ export function openAudioSheet(): void {
   openSheet('Audio', (close) => <AudioMount onDone={close} />)
 }
 
-void closePopover
-void codeOf
-void fileNameFor
-void ({} as StackMeta)
-void APP

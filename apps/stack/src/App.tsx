@@ -1,18 +1,16 @@
 // The page: top bar, chain strip, the stack (or the code) and the live preview. Landscape: stack left, preview right.
 // Portrait / Split View / Slide Over: preview on top, collapsible to a floating picture-in-picture handle.
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks'
-import { ctx, useRunner, useStore } from './ctx'
-import { findCallDeep, stmtOf } from './model'
-import { OverlayHost, closeAllOverlays, popoverOpen, sheetOpen, toast } from './overlay'
+import { ctx, edit, useRunner, useStore } from './ctx'
+import { duplicateMod, findCallDeep, stmtOf } from './model'
+import { OverlayHost, closeAllOverlays, toast } from './overlay'
 import { makeViewState } from './viewstate'
 import { appPrefs } from './prefs'
 import { metaOf } from './view'
 import { AddBar, Banners, ChainStrip, FooterAbout, TopBar, openAudioSheet } from './ui/Chrome'
 import { CodeView, codeBridge } from './ui/CodeView'
 import { useCatalogVersion } from './ui/Picker'
-import { StatementList, deleteStatement, duplicateStatement, type ViewState } from './ui/Rows'
-import { duplicateMod } from './model'
-import { edit } from './ctx'
+import { StatementList, duplicateStatement, type ViewState } from './ui/Rows'
 
 type Layout = 'land' | 'port'
 
@@ -203,6 +201,3 @@ export function App({ stage }: { stage: HTMLElement }) {
   )
 }
 
-void popoverOpen
-void sheetOpen
-void deleteStatement

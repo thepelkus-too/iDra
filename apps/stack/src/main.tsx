@@ -7,6 +7,7 @@ import { Runner } from './runner'
 import { Store } from './store'
 import { CSS } from './styles'
 import { thumbs } from './thumbs'
+import { codeBridge } from './ui/CodeView'
 import { APP, autoView, metaOf } from './view'
 
 applyAppBase()
@@ -90,11 +91,15 @@ async function boot() {
   window.addEventListener('hashchange', async () => {
     const id = parseRoute(location.hash).sketchId
     if (!id || id === store.sketch.id) return
+    codeBridge.flush()
     await lib.flush()
     const s = await lib.get(id)
     if (s) await load(s)
   })
-  const flush = () => void lib.flush()
+  const flush = () => {
+    codeBridge.flush()
+    void lib.flush()
+  }
   window.addEventListener('pagehide', flush)
   document.addEventListener('visibilitychange', () => document.visibilityState === 'hidden' && flush())
 
