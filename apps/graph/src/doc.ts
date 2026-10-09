@@ -6,6 +6,7 @@ import { ctx } from './kit/ctx'
 import { toast } from './kit/overlay'
 import type { CommitOpts } from './kit/store'
 import { graphToIR, irToGraph, type CompileResult, type GEdge, type Graph } from './model'
+import type { OpResult } from './ops'
 import { APP, autoView, layoutGraph, metaOf, type GraphMeta, type XY } from './view'
 
 // ---------------------------------------------------------------- memoised per sketch
@@ -50,26 +51,27 @@ export function posOf(id: string, sk: Sketch = ctx.store.sketch): XY {
 }
 
 /** Compile a graph edit into the sketch and commit it with the view state. Returns an error message instead when it is rejected. */
-export function applyGraph(g: Graph, opts: CommitOpts & { placed?: Record<string, XY>; view?: Partial<GraphMeta> } = {}): string | undefined {
+export function applyGraph(g: Graph, opts: CommitOpts & { placed?: Record<string, XY>; meta?: Partial<GraphMeta> } = {}): string | undefined {
   const sk = ctx.store.sketch
   const meta = metaNow(sk)
   const r = graphToIR(g, sk, meta)
   if (r.errors.length) return r.errors[0].message
   const pos = { ...meta.pos, ...(opts.placed ?? {}) }
-  const next = withMeta(r.sketch, APP, { ...meta, ...(opts.view ?? {}), v: 1, pos, links: r.meta.links, bypass: r.meta.bypass })
-  const { placed: _p, view: _v, ...commit } = opts
+  const next = withMeta(r.sketch, APP, { ...meta, ...(opts.meta ?? {}), v: 1, pos, links: r.meta.links, bypass: r.meta.bypass })
+  const { placed: _p, meta: _m, ...commit } = opts
   void _p
-  void _v
+  void _m
   ctx.store.commit(next, commit)
   return undefined
 }
 
 /** Apply or explain: a rejected edit shows its reason and flashes the offending cable. */
-export function tryApply(g: Graph | { error: string } | undefined, opts: Parameters<typeof applyGraph>[1] = {}, reject?: GEdge): boolean {
-  if (!g) return false
-  if ('error' in g) {
+export function tryApply(r: Graph | OpResult | { error: string } | undefined, opts: Parameters<typeof applyGraph>[1] = {}, reject?: GEdge): boolean {
+  if (!r) return false
+  const g = 'nodes' in r ? r : 'graph' in r ? r.graph : undefined
+  if (!g) {
     ui.reject(reject)
-    toast(g.error)
+    toast('error' in r && r.error ? r.error : 'That does not fit here')
     return false
   }
   const err = applyGraph(g, opts)

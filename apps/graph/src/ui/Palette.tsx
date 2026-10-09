@@ -1,13 +1,13 @@
 // The add-node palette (a docked bottom drawer: grouped, searchable, recent and favourites; tap to add, or drag onto the canvas,
 // a node or a cable), the filtered add menu that opens where a cable is dropped on empty canvas, and the function picker that
 // swaps a node's function (keeping inputs whose names match).
-import { DEFAULT, insertStmt, newId, num, rawStmt, type FnDef, type Stmt, type Value } from '@hydra-ipad/core'
+import { DEFAULT, newId, num, rawStmt, type FnDef, type Stmt, type Value } from '@hydra-ipad/core'
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks'
 import { appPrefs } from '../prefs'
 import { applyGraph, graphOf, metaNow, posOf, tryApply, ui, useUi } from '../doc'
 import { ctx, edit, useCatalogVersion } from '../kit/ctx'
 import { defaultSpec, MOD_ICON, MOD_LABEL, type ModKind } from '../kit/mods'
-import { setupInsertIndex } from '../kit/model'
+import { insertStmt, setupInsertIndex } from '../kit/model'
 import { closePopover, openPopover, toast } from '../kit/overlay'
 import { thumbs } from '../kit/thumbs'
 import { nodeById, type GEdge, type Graph, type Port } from '../model'
@@ -80,10 +80,10 @@ export function placeItem(item: Item, target: DropTarget): boolean {
     let port: number | undefined
     if (target.t === 'port' && typeof target.port === 'number') [id, port] = [target.id, target.port]
     else if (target.t === 'node') [id, port] = [target.id, firstNumberPort(nodeById(g, target.id)!)]
-    if (!id || port === undefined) return void toast('Drop a modulator on a number input of a node') ?? false
+    if (!id || port === undefined) return (toast('Drop a modulator on a number input of a node'), false)
     const n = nodeById(g, id)!
     const inp = ctx.catalog.inputs(n.call!.fn)[port]
-    if (inp && inp.type === 'sampler2D') return void toast('That input takes a texture') ?? false
+    if (inp && inp.type === 'sampler2D') return (toast('That input takes a texture'), false)
     const hint = inp ? ctx.catalog.hint(n.call!.fn, inp.name) : { min: 0, max: 1 }
     const cur = n.call!.args[port]
     const around = cur && cur.k === 'num' ? cur.v : typeof inp?.default === 'number' ? inp.default : 0
@@ -100,7 +100,7 @@ export function placeItem(item: Item, target: DropTarget): boolean {
       const sel = ui.state.sel[0]
       const sn = sel ? nodeById(g, sel) : undefined
       if (sn && sn.kind === 'call') return placeItem(item, { t: 'node', id: sel, at: { x: posOf(sel).x + CALL_W + 60, y: posOf(sel).y } })
-      return void toast(`${fn.name}() changes a texture: drop it on a node or a cable`) ?? false
+      return (toast(`${fn.name}() changes a texture: drop it on a node or a cable`), false)
     }
     return tryApply({ nodes: [...g.nodes, node], edges: g.edges }, { placed })
   }
@@ -111,13 +111,13 @@ export function placeItem(item: Item, target: DropTarget): boolean {
     if (gen) {
       // a generator dropped on a node goes into its first free texture input
       const tp = firstTexPort(tn)
-      if (tp === undefined) return void toast(`${fn.name}() starts a chain: drop it on empty canvas or a texture input`) ?? false
+      if (tp === undefined) return (toast(`${fn.name}() starts a chain: drop it on empty canvas or a texture input`), false)
       return tryApply(connect({ nodes: [...g.nodes, node], edges: g.edges }, node.id, target.id, tp), { placed })
     }
     if (tn.kind === 'out' || tn.kind === 'src') {
       const e = g.edges.find((x) => x.to === tn.id && x.port === 'in')
       if (e) return tryApply(spliceOr(g, e, node), { placed })
-      return void toast('Drop it on a cable or a chain node') ?? false
+      return (toast('Drop it on a cable or a chain node'), false)
     }
     return tryApply(appendAfter(g, target.id, node), { placed })
   }
@@ -128,7 +128,7 @@ export function placeItem(item: Item, target: DropTarget): boolean {
     if (!from) return false
     if (gen) {
       const tp = firstTexPort(node)
-      if (tp === undefined) return void toast(`${fn.name}() has no texture input`) ?? false
+      if (tp === undefined) return (toast(`${fn.name}() has no texture input`), false)
       return tryApply(connect({ nodes: [...g.nodes, node], edges: g.edges }, target.id, node.id, tp), { placed })
     }
     return tryApply(connect({ nodes: [...g.nodes, node], edges: g.edges }, target.id, node.id, 'in'), { placed })
@@ -138,11 +138,11 @@ export function placeItem(item: Item, target: DropTarget): boolean {
 
 const spliceOr = (g: Graph, e: GEdge, node: ReturnType<typeof newCallNode>) => splice(g, e, node)
 
-function firstTexPort(n: { kind: string; call?: { fn: string } }): number | undefined {
+function firstTexPort(n: { id: string; kind: string; call?: { fn: string } }): number | undefined {
   if (n.kind !== 'call') return undefined
   const ins = ctx.catalog.inputs(n.call!.fn)
   const g = graphOf()
-  const free = ins.findIndex((inp, i) => inp.type === 'sampler2D' && !g.edges.some((e) => e.to === (n as { id: string }).id && e.port === i))
+  const free = ins.findIndex((inp, i) => inp.type === 'sampler2D' && !g.edges.some((e) => e.to === n.id && e.port === i))
   return free >= 0 ? free : undefined
 }
 
@@ -322,6 +322,7 @@ export function addByTap(item: Item): void {
 export const canvasApi = {
   center: (): XY => ({ x: 400, y: 200 }),
   toWorld: (cx: number, cy: number): XY => ({ x: cx, y: cy }),
+  dragItem: (_item: Item, _e: PointerEvent): void => {},
 }
 const canvasCenter = () => canvasApi.center()
 
@@ -446,4 +447,3 @@ export function swapFn(nodeId: string, fn: string): void {
   closePopover()
 }
 
-void ({} as typeof isGenerator)

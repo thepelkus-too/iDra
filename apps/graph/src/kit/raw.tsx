@@ -91,7 +91,12 @@ export function RawEditor({ stmt, rows = 4 }: { stmt: Extract<Stmt, { k: 'raw' }
         autocomplete="off"
         spellcheck={false}
         value={text}
-        ref={(el) => el && document.activeElement !== el && !el.dataset.focused && ((el.dataset.focused = '1'), el.focus())}
+        ref={(el) => {
+          if (el && document.activeElement !== el && !el.dataset.focused) {
+            el.dataset.focused = '1'
+            el.focus()
+          }
+        }}
         onInput={(e) => {
           const v = (e.currentTarget as HTMLTextAreaElement).value
           setText(v)

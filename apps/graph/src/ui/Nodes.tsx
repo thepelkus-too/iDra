@@ -1,7 +1,7 @@
 // The node cards. Every kind of statement and call has one: calls (with a row per input), outputs, sources, variables,
 // modulators, comments (sticky notes), raw JS, settings, sources and render(). Ports are fixed offsets (see geom.ts) so the
 // canvas can draw cables without measuring the DOM.
-import { DEFAULT, OUT_NAMES, SOURCE_NAMES, num, type DefStmt, type Hint, type Stmt, type Value } from '@hydra-ipad/core'
+import { DEFAULT, OUT_NAMES, SOURCE_NAMES, newId, num, type DefStmt, type Hint, type Stmt, type Value } from '@hydra-ipad/core'
 import { memo } from 'preact/compat'
 import { useState } from 'preact/hooks'
 import { applyGraph, graphOf, liveIdsFor, posOf, ui } from '../doc'
@@ -18,6 +18,7 @@ import { outId, type GNode, type Port } from '../model'
 import { setNodeArg, updateNode } from '../ops'
 import { HEAD, ROW, sizeOf } from '../view'
 import { openFnPicker } from './Palette'
+import { PreviewSlot } from './Preview'
 
 export const TYPE_LABEL: Record<string, string> = { src: 'Source', coord: 'Geometry', color: 'Color', combine: 'Blend', combineCoord: 'Modulate', unknown: 'Unknown', plugin: 'Plugin' }
 export const TYPE_ICON: Record<string, string> = { src: '◉', coord: '⤢', color: '◐', combine: '⊕', combineCoord: '≈', unknown: '?', plugin: '✦' }
@@ -38,7 +39,8 @@ export interface NodeProps {
   dup: number
   error?: string
   shadowed?: boolean
-  preview?: string
+  /** a live preview of the texture at this node is pinned */
+  preview?: boolean
 }
 
 function Port({ node, port, dir, ok, cls = '' }: { node: string; port: Port | 'out'; dir: 'in' | 'out'; ok?: boolean; cls?: string }) {
@@ -88,7 +90,7 @@ function CallCard(p: NodeProps) {
   const targets = p.targets ? p.targets.split(',') : []
   return (
     <div
-      class={`node call t-${type} ${plugin ? 'plugin' : ''} ${p.selected ? 'sel' : ''} ${n.bypassed ? 'bypassed' : ''} ${p.error ? 'err' : ''} ${!def ? 'unknown' : ''}`}
+      class={`node call t-${type} ${plugin ? 'plugin' : ''} ${p.selected ? 'sel' : ''} ${n.bypassed ? 'bypassed' : ''} ${p.error ? 'err' : ''} ${p.shadowed ? 'shadowed' : ''} ${!def ? 'unknown' : ''}`}
       style={{ transform: `translate(${p.x}px,${p.y}px)`, width: `${s.w}px`, height: `${s.h}px` }}
       data-node={n.id}
       data-fn={call.fn}
@@ -116,9 +118,10 @@ function CallCard(p: NodeProps) {
           </button>
         )}
         {n.bypassed && <span class="badge byp">bypassed</span>}
+        {p.shadowed && <span class="badge shadow" title="a later chain writes the same output">shadowed</span>}
         <Port node={n.id} port="out" dir="out" />
       </div>
-      {p.preview && <img class="nthumb" src={p.preview} alt="" data-testid="node-preview" />}
+      {p.preview && <PreviewSlot id={n.id} />}
       {p.error && <div class="nerr" role="alert">{p.error}</div>}
       <div class="nbody">
         {Array.from({ length: rows }, (_, i) => {
@@ -227,7 +230,7 @@ export function setRender(target: string): void {
   if (renders.length) {
     const last = renders[renders.length - 1]
     edit((s) => updateStmt(s, last.id, (x) => (x.k === 'render' ? { ...x, target: t } : x)))
-  } else edit((s) => ({ ...s, stmts: [...s.stmts, { id: `s${Date.now().toString(36)}`, k: 'render', target: t } as Stmt] }))
+  } else edit((s) => ({ ...s, stmts: [...s.stmts, { id: newId('s'), k: 'render', target: t } as Stmt] }))
   toast(target === 'all' ? 'Showing all four outputs' : `Showing ${target}`)
 }
 
@@ -434,7 +437,7 @@ function NoteCard(p: NodeProps) {
       <div class="nhead" data-drag="1">
         <small>{st.block ? '/* note */' : '// note'}</small>
       </div>
-      <button type="button" class="notetext" data-testid="note-text" onClick={(e) => (e.stopPropagation(), promptText('Comment', st.text, (t) => edit((sk) => updateStmt(sk, st.id, (x) => (x.k === 'comment' ? { ...x, text: t } : x))))))}>
+      <button type="button" class="notetext" data-testid="note-text" onClick={(e) => (e.stopPropagation(), promptText('Comment', st.text, (t) => edit((sk) => updateStmt(sk, st.id, (x) => (x.k === 'comment' ? { ...x, text: t } : x)))))}>
         {st.text}
       </button>
     </div>

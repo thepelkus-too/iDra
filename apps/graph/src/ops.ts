@@ -49,7 +49,7 @@ export function accepts(g: Graph, from: string, to: string, port: Port, cat: Cat
     if (port !== 'in') return 'outputs take a chain'
     return f.kind === 'call' ? undefined : 'only a chain can be written to an output'
   }
-  if (t.kind === 'def') return port === 'in' && (f.kind === 'call' || f.kind === 'def') ? undefined : 'a variable takes a chain'
+  if (t.kind === 'def') return port === 'in' && f.kind === 'call' ? undefined : 'a variable takes a chain'
   if (t.kind !== 'call') return 'this node has no inputs'
   if (port === 'in') {
     if (isGenerator(t, cat)) return `${t.call!.fn}() starts a chain; it has no main input`
