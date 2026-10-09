@@ -68,6 +68,30 @@ rt.onError(showErrors)                               // shader compile warnings 
 
 `createRuntime` defaults to `isolation: 'iframe'` (sandboxed, opaque origin). Keep it. Offer inline only as an explicit, trust-gated fallback (camera/screen sources; see `docs/security.md`).
 
+### Backdrop (full-background preview)
+
+Every editor offers the preview as a **panel** (its own layout) or as the **full background**, the way hydra.ojack.xyz shows
+code over the running texture. `createBackdrop` (core, `backdrop.ts`) owns the shared preference (`hydra-core:previewPlacement`,
+so switching editors keeps it), the veil strength, the `hi-backdrop` class on `<html>` and the runtime's resolution (the screen's
+aspect while it is on, longest side ≤ 1280, re-fitted on rotation; `base` again when it is off).
+
+```ts
+const backdrop = createBackdrop({ base: { width: 960, height: 540 }, setResolution: (w, h) => rt?.setResolution(w, h) })
+createRuntime(stageEl, { ...backdrop.resolution(), … })   // start at the right size; call backdrop.refresh() after a restart
+backdrop.toggle() · backdrop.cycleVeil() · backdrop.subscribe(cb) · backdrop.state  // { placement: 'panel' | 'backdrop', veil }
+```
+
+* **Never move the stage element** to show it full screen: moving an iframe reloads it. Put `data-hi-backdrop="stage"` on the
+  element that holds it; core's CSS pins that element to the viewport (`position:fixed; inset:0; z-index:0; pointer-events:none`)
+  while `html.hi-backdrop` is set. Its ancestors must not have `transform`, `filter`, `contain` or `container-type` (each makes a
+  containing block for fixed elements). `data-hi-backdrop="hide"` hides an element while the backdrop is on, `"only"` shows it only then.
+* Give your own panels `position:relative` and a `z-index` of 1 or more, decreasing from top to bottom (Chain Stack: top bar 3, strip 2, stack 1), so drop-downs such as the switcher's menu open over the panels below them, and a `background: var(--hi-veil)` (a near-black wash whose alpha follows
+  the veil strength) under `html.hi-backdrop`; let the editing area take the space the preview used. `--hi-veil-line` and
+  `--hi-ink-shadow` (text shadow for text drawn straight on the texture) are there too. Code views: transparent editor, a veil
+  behind each line (Chain Stack: `.cm-line{width:fit-content;background:var(--hi-veil)}`).
+* Show a toggle in the top bar (and the veil choice while it is on). Status that lived on the preview (safe mode, last good
+  frame) must stay visible somewhere else.
+
 ### Trust gate
 
 Before the **first** run of a sketch: `if (await library.needsTrust(sketch))` show **"This sketch runs code. Run it?"** (`riskyParts(sketch)` lists why).

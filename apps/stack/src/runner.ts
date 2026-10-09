@@ -61,7 +61,12 @@ export class Runner {
   /** hook for tests/e2e */
   runs = 0
 
-  constructor(private stage: HTMLElement, private size = { width: 960, height: 540 }) {}
+  /** the render size for the next (re)start; the backdrop swaps in the screen's aspect */
+  size: () => { width: number; height: number } = () => ({ width: 960, height: 540 })
+  /** called after every (re)start once the runtime is ready (the backdrop re-applies its resolution) */
+  onStarted?: () => void
+
+  constructor(private stage: HTMLElement) {}
 
   subscribe(cb: () => void): () => void {
     this.listeners.add(cb)
@@ -78,7 +83,8 @@ export class Runner {
     this.isolation = isolation
     this.errors = []
     this.lastGood = undefined
-    this.rt = createRuntime(this.stage, { isolation, audio: this.audio, catalog, width: this.size.width, height: this.size.height })
+    const { width, height } = this.size()
+    this.rt = createRuntime(this.stage, { isolation, audio: this.audio, catalog, width, height })
     this.unErr = this.rt.onError((e) => this.onError(e))
     try {
       await this.rt.ready
@@ -90,6 +96,7 @@ export class Runner {
     } catch {
       /* optional */
     }
+    this.onStarted?.()
   }
 
   dispose(): void {

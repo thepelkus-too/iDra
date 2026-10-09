@@ -1,7 +1,8 @@
 // The page: top bar, chain strip, the stack (or the code) and the live preview. Landscape: stack left, preview right.
 // Portrait / Split View / Slide Over: preview on top, collapsible to a floating picture-in-picture handle.
+// Backdrop (any size): the preview fills the screen behind everything and the stack takes the whole area over it.
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks'
-import { ctx, edit, useRunner, useStore } from './ctx'
+import { ctx, edit, useBackdrop, useRunner, useStore } from './ctx'
 import { duplicateMod, findCallDeep, stmtOf } from './model'
 import { OverlayHost, closeAllOverlays, toast } from './overlay'
 import { makeViewState } from './viewstate'
@@ -132,6 +133,7 @@ export function App({ stage }: { stage: HTMLElement }) {
   const runner = useRunner()
   const catVersion = useCatalogVersion()
   const layout = useLayout()
+  const backdrop = useBackdrop().placement === 'backdrop'
   useShortcuts()
   useTapGestures()
   const sk = ctx.store.sketch
@@ -160,7 +162,7 @@ export function App({ stage }: { stage: HTMLElement }) {
 
   const st = runner.status
   return (
-    <div class={`app ${layout} ${collapsed ? 'pip' : ''} mode-${mode}`} data-layout={layout} data-testid="app">
+    <div class={`app ${layout} ${backdrop ? 'backdrop' : collapsed ? 'pip' : ''} mode-${mode}`} data-layout={layout} data-preview={backdrop ? 'backdrop' : collapsed ? 'pip' : 'panel'} data-testid="app">
       <TopBar mode={mode} setMode={setMode} onToggleAudio={openAudioSheet} />
       <ChainStrip />
       <div class="body">
@@ -181,19 +183,20 @@ export function App({ stage }: { stage: HTMLElement }) {
             <span class="runinfo" data-testid="runinfo">
               {st.phase === 'ok' ? `${st.recompiled ? 'compiled' : 'numbers only'} · ${st.ms?.toFixed(0)} ms` : st.phase === 'running' ? 'running…' : st.phase === 'error' ? 'error' : ''}
               {runner.trust.pending ? ' · safe mode' : ''}
+              {backdrop && st.fellBack ? ' · last good frame' : ''}
             </span>
           </div>
         </section>
-        <section class="pane preview-pane" aria-label="Live preview" data-testid="preview-pane">
+        <section class="pane preview-pane" aria-label="Live preview" data-testid="preview-pane" data-hi-backdrop="stage">
           <div class="stage-slot" ref={slot} data-testid="stage-slot" />
-          <div class="preview-tools">
+          <div class="preview-tools" data-hi-backdrop="hide">
             {runner.trust.pending && <span class="pill warn">safe mode</span>}
             {st.fellBack && <span class="pill err">last good frame</span>}
             <button type="button" class="icon small" data-testid="preview-toggle" aria-label={collapsed ? 'Show preview' : 'Shrink preview'} aria-pressed={collapsed} onClick={toggleCollapsed}>
               {collapsed ? '⤢' : '⤡'}
             </button>
           </div>
-          {collapsed && <button type="button" class="pip-hit" aria-label="Show preview" onClick={toggleCollapsed} />}
+          {collapsed && !backdrop && <button type="button" class="pip-hit" aria-label="Show preview" onClick={toggleCollapsed} />}
         </section>
       </div>
       <OverlayHost />
