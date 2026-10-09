@@ -315,7 +315,10 @@ button:focus-visible,.tok:focus-visible,input:focus-visible,textarea:focus-visib
 .veil-swatch.strong::after{background:rgba(8,10,14,.78)}
 .app.backdrop{background:transparent}
 .app.backdrop .body{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,1fr)}
-.app.backdrop>.topbar,.app.backdrop>.strip,.app.backdrop .stack-pane{position:relative;z-index:1}
+/* stacked top to bottom so the switcher's drop-down (inside the top bar) opens over the strip and the stack */
+.app.backdrop>.topbar{position:relative;z-index:3}
+.app.backdrop>.strip{position:relative;z-index:2}
+.app.backdrop .stack-pane{position:relative;z-index:1}
 .app.backdrop .topbar,.app.backdrop .strip,.app.backdrop .foot{background:var(--hi-veil);border-color:var(--hi-veil-line);-webkit-backdrop-filter:none;backdrop-filter:none}
 .app.backdrop .stack-pane{border:0;background:transparent}
 .app.backdrop .preview-pane{border:0}

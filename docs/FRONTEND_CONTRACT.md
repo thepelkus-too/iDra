@@ -85,7 +85,7 @@ backdrop.toggle() · backdrop.cycleVeil() · backdrop.subscribe(cb) · backdrop.
   element that holds it; core's CSS pins that element to the viewport (`position:fixed; inset:0; z-index:0; pointer-events:none`)
   while `html.hi-backdrop` is set. Its ancestors must not have `transform`, `filter`, `contain` or `container-type` (each makes a
   containing block for fixed elements). `data-hi-backdrop="hide"` hides an element while the backdrop is on, `"only"` shows it only then.
-* Give your own panels `position:relative; z-index:1` and a `background: var(--hi-veil)` (a near-black wash whose alpha follows
+* Give your own panels `position:relative` and a `z-index` of 1 or more, decreasing from top to bottom (Chain Stack: top bar 3, strip 2, stack 1), so drop-downs such as the switcher's menu open over the panels below them, and a `background: var(--hi-veil)` (a near-black wash whose alpha follows
   the veil strength) under `html.hi-backdrop`; let the editing area take the space the preview used. `--hi-veil-line` and
   `--hi-ink-shadow` (text shadow for text drawn straight on the texture) are there too. Code views: transparent editor, a veil
   behind each line (Chain Stack: `.cm-line{width:fit-content;background:var(--hi-veil)}`).

@@ -1137,6 +1137,19 @@ if (want('12')) await block('12', async () => {
     await page.waitForSelector('.keypad')
     await touch.tap('.scrim')
     await shot(page, '12-backdrop-portrait-blocks.png')
+    // the editor switcher's drop-down opens over the strip and the stack, and its items take the tap
+    await touch.tap('.hi-switch > button')
+    await page.waitForSelector('.hi-switch .menu a, .hi-switch .menu button', { state: 'visible' })
+    const onTop = await page.evaluate(() => {
+      const items = [...document.querySelectorAll('.hi-switch .menu a, .hi-switch .menu button')]
+      return items.every((el) => {
+        const r = el.getBoundingClientRect()
+        return el.contains(document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2))
+      }) && items.length > 0
+    })
+    assert.ok(onTop, 'switcher items are on top')
+    await shot(page, '12-backdrop-switcher.png')
+    await touch.tap('.hi-switch > button')
     await touch.tap('[data-testid=veil]')
     assert.equal(await page.locator('[data-testid=veil]').getAttribute('data-veil'), 'strong')
     await shot(page, '12-backdrop-portrait-strong.png')
