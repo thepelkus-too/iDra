@@ -37,8 +37,12 @@ export class HydraAudio {
   fft: number[] = []
   settings: Array<{ cutoff: number; scale: number; smooth: number }> = []
   isDrawing: boolean
+  /** Hydra's beat detector state (same fields and defaults as `audio.js`); `onBeat` is called when it fires. */
   beat = { holdFrames: 20, threshold: 40, _cutoff: 0, decay: 0.98, _framesSinceBeat: 0 }
   onBeat: () => void = () => {}
+  /** frames fed so far, and the frame number of the last beat (host-side meters use these; not part of Hydra's API) */
+  frames = 0
+  lastBeatFrame = -1
   canvas?: HTMLCanvasElement
   ctx?: CanvasRenderingContext2D | null
   private target: Record<string, unknown> | false
@@ -70,7 +74,9 @@ export class HydraAudio {
 
   /** Same maths as Audio.tick(): `specific` is Meyda's loudness.specific (24 Bark bands), `total` its loudness.total. */
   feed(specific: ArrayLike<number>, total: number): void {
+    this.frames++
     this.vol = total
+    this.detectBeat(this.vol)
     if (!this.bins.length) return
     const reducer = (acc: number, cur: number) => acc + cur
     const spacing = Math.floor(specific.length / this.bins.length)
@@ -81,6 +87,27 @@ export class HydraAudio {
       .map((bin, index) => bin * (1.0 - this.settings[index].smooth) + this.prevBins[index] * this.settings[index].smooth)
     this.fft = this.bins.map((bin, index) => Math.max(0, (bin - this.settings[index].cutoff) / this.settings[index].scale))
     if (this.isDrawing) this.draw()
+  }
+
+  /** Line-for-line port of `Audio.detectBeat` (adaptive threshold on `vol`, from p5-music-viz). */
+  detectBeat(level: number): void {
+    if (level > this.beat._cutoff && level > this.beat.threshold) {
+      this.lastBeatFrame = this.frames
+      try {
+        this.onBeat()
+      } catch {
+        /* a throwing sketch callback must not stop the analysis */
+      }
+      this.beat._cutoff = level * 1.2
+      this.beat._framesSinceBeat = 0
+    } else {
+      if (this.beat._framesSinceBeat <= this.beat.holdFrames) {
+        this.beat._framesSinceBeat++
+      } else {
+        this.beat._cutoff *= this.beat.decay
+        this.beat._cutoff = Math.max(this.beat._cutoff, this.beat.threshold)
+      }
+    }
   }
 
   /** Hydra calls this each tick; analysis is pushed through feed() instead. */

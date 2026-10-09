@@ -1,4 +1,5 @@
 import * as acorn from 'acorn'
+import { isAudioChipSource } from './audio-chip'
 
 // Conservative allowlist used by "safe mode": an expression/function that only does arithmetic over
 // Hydra's documented globals can run without the trust prompt. Anything else needs the owner's OK.
@@ -16,6 +17,8 @@ const ALLOWED_MEMBERS = new Set([
 ])
 
 export function isSafeExpression(src: string): boolean {
+  // the audio chip forms core builds (smoothed chips keep one number in a closure) only read `a`
+  if (isAudioChipSource(src)) return true
   let ast: acorn.Node
   try {
     ast = acorn.parseExpressionAt(src, 0, { ecmaVersion: 'latest' })
