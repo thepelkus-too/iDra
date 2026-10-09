@@ -55,7 +55,7 @@ await step('shell loads, seeds 3 starter sketches, lists editors from apps.json'
   await page.waitForFunction(() => document.querySelectorAll('.card').length === 3, null, { timeout: 15000 })
   assert.equal(await page.locator('.card').count(), 3)
   const apps = await (await page.request.get(base + 'apps.json')).json()
-  assert.deepEqual(apps.apps.map((a) => a.name), ['harness'])
+  assert.ok(apps.apps.some((a) => a.name === 'harness'), 'the harness is listed (other editors may be too)')
   assert.match(await page.textContent('footer'), /About \/ Source.*AGPL-3\.0/s)
   assert.equal(await page.getAttribute('footer a', 'href'), 'https://github.com/thepelkus-too/iDra')
 })
