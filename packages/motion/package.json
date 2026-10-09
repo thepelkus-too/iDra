@@ -1,0 +1,35 @@
+{
+  "name": "hydra-motion",
+  "version": "0.1.0",
+  "description": "Glides, holds and pads for Hydra: callable values (knob, gate) that Hydra calls every frame. One small script, no dependencies.",
+  "license": "MIT",
+  "author": "hydra-motion contributors",
+  "type": "module",
+  "main": "dist/hydra-motion.js",
+  "files": [
+    "dist/hydra-motion.js",
+    "dist/easings.json",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "hydra",
+    "hydra-synth",
+    "livecoding",
+    "glide",
+    "envelope"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/OWNER/hydra-motion.git"
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "test": "node --test \"test/*.test.mjs\""
+  },
+  "devDependencies": {
+    "esbuild": "^0.24.0",
+    "hydra-synth": "1.4.0"
+  }
+}

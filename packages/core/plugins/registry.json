@@ -3,6 +3,23 @@
   "note": "Curated, well-known Hydra extensions. URLs come from each project’s README; see verified.how. Nothing here is fetched until the owner installs it, and plugins only ever run inside the sandboxed preview frame.",
   "plugins": [
     {
+      "id": "hydra-motion",
+      "name": "hydra-motion",
+      "author": "hydra-motion contributors",
+      "license": "MIT",
+      "homepage": "https://github.com/thepelkus-too/iDra/tree/main/packages/motion",
+      "url": "plugins/hydra-motion@0.1.0/hydra-motion.js",
+      "version": "0.1.0",
+      "integrity": "sha256-Ika5SLr6ZBkOp2H6IWG2eeJpmOQQ/O0uu68YnPhy9ws=",
+      "kind": "js",
+      "description": "Glides, holds and pads: knob() values that glide (k.to), jump (k.set) and hold momentarily (k.hold / k.release), and gate() envelopes. Adds the globals knob, gate and hydraMotion.",
+      "verified": {
+        "status": "verified",
+        "checked": "build",
+        "how": "Built from packages/motion in this repository and served by this site at a versioned path; the SRI is generated from the built file at every build (scripts/sync-motion.mjs)."
+      }
+    },
+    {
       "id": "hydra-midi",
       "name": "hydra-midi",
       "author": "Arno Schlipf (arnoson)",

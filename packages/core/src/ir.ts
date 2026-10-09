@@ -122,8 +122,8 @@ export interface Sketch {
   stmts: Stmt[]
   meta?: Record<string, unknown>
   plugins?: PluginRef[]
-  /** import-time facts used for format-preserving export */
-  src?: { tail: string; semi: boolean }
+  /** import-time facts used for format-preserving export. `head`: an inlined hydra-motion block the text started with (docs/motion.md) */
+  src?: { tail: string; semi: boolean; head?: string }
 }
 
 // ---------------------------------------------------------------- ids

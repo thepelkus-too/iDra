@@ -9,6 +9,8 @@ import { Bridge } from './bridge'
 import { getScriptCache, ScriptCache, verifyIntegrity } from './script-cache'
 import { emitPluginLoaded } from '../plugins'
 import { getMidiHub, usesMidi, webMidiAvailable, type MidiHub } from '../midi'
+import { MOTION_METHODS, type MotionMethod } from '../motion-core'
+import { isInvokeName, validInvokeArgs } from './bridge'
 
 export type Isolation = 'iframe' | 'inline'
 
@@ -100,6 +102,13 @@ export interface Runtime {
   setLiveBatch(table: Record<string, number>): void
   loadPlugin(ref: PluginRef): Promise<PluginResult>
   getCatalogDelta(): Promise<CatalogDelta[]>
+  /**
+   * Call a hydra-motion knob's method in the running sketch (a pad press: `invoke('k', 'hold', [0.9])`). `name` must be a
+   * `def` of the sketch last run, `method` one of set | to | hold | release, args numbers or short strings. Fire-and-forget,
+   * delivered in order and never coalesced (unlike setLive); queued until the frame is ready. Returns false (and reports a
+   * warning) when the call is refused.
+   */
+  invoke(name: string, method: MotionMethod, args?: Array<number | string>): boolean
   /** drive Hydra's `mouse.x/y` yourself (the hook for touch input) */
   setMouse(x: number, y: number): void
   /** forward pointer positions over the runtime element into the frame's `mouse` */
@@ -217,6 +226,11 @@ export function createRuntime(container: HTMLElement, opts: RuntimeOptions = {})
   let runScheduled = false
   let runChain: Promise<unknown> = Promise.resolve()
 
+  // defs of the sketch last run: the only names invoke() forwards
+  let knownDefs = new Set<string>()
+  let frameReady = false
+  let invokeQueue: HostToFrame[] = []
+
   // live coalescing
   let livePending: Record<string, number> = {}
   let liveScheduled = false
@@ -258,6 +272,8 @@ export function createRuntime(container: HTMLElement, opts: RuntimeOptions = {})
       case 'ready':
         if (opts.audio) send({ t: 'audioSettings', settings: opts.audio.settings })
         if (midiHub) send({ t: 'midiInputs', inputs: midiHub.inputs() })
+        frameReady = true
+        for (const q of invokeQueue.splice(0)) send(q)
         readyResolve()
         break
       case 'fatal':
@@ -311,6 +327,7 @@ export function createRuntime(container: HTMLElement, opts: RuntimeOptions = {})
 
   async function start() {
     helloSeen = false
+    frameReady = false
     ready = new Promise<void>((res, rej) => {
       readyResolve = res
       readyReject = rej
@@ -425,6 +442,7 @@ export function createRuntime(container: HTMLElement, opts: RuntimeOptions = {})
       if (!safe) rawText = input
       else sketch = importText(input).sketch
     } else sketch = input
+    knownDefs = new Set((sketch ?? importText(rawText!).sketch).stmts.flatMap((s) => (s.k === 'def' ? [s.name] : [])))
 
     let code: string
     let live: Record<string, number> = {}
@@ -544,6 +562,7 @@ export function createRuntime(container: HTMLElement, opts: RuntimeOptions = {})
   }
 
   async function reset() {
+    invokeQueue = []
     transport?.dispose()
     transport = undefined
     pending.forEach((p) => {
@@ -617,6 +636,20 @@ export function createRuntime(container: HTMLElement, opts: RuntimeOptions = {})
     loadPlugin,
     async getCatalogDelta() {
       return delta.slice()
+    },
+    invoke(name, method, args = []) {
+      const refuse = (why: string) => {
+        emitError('warning', `pad call ${String(name)}.${String(method)} ignored: ${why}`)
+        return false
+      }
+      if (!isInvokeName(name)) return refuse('not a variable name')
+      if (!knownDefs.has(name)) return refuse(`"${name}" is not defined by the running sketch`)
+      if (!(MOTION_METHODS as readonly string[]).includes(method)) return refuse(`only ${MOTION_METHODS.join(', ')} are allowed`)
+      if (!validInvokeArgs(args)) return refuse('arguments must be numbers or short strings')
+      const m: HostToFrame = { t: 'invoke', name, method, args: args.slice() }
+      if (frameReady && transport && invokeQueue.length === 0) send(m)
+      else invokeQueue.push(m)
+      return true
     },
     setMouse(x, y) {
       send({ t: 'mouse', x, y })

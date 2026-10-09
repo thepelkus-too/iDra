@@ -1,6 +1,8 @@
 import {
   appStorage,
   applyAppBase,
+  exportWithPrelude,
+  findMotionPlugin,
   getLibrary,
   h,
   getPluginStore,
@@ -196,6 +198,17 @@ async function duplicate(e: LibraryEntry) {
 async function exportJS(e: LibraryEntry) {
   download(`${safeName(e.name)}.js`, await lib.exportJS(e.id), 'text/javascript')
 }
+/** "Make this sketch self-contained": hydra-motion's code inlined at the top instead of a loadScript line (docs/motion.md). */
+async function exportSelfContained(e: LibraryEntry) {
+  const s = await lib.get(e.id)
+  if (!s) return
+  if (!findMotionPlugin(s)) toast('This sketch does not use hydra-motion; exported as usual')
+  try {
+    download(`${safeName(e.name)}.js`, await exportWithPrelude(s), 'text/javascript')
+  } catch (err) {
+    toast(`Could not inline hydra-motion: ${(err as Error).message}`)
+  }
+}
 async function exportJSON(e: LibraryEntry) {
   download(`${safeName(e.name)}.hydra.json`, await lib.exportJSON(e.id), 'application/json')
 }
@@ -263,6 +276,7 @@ function card(e: LibraryEntry): HTMLElement {
     h('button', { type: 'button', role: 'menuitem', onclick: () => renameDialog(e) }, 'Rename'),
     h('button', { type: 'button', role: 'menuitem', onclick: () => void duplicate(e) }, 'Duplicate'),
     h('button', { type: 'button', role: 'menuitem', onclick: () => void exportJS(e) }, 'Export .js'),
+    h('button', { type: 'button', role: 'menuitem', title: 'Inline the hydra-motion plugin so the file runs in plain Hydra with no network', onclick: () => void exportSelfContained(e) }, 'Export .js, self-contained'),
     h('button', { type: 'button', role: 'menuitem', onclick: () => void exportJSON(e) }, 'Export .json'),
     h('button', { type: 'button', role: 'menuitem', class: 'danger', onclick: () => deleteDialog(e) }, 'Delete'),
   )

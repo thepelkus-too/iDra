@@ -14,6 +14,7 @@ import {
   mountMidiController,
   mountPluginManager,
   mountAbout,
+  mountCompatBadge,
   mountSwitcher,
   mountUpdateToast,
   newSketch,
@@ -35,6 +36,7 @@ import * as core from '@hydra-ipad/core'
 import { corpus } from '@hydra-ipad/core/corpus'
 import { CSS } from './styles'
 import { mountAudioLab, mountDiagnostics } from './diagnostics'
+import { mountMotionLab } from './motion-lab'
 
 applyAppBase()
 injectStyles('harness', CSS)
@@ -64,7 +66,8 @@ const isoSel = h('select', { id: 'isolation', 'aria-label': 'Isolation mode' },
 ) as HTMLSelectElement
 isoSel.value = isolation
 const switcherHost = h('span', {})
-const top = h('div', { class: 'top' }, switcherHost, nameInput, runBtn, diceBtn, h('label', { title: 'Run only recognised chains; skip raw code and plugins' }, safeToggle, ' safe'), isoSel)
+const compatHost = h('span', { id: 'compat-host' })
+const top = h('div', { class: 'top' }, switcherHost, nameInput, runBtn, diceBtn, h('label', { title: 'Run only recognised chains; skip raw code and plugins' }, safeToggle, ' safe'), isoSel, compatHost)
 
 const banner = h('div', { class: 'banner', hidden: true, id: 'trust-banner' })
 const camBanner = h('div', { class: 'banner', hidden: true, id: 'camera-banner' })
@@ -79,6 +82,7 @@ const diagTab = h('div', { class: 'tab', id: 'tab-diag' })
 const audioTab = h('div', { class: 'tab', id: 'tab-audio' })
 const pluginsTab = h('div', { class: 'tab', id: 'tab-plugins' })
 const midiTab = h('div', { class: 'tab', id: 'tab-midi' })
+const motionTab = h('div', { class: 'tab', id: 'tab-motion' })
 const tabs = [
   ['code', 'Code', codeTab],
   ['knobs', 'Numbers', knobsTab],
@@ -86,6 +90,7 @@ const tabs = [
   ['audio', 'Audio lab', audioTab],
   ['plugins', 'Plugins', pluginsTab],
   ['midi', 'MIDI', midiTab],
+  ['motion', 'Motion lab', motionTab],
 ] as const
 const tabBar = h('div', { class: 'tabs', role: 'tablist' })
 for (const [id, label, el] of tabs) {
@@ -103,7 +108,7 @@ for (const [id, label, el] of tabs) {
 const stage = h('div', { class: 'stage', id: 'stage' })
 const errorsEl = h('div', { class: 'errors', id: 'errors', 'aria-live': 'polite' })
 const main = h('div', { class: 'main' },
-  h('div', { class: 'panel' }, tabBar, h('div', { style: 'min-height:0;overflow:hidden;display:grid' }, codeTab, knobsTab, diagTab, audioTab, pluginsTab, midiTab)),
+  h('div', { class: 'panel' }, tabBar, h('div', { style: 'min-height:0;overflow:hidden;display:grid' }, codeTab, knobsTab, diagTab, audioTab, pluginsTab, midiTab, motionTab)),
   h('div', { class: 'stage-wrap' }, stage, errorsEl),
 )
 const foot = h('div', { class: 'foot' })
@@ -112,6 +117,18 @@ mountAbout(foot, { build: typeof __COMMIT__ === 'string' && __COMMIT__ ? `commit
 mountDiagnostics(diagTab, () => isolation)
 mountAudioLab(audioTab)
 mountMidiController(midiTab)
+mountMotionLab(motionTab, {
+  runtime: () => rt,
+  load: async (s) => {
+    persist(s)
+    // the lab sketch is a new sketch in the library: point the URL at it so a reload reopens it
+    if (location.hash !== routeHash(s.id)) history.replaceState(null, '', routeHash(s.id))
+    trusted = true // the owner tapped "Load lab sketch"
+    showSketchText(s)
+    await runNow(true)
+    renderKnobs()
+  },
+})
 midiTab.append(h('p', { class: 'status' }, 'Every preview on this page receives these messages through its Web MIDI stand-in, so hydra-midi sketches respond even where the browser has no Web MIDI (iPadOS Safari). Load the hydra-midi plugin (Plugins tab), then for example: await midi.start({ input: "*", channel: "*" }); osc(cc(1).range(1, 60)).out()'))
 
 // ------------------------------------------------------------------ plugins tab: manager + the functions each plugin added
@@ -199,7 +216,10 @@ async function runNow(force = false) {
   return r
 }
 
+let compatBadge: ReturnType<typeof mountCompatBadge> | undefined
 function showSketchText(s: Sketch) {
+  if (compatBadge) compatBadge.update(s)
+  else compatBadge = mountCompatBadge(compatHost, s, { audio })
   const code = toCode(s)
   if (textarea.value !== code) textarea.value = code
   nameInput.value = s.name

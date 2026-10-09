@@ -38,5 +38,10 @@ table.caps td:nth-child(3){grid-column:1/-1;color:var(--hi-dim);word-break:break
 .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:6px 0}
 pre.report{white-space:pre-wrap;font-size:12px;background:var(--hi-bg);border:1px solid var(--hi-line);border-radius:8px;padding:8px}
 input[type=text]{min-height:40px;border-radius:10px;border:1px solid var(--hi-line);background:var(--hi-bg);color:var(--hi-text);padding:0 10px}
+.lab-field{display:inline-flex;gap:6px;align-items:center;font-size:13px;color:var(--hi-dim)}
+.lab-pads{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:10px 0}
+.lab-pad{min-height:140px;border-radius:16px;border:2px solid var(--hi-line);background:var(--hi-bg);display:grid;place-content:center;gap:4px;text-align:center;touch-action:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+.lab-pad.on{background:var(--hi-accent);color:#04201f;border-color:transparent}
+.lab-pad span{font-size:12px;opacity:.75}
 .foot{padding:2px 10px;border-top:1px solid var(--hi-line);background:var(--hi-panel)}
 `
