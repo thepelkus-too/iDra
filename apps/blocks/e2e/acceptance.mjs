@@ -608,6 +608,45 @@ if (want('9')) await block('9', async () => {
   assert.deepEqual(S.errors.filter((e) => !/Permissions policy/.test(e)), [], '9: no page errors')
 })
 
+// ============================================================================================================ 10. full-background preview
+if (want('10')) await block('10', async () => {
+  const S = await startS({ viewport: { width: 1180, height: 820 } })
+  const { page, touch } = S
+  await check('10', 'full-background preview: the output fills the screen behind the workspace; numbers still edit on the veil; the switcher menu takes taps; a panel again on toggle', async () => {
+    await importAndOpen(page, S.base, 'osc(20, 0.1, 0.8).rotate(0.8).out()\n', 'Backdrop')
+    await waitForPicture(page)
+    await touch.tap('[data-testid=backdrop-toggle]')
+    await page.waitForFunction(() => document.documentElement.classList.contains('hi-backdrop'))
+    await sleep(800)
+    const box = await page.locator('[data-testid=pip]').boundingBox()
+    assert.ok(box.width >= 1180 && box.height >= 820, 'the output fills the screen')
+    await keypad(S, numSel(await callId(S, 'rotate'), 0), '1.2')
+    assert.match(await codeOf(page), /rotate\(1\.2\)/)
+    await touch.tap('[data-testid=veil]')
+    await shot(page, '10-backdrop-landscape.png')
+    await touch.tap('.hi-switch > button')
+    await sleep(300)
+    const topmost = await page.evaluate(() => [...document.querySelectorAll('.hi-switch a')].every((it) => {
+      const r = it.getBoundingClientRect()
+      const t = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2)
+      return it === t || it.contains(t)
+    }))
+    assert.ok(topmost, 'every switcher item is the topmost element')
+    await touch.tap('.hi-switch > button')
+    await page.setViewportSize({ width: 820, height: 1180 })
+    await sleep(900)
+    await shot(page, '10-backdrop-portrait.png')
+    await page.setViewportSize({ width: 1180, height: 820 })
+    await sleep(400)
+    await touch.tap('[data-testid=backdrop-toggle]')
+    await page.waitForFunction(() => !document.documentElement.classList.contains('hi-backdrop'))
+    const small = await page.locator('[data-testid=pip]').boundingBox()
+    assert.ok(small.width < 700, 'back to the floating window')
+    return 'output behind the workspace in both orientations; keypad edit on the veil; switcher items on top'
+  })
+  assert.deepEqual(S.errors.filter((e) => !/Permissions policy/.test(e)), [], '10: no page errors')
+})
+
 // ============================================================================================================ summary
 const md = ['# Acceptance run', '', `Chromium (software WebGL / SwiftShader), touch emulation via CDP. Generated ${new Date().toISOString().slice(0, 10)}.`, '', '| # | check | result | note |', '|---|---|---|---|']
 for (const r of results) md.push(`| ${r.id} | ${r.title} | ${r.ok ? 'pass' : '**FAIL**'} | ${String(r.note ?? '').replace(/\|/g, '/').replace(/\n/g, ' ').slice(0, 300)} |`)

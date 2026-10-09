@@ -212,6 +212,7 @@ body.dragging-lane .jack{outline:1px dashed var(--c-ref)}
 .pins .knob{opacity:.88}
 .pins .knob .kl{color:#ddd}
 .nopins{color:#ddd;padding:8px}
+.app.performing .toasts{top:max(12px,env(safe-area-inset-top));bottom:auto}
 .pscenes{position:absolute;right:max(12px,env(safe-area-inset-right));top:50%;transform:translateY(-50%);display:flex;flex-direction:column;gap:6px}
 .pscenes .scene{background:rgba(0,0,0,.45)}
 

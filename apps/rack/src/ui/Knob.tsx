@@ -88,7 +88,7 @@ export function togglePin(key: string): void {
   if (pins.includes(key)) return setView({ pins: pins.filter((p) => p !== key) })
   if (pins.length >= 8) return toast('Eight controls are pinned already: unpin one first')
   setView({ pins: [...pins, key] })
-  toast('Pinned to performance mode')
+  toast('Pinned to performance mode', undefined, 1500)
 }
 
 export function assignTo(r: ArgRef, kind: ModKind, bin?: number): void {
@@ -262,6 +262,8 @@ export function Knob({ r, size = 'big', variant = 'knob', label }: KnobProps) {
     d.lx = e.clientX
     d.ly = e.clientY
     const delta = d.y0 - e.clientY + (variant === 'knob' ? (e.clientX - d.x0) * 0.6 : 0)
+    // any real movement means "turning", not "holding for the menu", even before the turn threshold
+    if (!d.moved && Math.hypot(e.clientX - d.x0, e.clientY - d.y0) > 3) clearTimeout(d.timer)
     if (!d.moved && Math.abs(delta) < 6 && Math.hypot(e.clientX - d.x0, e.clientY - d.y0) < 8) return
     if (d.fired) return
     d.moved = true
