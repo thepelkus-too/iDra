@@ -1,0 +1,32 @@
+{
+  "name": "stack",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Chain Stack: a text-shaped, touch-first editor where every token of a Hydra chain is a touch target.",
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "hydra": {
+    "title": "Chain Stack",
+    "description": "Hydra code as a vertical stack of tappable, scrubbable calls",
+    "order": 10
+  },
+  "scripts": {
+    "predev": "node ../../packages/core/scripts/build-frame.mjs",
+    "dev": "vite",
+    "prebuild": "node ../../packages/core/scripts/build-frame.mjs",
+    "build": "vite build",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@codemirror/autocomplete": "^6.18.0",
+    "@codemirror/commands": "^6.7.0",
+    "@codemirror/lang-javascript": "^6.2.2",
+    "@codemirror/language": "^6.10.3",
+    "@codemirror/state": "^6.4.1",
+    "@codemirror/view": "^6.34.0",
+    "@hydra-ipad/core": "*",
+    "@lezer/highlight": "^1.2.1",
+    "preact": "^10.24.3"
+  }
+}
