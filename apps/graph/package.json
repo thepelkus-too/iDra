@@ -1,0 +1,31 @@
+{
+  "name": "graph",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Patch Graph: Hydra as a pannable canvas of nodes and cables, in the spirit of Pure Data and TouchDesigner.",
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "hydra": {
+    "title": "Patch Graph",
+    "description": "Nodes and cables: every call is a node, textures and feedback are visible cables",
+    "order": 20
+  },
+  "scripts": {
+    "predev": "node ../../packages/core/scripts/build-frame.mjs",
+    "dev": "vite",
+    "prebuild": "node ../../packages/core/scripts/build-frame.mjs",
+    "build": "vite build",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@codemirror/commands": "^6.7.0",
+    "@codemirror/lang-javascript": "^6.2.2",
+    "@codemirror/language": "^6.10.3",
+    "@codemirror/state": "^6.4.1",
+    "@codemirror/view": "^6.34.0",
+    "@hydra-ipad/core": "*",
+    "@lezer/highlight": "^1.2.1",
+    "preact": "^10.24.3"
+  }
+}
