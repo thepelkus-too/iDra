@@ -21,7 +21,8 @@
     "test:e2e:audio": "node scripts/e2e-audio-plugins.mjs",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "serve": "node scripts/serve.mjs",
-    "build:motion": "npm run build -w hydra-motion && node scripts/sync-motion.mjs"
+    "build:motion": "npm run build -w hydra-motion && node scripts/sync-motion.mjs",
+    "test:e2e:motion": "node scripts/e2e-motion.mjs"
   },
   "devDependencies": {
     "typescript": "^5.6.3",

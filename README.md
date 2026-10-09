@@ -5,9 +5,10 @@ contains the core (catalog, IR, text⇄IR, library, sandboxed runtime, audio), a
 (`stack`, `graph`, `blocks`, `rack`) are built later, each on its own branch, as `apps/<name>` over this core.
 
 * **Hydra source is authoritative.** The function catalog is derived from `hydra-synth/src/glsl/glsl-functions.js` at build/run time, never hand-copied.
-* **Licence: AGPL-3.0** (see below). A running copy offers its source: every page shows **About / Source**.
+* **Licence: AGPL-3.0**, except the hydra-motion plugin in `packages/motion`, which is MIT (see below). A running copy offers its source: every page shows **About / Source**.
 
 ```
+packages/motion/          hydra-motion (MIT, standalone): knob() / gate() plugin for plain Hydra; see docs/motion.md
 packages/core/            @hydra-ipad/core — no UI framework
   src/catalog.ts            live function catalog + hint layer (ranges) + plugin refresh
   src/ir.ts                 IR types, ids, meta helpers (withMeta…), traversal, setArg
@@ -63,11 +64,11 @@ original text and a content hash, so unchanged statements (and unchanged calls i
 Deploy (Vercel per-branch previews, GitHub Pages fallback): **[docs/previews.md](docs/previews.md)**. Open the **site root** in Safari → Share → *Add to Home Screen*;
 editors then open inside the installed app. Storage in the installed app is separate from Safari's: **[docs/ios-storage.md](docs/ios-storage.md)**.
 Camera and microphone need HTTPS and a tap; audio on iOS: **[docs/audio.md](docs/audio.md)**; plugins: **[docs/plugins.md](docs/plugins.md)**; MIDI: **[docs/midi.md](docs/midi.md)**; trust and isolation: **[docs/security.md](docs/security.md)**;
-how numeric drags avoid recompiling: **[docs/live-edit.md](docs/live-edit.md)**.
+how numeric drags avoid recompiling: **[docs/live-edit.md](docs/live-edit.md)**; glides, holds and pads (hydra-motion): **[docs/motion.md](docs/motion.md)**.
 
 ## Branch / PR conventions
 
-`main` is the shared base (core, shell, harness). Each editor is developed on `proto/<name>` (`proto/stack`, `proto/graph`, `proto/blocks`, `proto/rack`) and touches
+`main` is the shared base (core, shell, harness). Each piece of work is developed on the `claude/...` branch its session is given (the planned `proto/<name>` names were never used); an editor branch touches
 **only `apps/<name>/**`**; core changes go in their own PR to `main`. Vercel builds a preview for every pushed branch.
 *Note:* the first session on this repository was assigned the branch `claude/new-session-rpk2q8` rather than `main`, so the foundation is there until the owner merges it.
 
@@ -78,7 +79,7 @@ how numeric drags avoid recompiling: **[docs/live-edit.md](docs/live-edit.md)**.
 * **`HydraRenderer.eval()` discards the evaluation's value**, so an `await loadScript()` sketch cannot be awaited through it; the bridge calls the sandbox's indirect `eval` itself for async sketches.
 * `glsl-functions.js` lists `combine`/`combineCoord` functions **without** their texture input (added by `generator-factory.processGlsl`); the catalog adds it back as an implicit first `sampler2D` input named `texture`. `src`'s own input is named `tex`.
 * **Camera inside a sandboxed (opaque-origin) frame is denied** (Chromium, tested). Fallback: inline mode behind the trust gate. See `docs/security.md`.
-* `hydra-synth` declares `"license": "AGPL"` with the AGPL-3.0 text and no "or later" grant in its sources, so this repo uses `AGPL-3.0-only` everywhere (the conservative reading). If the upstream author confirms "or later", loosen it.
+* `hydra-synth` declares `"license": "AGPL"` with the AGPL-3.0 text and no "or later" grant in its sources, so this repo uses `AGPL-3.0-only` everywhere except `packages/motion` (the conservative reading). If the upstream author confirms "or later", loosen it.
 * `hydra-examples` has **no licence file**, so the corpus is written from scratch (`packages/core/corpus/README.md`).
 * A texture chain stored in a variable is safe to use as an **argument** in several places; calling a modifier **on** the variable mutates it (see `docs/IR.md`).
 * Hydra's `hush()` also clears `update`/`afterUpdate`; before every run the bridge additionally resets `speed`/`bpm` to their defaults so a sketch without `speed = …` is not affected by the previous one.
@@ -91,7 +92,10 @@ behaviour (documented, not testable in the container); Vercel dashboard steps (d
 
 ## Licence and third-party code
 
-AGPL-3.0-only (`LICENSE`). Bundled: **hydra-synth** (AGPL; https://github.com/ojack/hydra-synth), **regl** (MIT), **raf-loop** (MIT), **meyda** (MIT, host page only), **acorn** (MIT), **@dagrejs/dagre** (MIT).
+AGPL-3.0-only (`LICENSE`), **except `packages/motion` (hydra-motion), which is MIT** (`packages/motion/LICENSE`, an SPDX `MIT`
+header on every file). The split is deliberate: hydra-motion is a plugin any Hydra user can load, it will move to its own
+repository (`packages/motion/EXTRACTING.md`), and it contains no AGPL code (its easing curves are its own; only the easing
+*names* are read from hydra-synth at build time). iDra uses it only through its built file. See `LICENSES.md`. Bundled: **hydra-synth** (AGPL; https://github.com/ojack/hydra-synth), **regl** (MIT), **raf-loop** (MIT), **meyda** (MIT, host page only), **acorn** (MIT), **@dagrejs/dagre** (MIT).
 Test-only, never bundled: **hydra-midi 0.4.6** (MIT, `scripts/fixtures/hydra-midi/`). Plugins in `plugins/registry.json` are fetched by the user's browser from their own hosts, never shipped.
 The service-worker, silent-switch technique and everything else is original (the silent-switch idea follows activetheory/ios-silent-bypass, MIT, no code copied).
 **If you host a modified copy, the AGPL requires you to offer the corresponding source to its users** — the *About / Source* link (from `package.json` → `repository`) does that for unmodified deployments; update `repository` if you fork.

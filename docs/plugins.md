@@ -32,10 +32,12 @@ the functions and globals it adds, and any built-in it replaces.
 
 `packages/core/plugins/registry.json`: id, name, author, licence, homepage, URL, version, `kind`
 (`functions` / `js` / `mixed`), description and `verified: { status, checked, how }`.
-Only URLs copied from each project's README are marked `verified`; the rest are listed with `unverified` and the card says so.
+Entries built in this repository (hydra-motion) also carry `integrity`: the manager checks the file against it and the
+runtime refuses anything else. Only URLs copied from each project's README are marked `verified`; the rest are listed with `unverified` and the card says so.
 
 | plugin | licence | URL source |
 |---|---|---|
+| hydra-motion (pinned by version and SRI) | MIT | built from `packages/motion` in this repository and served by this site at `plugins/hydra-motion@<v>/hydra-motion.js` (a site-relative URL, resolved against the site root); see docs/motion.md |
 | hydra-midi 0.4.6 (pinned) | MIT | README of github.com/arnoson/hydra-midi |
 | hyper-hydra: arithmetics, arrays, blend, colorspaces, convolutions, gif, glsl, outputs, src, text (`@latest`) | GPL-3.0 | README of github.com/geikha/hyper-hydra |
 | extra-shaders-for-hydra: `all`, `lib-pattern` | AGPL-3.0 | README of gitlab.com/metagrowing/extra-shaders-for-hydra |
@@ -84,6 +86,13 @@ A sketch that loads a URL both as a plugin and with its own `await loadScript(ur
 already loads that URL** (so imported text round-trips byte for byte), then a blank line. Pasted plugins add a comment line instead
 (plain text cannot carry them). When you import text that has `loadScript` lines, the shell's Import dialog and the manager offer
 **Add to plugins**: the URL is fetched, cached and recorded with its hash; the line in the sketch is left as it is.
+
+## Self-contained export
+
+`exportWithPrelude(sketch)` inlines hydra-motion's code at the top of the text (between delimiters with its version, SRI
+and MIT notice) instead of a `loadScript` line, so the file runs in vanilla Hydra with no network; importing it gives back the
+plugin, not raw code. Other plugins keep their `loadScript` lines. `compat(sketch)` says whether the exported text needs
+plugins or iDra itself. See docs/motion.md.
 
 ## Trust
 
