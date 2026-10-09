@@ -12,7 +12,7 @@ import {
   openSketch,
   rollDice,
 } from '../actions'
-import { ctx, edit, useRunner, useStore } from '../ctx'
+import { ctx, edit, useBackdrop, useRunner, useStore } from '../ctx'
 import { usePress } from '../gestures'
 import { setOut, updateStmt } from '../model'
 import { closeSheet, openPopover, openSheet, toast } from '../overlay'
@@ -30,6 +30,7 @@ declare const __COMMIT__: string
 
 export function TopBar({ mode, setMode, onToggleAudio }: { mode: 'blocks' | 'code'; setMode: (m: 'blocks' | 'code') => void; onToggleAudio: () => void }) {
   useStore()
+  const bd = useBackdrop()
   const store = ctx.store
   const sk = store.sketch
   const sw = useRef<HTMLSpanElement>(null)
@@ -97,6 +98,24 @@ export function TopBar({ mode, setMode, onToggleAudio }: { mode: 'blocks' | 'cod
       <button type="button" class="dice" data-testid="dice" aria-label={`Dice, next seed ${seed}. Hold for options.`} {...dicePress}>
         🎲 <span class="seedno">{seed}</span>
       </button>
+      {ctx.backdrop && (
+        <button
+          type="button"
+          class={`icon ${bd.placement === 'backdrop' ? 'on' : ''}`}
+          data-testid="backdrop-toggle"
+          aria-label="Full background preview"
+          aria-pressed={bd.placement === 'backdrop'}
+          title={bd.placement === 'backdrop' ? 'Preview: full background (tap for a panel)' : 'Preview: panel (tap for full background)'}
+          onClick={() => ctx.backdrop?.toggle()}
+        >
+          {bd.placement === 'backdrop' ? '▣' : '◧'}
+        </button>
+      )}
+      {ctx.backdrop && bd.placement === 'backdrop' && (
+        <button type="button" class="icon veil-btn" data-testid="veil" data-veil={bd.veil} aria-label={`Text backing: ${bd.veil}. Tap to change.`} title={`Text backing: ${bd.veil}`} onClick={() => ctx.backdrop?.cycleVeil()}>
+          <i class={`veil-swatch ${bd.veil}`} />
+        </button>
+      )}
       <button type="button" class="icon" data-testid="audio-btn" aria-label="Audio" title="Audio panel" onClick={onToggleAudio}>
         🎚
       </button>
@@ -118,6 +137,16 @@ function openMoreMenu(el: HTMLElement) {
       { label: 'Export .js', run: () => void exportJs().then((r) => r === 'downloaded' && toast('Saved to Downloads')), testid: 'menu-export' },
       { label: 'Copy code', run: () => void copyCode(), testid: 'menu-copy' },
       { label: 'Arrange: rebuild the default view', sep: true, run: () => arrange(), testid: 'menu-arrange' },
+      ...(ctx.backdrop
+        ? [
+            {
+              label: ctx.backdrop.on ? 'Preview: full background' : 'Preview: panel',
+              hint: ctx.backdrop.on ? 'tap for a panel' : 'tap to fill the background',
+              run: () => ctx.backdrop?.toggle(),
+              testid: 'menu-backdrop',
+            },
+          ]
+        : []),
       { label: appPrefs.get<boolean>('penPressure') ? 'Pencil pressure: on' : 'Pencil pressure: off', run: () => appPrefs.set('penPressure', !appPrefs.get<boolean>('penPressure')), hint: 'finer when pressing' },
       { label: 'About / Source', run: () => openAbout() },
     ],

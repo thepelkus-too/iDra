@@ -305,6 +305,33 @@ button:focus-visible,.tok:focus-visible,input:focus-visible,textarea:focus-visib
 .code-status.err{color:var(--bad);background:rgba(229,100,95,.1)}
 .code-status.info{color:var(--hi-dim)}
 
+/* ---- backdrop: the preview fills the screen behind everything (core's createBackdrop pins [data-hi-backdrop=stage]);
+   the stack takes the whole area over it, on a veil whose strength the top bar sets */
+.icon.on{border-color:var(--hi-accent);color:var(--hi-accent);background:rgba(90,200,200,.14)}
+.veil-btn{display:inline-flex;align-items:center;justify-content:center}
+.veil-swatch{display:inline-block;width:20px;height:20px;border-radius:4px;border:1px solid var(--hi-line);background:linear-gradient(90deg,#f2a65a,#5ac8c8)}
+.veil-swatch::after{content:"";display:block;width:100%;height:100%;border-radius:3px;background:rgba(8,10,14,.55)}
+.veil-swatch.light::after{background:rgba(8,10,14,.35)}
+.veil-swatch.strong::after{background:rgba(8,10,14,.78)}
+.app.backdrop{background:transparent}
+.app.backdrop .body{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,1fr)}
+.app.backdrop>.topbar,.app.backdrop>.strip,.app.backdrop .stack-pane{position:relative;z-index:1}
+.app.backdrop .topbar,.app.backdrop .strip,.app.backdrop .foot{background:var(--hi-veil);border-color:var(--hi-veil-line);-webkit-backdrop-filter:none;backdrop-filter:none}
+.app.backdrop .stack-pane{border:0;background:transparent}
+.app.backdrop .preview-pane{border:0}
+.app.backdrop .stage-slot>.stage{width:100%;height:100%}
+.app.backdrop .topbar .name{background:var(--hi-veil);border-color:var(--hi-veil-line)}
+.app.backdrop .stmt{background:var(--hi-veil);border-color:var(--hi-veil-line)}
+.app.backdrop .stmt.selected{border-color:rgba(90,200,200,.75)}
+.app.backdrop .pocket{background:rgba(8,10,14,.35)}
+.app.backdrop .add{background:var(--hi-veil);color:var(--hi-text)}
+.app.backdrop .empty,.app.backdrop .note,.app.backdrop .foot .runinfo{text-shadow:var(--hi-ink-shadow)}
+.app.backdrop .cm-editor,.app.backdrop .cm-gutters{background:transparent!important}
+.app.backdrop .cm-gutters{text-shadow:var(--hi-ink-shadow);color:#9aa3b2!important}
+.app.backdrop .cm-line{width:fit-content;max-width:100%;background:var(--hi-veil);border-radius:2px}
+.app.backdrop .cm-activeLine{background:rgba(20,60,60,var(--hi-veil-a,.55))!important}
+.app.backdrop .code-status{background:var(--hi-veil)}
+
 @media (max-width:520px){
   .topbar .name{order:9;flex-basis:100%}
   .app.port .body{grid-template-rows:34% minmax(0,1fr)}
