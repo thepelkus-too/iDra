@@ -1,0 +1,31 @@
+{
+  "name": "rack",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Rack: a performance-first modular rack of knobs, XY pads and modulation sources over Hydra.",
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "hydra": {
+    "title": "Rack",
+    "description": "Knobs, pads and a mod bay: play Hydra like an instrument",
+    "order": 40
+  },
+  "scripts": {
+    "predev": "node ../../packages/core/scripts/build-frame.mjs",
+    "dev": "vite",
+    "prebuild": "node ../../packages/core/scripts/build-frame.mjs",
+    "build": "vite build",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@codemirror/commands": "^6.7.0",
+    "@codemirror/lang-javascript": "^6.2.2",
+    "@codemirror/language": "^6.10.3",
+    "@codemirror/state": "^6.4.1",
+    "@codemirror/view": "^6.34.0",
+    "@hydra-ipad/core": "*",
+    "@lezer/highlight": "^1.2.1",
+    "preact": "^10.24.3"
+  }
+}
