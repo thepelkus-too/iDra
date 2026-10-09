@@ -65,7 +65,7 @@ export function mountAudioLab(el: HTMLElement): void {
     result,
     h('h3', {}, 'Notes'),
     h('ul', { class: 'status' },
-      h('li', {}, 'The hardware silent switch mutes Web Audio output on iOS. The app plays a silent loop and sets audioSession to “playback” to get around that; verify on your device.'),
+      h('li', {}, 'Devices with a hardware silent switch (iPhones, some older iPads) mute Web Audio output on iOS. The app plays a silent loop and sets audioSession to “playback” to get around that; modern iPads have no such switch, so it has no effect there.'),
       h('li', {}, 'While the microphone is active iOS may route playback to the earpiece or lower its volume.'),
       h('li', {}, 'Audio from other apps cannot be captured by a web page. Use the mic (acoustic pickup) or a USB-C audio interface with a loopback or line-in.'),
       h('li', {}, 'Streams need CORS headers (Access-Control-Allow-Origin) or Web Audio refuses to analyse them. Streaming playback itself arrives in a later change.'),

@@ -63,7 +63,7 @@ export function mountAudioPanel(el: HTMLElement, opts: AudioPanelOptions = {}): 
   const mute = h('input', { type: 'checkbox', checked: engine.monitorState.muted }) as HTMLInputElement
   mute.addEventListener('change', () => engine.setMonitorMuted(mute.checked))
   const muteRow = h('label', { style: 'grid-template-columns:auto 1fr' }, mute, 'mute speakers')
-  const notes = h('div', { class: 'note' }, opts.notes === false ? '' : 'iPad: the silent switch mutes speaker output; with the mic on, iOS may play audio quietly through the receiver. Sound from other apps cannot be captured.')
+  const notes = h('div', { class: 'note' }, opts.notes === false ? '' : 'iOS: with the mic on, the system may play audio quietly through the earpiece. iPhones and some older iPads also mute web audio with the hardware silent switch; the app works around that. Sound from other apps cannot be captured.')
 
   const root = h('div', { class: 'hi-audio', role: 'group', 'aria-label': 'Audio' }, h('div', { class: 'row' }, sourceSel, startBtn, playBtn, time), file, meter, status, ...controls, monGain, muteRow, notes)
   el.appendChild(root)

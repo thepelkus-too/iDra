@@ -171,7 +171,7 @@ export async function detectCapabilities(opts: DetectOptions = {}): Promise<Capa
   items.push(item('midi', 'Web MIDI', (await detectMidi(opts.requestMidi)).status, (await detectMidi(opts.requestMidi)).detail))
   items.push(item('bc', 'BroadcastChannel', typeof BroadcastChannel !== 'undefined' ? 'yes' : 'no', typeof BroadcastChannel !== 'undefined' ? 'cross-app library notifications' : 'falls back to storage events'))
   items.push(await idbPersistence())
-  items.push(item('captureStream', 'canvas.captureStream', typeof HTMLCanvasElement !== 'undefined' && 'captureStream' in HTMLCanvasElement.prototype ? 'yes' : 'no', 'not used by the app (unsupported on iOS)'))
+  items.push(item('captureStream', 'canvas.captureStream', typeof HTMLCanvasElement !== 'undefined' && 'captureStream' in HTMLCanvasElement.prototype ? 'yes' : 'no', 'present on recent iOS too, but the app does not use it (hydra-synth\'s stream capture is switched off)'))
   const probe = await probeSandboxedFrame({ camera: !!opts.probeCamera })
   const sbStatus: CapStatus = probe.error ? 'unknown' : probe.localStorage === 'accessible' || probe.parentDom === 'accessible' ? 'no' : 'yes'
   items.push(item('sandbox', 'Sandboxed frame is isolated', sbStatus, probe.error ? String(probe.error) : `origin=${probe.origin} · localStorage=${probe.localStorage} · indexedDB=${probe.indexedDB} · parent DOM=${probe.parentDom} · secureContext=${probe.secureContext}`))
