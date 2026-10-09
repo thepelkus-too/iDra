@@ -20,3 +20,4 @@ Chromium (software WebGL / SwiftShader), touch emulation via CDP. Generated 2026
 | 9e | two-finger tap undoes, three-finger tap redoes; pinch zooms the workspace; code view shows the selected block | pass | undo/redo by finger taps; zoom changed |
 | 9f | full-screen output, and back | pass |  |
 | 9g | a starter opens as a new sketch | pass | 1 statement(s) |
+| 10 | full-background preview: the output fills the screen behind the workspace; numbers still edit on the veil; the switcher menu takes taps; a panel again on toggle | pass | output behind the workspace in both orientations; keypad edit on the veil; switcher items on top |

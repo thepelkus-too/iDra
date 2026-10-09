@@ -19,6 +19,7 @@ Chromium (software WebGL / SwiftShader), touch emulation via CDP. Generated 2026
 | 9d | performance mode: full-screen visuals with pinned controls that drive the sketch | pass |  |
 | 9e | hold on empty canvas opens an add menu there; lasso mode selects a rectangle; two-finger tap undoes | pass | lasso: 7 selected |
 | 9f | unknown call renders as a dashed generic node with an editable name; plugin functions are grouped under Plugins | pass |  |
+| 10 | full-background preview: the output fills the screen behind the canvas; numbers still edit on the veil; the switcher menu takes taps; a panel again on toggle | pass | output behind the canvas in both orientations; keypad edit on the veil; switcher items on top |
 
 ## Measurements
 
