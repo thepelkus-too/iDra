@@ -315,6 +315,32 @@ await step('hovering the canvas drives Hydra\'s mouse in both modes without erro
   await page.waitForFunction(() => window.__harness.rt.isolation === 'iframe' && /· iframe/.test(document.querySelector('#status').textContent))
 })
 
+await step('touch drags over the canvas move `mouse` (iOS sends no mouse events for a finger)', async () => {
+  const cdp = await context.newCDPSession(page)
+  const drag = async () => {
+    const box = await page.locator('#stage').boundingBox()
+    const pt = (i) => [{ x: box.x + 60 + i * 40, y: box.y + 80 + i * 10, id: 1 }]
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: pt(0) })
+    for (let i = 1; i < 12; i++) await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: pt(i) })
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
+    await page.waitForTimeout(300)
+  }
+  // inline: read the value directly
+  await page.selectOption('#isolation', 'inline')
+  await page.waitForFunction(() => window.__harness.rt.isolation === 'inline' && /· inline/.test(document.querySelector('#status').textContent))
+  await page.evaluate(() => window.__harness.rt.run('osc(() => mouse.x / 50).out()', { force: true }))
+  await page.evaluate(() => (window.mouse && 0))
+  await drag()
+  assert.ok(await page.evaluate(() => window.mouse.x > 200), 'inline: mouse.x follows the finger')
+  // iframe: the value is not readable from outside, so a sketch function reports it by throwing
+  await page.selectOption('#isolation', 'iframe')
+  await page.waitForFunction(() => window.__harness.rt.isolation === 'iframe' && /· iframe/.test(document.querySelector('#status').textContent))
+  await page.evaluate(() => window.__harness.rt.run("osc(() => { if (mouse.x > 200) throw new Error('TOUCH-SAW-' + Math.round(mouse.x)); return 10 }).out()", { force: true }))
+  await drag()
+  const errs = await page.evaluate(() => window.__harness.rt.errors.map((e) => e.message))
+  assert.ok(errs.some((m) => /TOUCH-SAW-/.test(m)), 'iframe: mouse.x never moved: ' + JSON.stringify(errs.slice(-3)))
+})
+
 await step('diagnostics page computes live results and a copyable report', async () => {
   await page.click('#tabbtn-diag')
   await page.click('#diag-run')

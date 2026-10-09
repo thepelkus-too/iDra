@@ -189,6 +189,13 @@ export class Bridge {
         })
         this.post({ t: 'fetch', id, url })
       })
+    // Touch and pen input: iOS sends no mouse events for a finger, and events over an iframe never reach the host page,
+    // so the canvas itself listens (pointer events cover mouse, touch and pen) and drives `mouse` the way the host hook does.
+    const onPointer = (ev: PointerEvent) => {
+      const r = canvas.getBoundingClientRect()
+      this.setMouse(ev.clientX - r.left, ev.clientY - r.top, ev.buttons)
+    }
+    for (const t of ['pointermove', 'pointerdown', 'pointerup']) canvas.addEventListener(t, onPointer as EventListener, { passive: true })
     this.post({ t: 'ready', info: { webgl, precision: this.hydra.precision ?? 'unknown' } })
   }
 

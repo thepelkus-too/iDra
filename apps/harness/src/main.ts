@@ -252,7 +252,6 @@ async function startRuntime() {
   rt = createRuntime(stage, { isolation, audio, catalog, width: 960, height: 540 })
   rt.onError(showError)
   rt.onError((e) => e.kind === 'camera' && updateCameraBanner())
-  rt.forwardPointer(true)
   ;(window as any).__harness = { get rt() { return rt }, get sketch() { return sketch }, lib, audio, runNow, core }
   await rt.ready.catch((e) => showError({ kind: 'runtime', message: String(e.message ?? e), at: Date.now() }))
 }
