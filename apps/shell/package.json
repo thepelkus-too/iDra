@@ -1,0 +1,17 @@
+{
+  "name": "shell",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Installable launcher and sketch library; the only PWA in the repository.",
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "hydra": { "title": "Library", "description": "Sketch library and launcher", "root": true },
+  "scripts": {
+    "predev": "node ../../packages/core/scripts/build-frame.mjs",
+    "dev": "vite",
+    "prebuild": "node ../../packages/core/scripts/build-frame.mjs",
+    "build": "vite build",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": { "@hydra-ipad/core": "*" }
+}

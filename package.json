@@ -1,0 +1,34 @@
+{
+  "name": "hydra-ipad",
+  "version": "0.1.0",
+  "private": true,
+  "description": "iPad-first visual editors for the Hydra livecoding video synth: shared core, installable shell, test harness.",
+  "license": "AGPL-3.0-only",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/thepelkus-too/iDra.git"
+  },
+  "homepage": "https://github.com/thepelkus-too/iDra",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "build:frame": "node packages/core/scripts/build-frame.mjs",
+    "build:all": "node scripts/build-all.mjs",
+    "test": "npm run test -w @hydra-ipad/core",
+    "test:e2e": "node scripts/e2e.mjs",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "serve": "node scripts/serve.mjs"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3",
+    "vite": "^5.4.11",
+    "vitest": "^2.1.8",
+    "esbuild": "^0.24.0",
+    "playwright": "^1.49.0",
+    "fake-indexeddb": "^6.0.0",
+    "jsdom": "^25.0.1",
+    "@types/node": "^22.10.0"
+  }
+}

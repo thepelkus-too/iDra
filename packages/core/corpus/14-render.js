@@ -1,0 +1,5 @@
+osc(20).out(o0)
+osc(30).out(o1)
+render(o1)
+render()
+render(o0)
