@@ -198,7 +198,7 @@ export function Pip({ stage }: { stage: HTMLElement }) {
   const st = useUi()
   const runner = useRunner()
   const slot = useRef<HTMLDivElement>(null)
-  const [b, setB] = useState<PipBox>(() => appPrefs.get<PipBox>('pip') ?? { x: -16, y: 72, w: 320 })
+  const [b, setB] = useState<PipBox>(() => appPrefs.get<PipBox>('pip') ?? { x: -16, y: 16, w: Math.min(320, Math.round(window.innerWidth * 0.3)) })
   useEffect(() => {
     if (slot.current && stage.parentElement !== slot.current) slot.current.appendChild(stage)
   }, [stage])

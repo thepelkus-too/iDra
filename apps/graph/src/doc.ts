@@ -7,11 +7,12 @@ import { toast } from './kit/overlay'
 import type { CommitOpts } from './kit/store'
 import { graphToIR, irToGraph, type CompileResult, type GEdge, type Graph } from './model'
 import type { OpResult } from './ops'
-import { APP, autoView, layoutGraph, metaOf, type GraphMeta, type XY } from './view'
+import { APP, autoView, layoutGraph, metaOf, sizeOf, type GraphMeta, type XY } from './view'
 
 // ---------------------------------------------------------------- memoised per sketch
 
 let memoSketch: Sketch | undefined
+let memoKey: [unknown, unknown, unknown] = [undefined, undefined, undefined]
 let memoGraph: Graph = { nodes: [], edges: [] }
 let memoCompile: CompileResult | undefined
 let memoBoxes: ReturnType<typeof layoutGraph> = {}
@@ -20,9 +21,13 @@ function refresh(sk: Sketch): void {
   if (sk === memoSketch) return
   memoSketch = sk
   const meta = metaOf(sk)
+  memoBoxes = {}
+  // a view-only change (a moved node, the camera) keeps the same graph objects, so node cards do not re-render
+  const key: typeof memoKey = [sk.stmts, meta?.links, meta?.bypass]
+  if (key.every((k, i) => k === memoKey[i])) return
+  memoKey = key
   memoGraph = irToGraph(sk, meta ?? {})
   memoCompile = undefined
-  memoBoxes = {}
 }
 
 export function graphOf(sk: Sketch = ctx.store.sketch): Graph {
@@ -57,12 +62,52 @@ export function applyGraph(g: Graph, opts: CommitOpts & { placed?: Record<string
   const r = graphToIR(g, sk, meta)
   if (r.errors.length) return r.errors[0].message
   const pos = { ...meta.pos, ...(opts.placed ?? {}) }
+  // a node dropped where others are pushes them aside (to the right), so a splice never hides its neighbours
+  for (const id of Object.keys(opts.placed ?? {})) if (!meta.pos[id]) makeRoom(g, id, pos)
   const next = withMeta(r.sketch, APP, { ...meta, ...(opts.meta ?? {}), v: 1, pos, links: r.meta.links, bypass: r.meta.bypass })
   const { placed: _p, meta: _m, ...commit } = opts
   void _p
   void _m
   ctx.store.commit(next, commit)
   return undefined
+}
+
+function makeRoom(g: Graph, id: string, pos: Record<string, XY>): void {
+  const n = g.nodes.find((x) => x.id === id)
+  if (!n) return
+  const at = { ...pos[id] }
+  const s = sizeOf(n, ctx.catalog)
+  const box = (x: { id: string }) => {
+    const p = pos[x.id] ?? posOf(x.id)
+    const z = sizeOf(x as Graph['nodes'][number], ctx.catalog)
+    return { x: p.x, y: p.y, w: z.w, h: z.h }
+  }
+  const hitsAt = (a: XY) =>
+    g.nodes.filter((o) => {
+      if (o.id === id) return false
+      const b = box(o)
+      return b.x < a.x + s.w + 12 && b.x + b.w > a.x - 12 && b.y < a.y + s.h + 12 && b.y + b.h > a.y - 12
+    })
+  // nodes that start left of the drop stay: the new node moves right of them (it comes after them in the flow)
+  for (let k = 0; k < 8; k++) {
+    const left = hitsAt(at).filter((o) => box(o).x < at.x)
+    if (!left.length) break
+    at.x = Math.max(...left.map((o) => box(o).x + box(o).w)) + 48
+  }
+  pos[id] = { ...at }
+  const hits = hitsAt(at)
+  if (!hits.length) return
+  const x0 = Math.min(...hits.map((o) => box(o).x))
+  const dx = at.x + s.w + 48 - x0
+  if (dx <= 0) return
+  const y0 = Math.min(...hits.map((o) => box(o).y))
+  const y1 = Math.max(...hits.map((o) => box(o).y + box(o).h))
+  // everything from the first hit node rightwards that shares the band moves too
+  for (const o of g.nodes) {
+    if (o.id === id) continue
+    const b = box(o)
+    if (b.x >= x0 - 1 && b.y < y1 && b.y + b.h > y0) pos[o.id] = { x: b.x + dx, y: b.y }
+  }
 }
 
 /** Apply or explain: a rejected edit shows its reason and flashes the offending cable. */

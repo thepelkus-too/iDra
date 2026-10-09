@@ -70,7 +70,7 @@ export function defaultSpec(kind: ModKind, around = 0, span = 1): ModSpec {
     case 'mouseY': return { kind, rate: 1, amp: span, off: around }
     case 'audio': return { kind, rate: 1, amp: span, off: around, bin: 0 }
     case 'vol': return { kind, rate: 1, amp: span, off: around }
-    case 'steps': return { kind, rate: 1, amp: 1, off: 0, steps: [around, around + span / 2, around + span], mods: { fast: 1 } }
+    case 'steps': return { kind, rate: 1, amp: 1, off: 0, steps: [around, around + span / 2, around + span], mods: {} }
     case 'expr': return { kind, rate: 1, amp: 1, off: 0, src: `() => ${n(around)} + Math.sin(time) * ${n(span / 2)}` }
   }
 }

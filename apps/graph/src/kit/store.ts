@@ -35,6 +35,8 @@ export class Store {
 
   private lastKey: string | undefined
   private lastAt = 0
+  /** a gesture in progress (a drag, a keypad): its commits merge whatever the time between them, until endGroup() */
+  private held: string | undefined
   private uiListeners = new Set<() => void>()
   private changeListeners = new Set<(c: Change) => void>()
   private scheduled = false
@@ -85,7 +87,7 @@ export class Store {
     const source = opts.source ?? 'edit'
     if (!opts.view && (source === 'edit' || source === 'code')) {
       const now = Date.now()
-      const merge = !!opts.coalesce && this.lastKey === opts.coalesce && now - this.lastAt < this.coalesceMs && this.past.length > 0
+      const merge = !!opts.coalesce && this.lastKey === opts.coalesce && (this.held === opts.coalesce || now - this.lastAt < this.coalesceMs) && this.past.length > 0
       if (!merge) {
         this.past.push(prev)
         if (this.past.length > 200) this.past.shift()
@@ -106,8 +108,14 @@ export class Store {
     this.commit(withMeta(this.sketch, APP, patch), { view: true })
   }
 
+  /** Keep merging commits with this coalesce key into one undo step until endGroup(). */
+  hold(key: string): void {
+    this.held = key
+  }
+
   endGroup(): void {
     this.lastKey = undefined
+    this.held = undefined
   }
 
   /** Undo restores statements and this app's own view state (positions, scenes): other apps' meta stays as it is now. */

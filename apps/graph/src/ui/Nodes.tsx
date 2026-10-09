@@ -55,6 +55,7 @@ export function setCallNum(nodeId: string, i: number, v: number, phase: 'drag' |
     return
   }
   for (const id of liveIdsFor(nodeId, i)) ctx.runner.setLive(id, v)
+  ctx.store.hold(`num:${nodeId}:${i}`)
   const g0 = graphOf()
   const g = { nodes: g0.nodes, edges: g0.edges }
   setNodeArg(g, nodeId, i, num(v))
@@ -433,7 +434,7 @@ function NoteCard(p: NodeProps) {
   const st = n.stmt as Extract<Stmt, { k: 'comment' }>
   const s = sizeOf(n, ctx.catalog)
   return (
-    <div class={`node note ${p.selected ? 'sel' : ''}`} style={{ transform: `translate(${p.x}px,${p.y}px)`, width: `${s.w}px`, minHeight: `${s.h}px` }} data-node={n.id} data-testid="node" data-kind="comment">
+    <div class={`node note ${p.selected ? 'sel' : ''}`} style={{ transform: `translate(${p.x}px,${p.y}px)`, width: `${s.w}px`, height: `${s.h}px` }} data-node={n.id} data-testid="node" data-kind="comment">
       <div class="nhead" data-drag="1">
         <small>{st.block ? '/* note */' : '// note'}</small>
       </div>
@@ -449,7 +450,7 @@ function RawCard(p: NodeProps) {
   const st = n.stmt as Extract<Stmt, { k: 'raw' }>
   const s = sizeOf(n, ctx.catalog)
   return (
-    <div class={`node raw ${p.selected ? 'sel' : ''}`} style={{ transform: `translate(${p.x}px,${p.y}px)`, width: `${s.w}px`, minHeight: `${s.h}px` }} data-node={n.id} data-testid="node" data-kind="raw">
+    <div class={`node raw ${p.selected ? 'sel' : ''}`} style={{ transform: `translate(${p.x}px,${p.y}px)`, width: `${s.w}px`, height: `${s.h}px` }} data-node={n.id} data-testid="node" data-kind="raw">
       <div class="nhead" data-drag="1">
         <b>JS</b>
         <small>runs as written</small>
@@ -504,7 +505,7 @@ function SetupCard(p: NodeProps) {
     )
   }
   return (
-    <div class={`node setup ${p.selected ? 'sel' : ''}`} style={{ transform: `translate(${p.x}px,${p.y}px)`, width: `${s.w}px`, minHeight: `${s.h}px` }} data-node={n.id} data-testid="node" data-kind={st.k}>
+    <div class={`node setup ${p.selected ? 'sel' : ''}`} style={{ transform: `translate(${p.x}px,${p.y}px)`, width: `${s.w}px`, height: `${s.h}px` }} data-node={n.id} data-testid="node" data-kind={st.k}>
       <div class="nhead" data-drag="1">
         <b>{st.k === 'setting' ? st.name : st.k === 'render' ? 'render' : 'source'}</b>
         <small>setup</small>

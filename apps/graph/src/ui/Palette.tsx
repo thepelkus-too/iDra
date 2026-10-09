@@ -323,6 +323,8 @@ export const canvasApi = {
   center: (): XY => ({ x: 400, y: 200 }),
   toWorld: (cx: number, cy: number): XY => ({ x: cx, y: cy }),
   dragItem: (_item: Item, _e: PointerEvent): void => {},
+  /** centre the camera on a node */
+  focus: (_id: string): void => {},
 }
 const canvasCenter = () => canvasApi.center()
 

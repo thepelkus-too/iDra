@@ -89,10 +89,12 @@ export function sizeOf(n: GNode, cat: Catalog = defaultCatalog): { w: number; h:
       const s = n.stmt as Extract<GNode['stmt'], { k: 'raw' }>
       return { w: SETUP_W, h: HEAD + lineCount(s.code, 8) * 17 + 14 }
     }
-    case 'source':
-      return { w: SETUP_W, h: 108 }
+    case 'source': {
+      const s = n.stmt as Extract<GNode['stmt'], { k: 'source' }>
+      return { w: SETUP_W, h: s.init.kind === 'image' || s.init.kind === 'video' ? 156 : 116 }
+    }
     default:
-      return { w: SETUP_W, h: 68 }
+      return { w: SETUP_W, h: 76 }
   }
 }
 

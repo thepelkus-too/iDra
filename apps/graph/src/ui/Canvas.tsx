@@ -114,6 +114,16 @@ export function Canvas() {
       const r = box.current!.getBoundingClientRect()
       return toWorld(r.left + r.width / 2 - 100, r.top + r.height / 2 - 60)
     }
+    canvasApi.focus = (id: string) => {
+      const n = nodeById(graphOf(), id)
+      if (!n || !box.current) return
+      const r = box.current.getBoundingClientRect()
+      const p = posOf(id)
+      const sz = sizeOf(n, ctx.catalog)
+      const k = Math.max(cam.current.k, 0.9)
+      cam.current = { k, x: r.width * 0.4 - (p.x + sz.w / 2) * k, y: r.height * 0.4 - (p.y + sz.h / 2) * k }
+      applyCam()
+    }
     applyCam()
   }, [])
   // a new sketch: its own camera, or fit

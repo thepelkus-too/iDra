@@ -38,21 +38,23 @@ export function App({ stage }: { stage: HTMLElement }) {
   useEffect(() => ui.select([]), [ctx.store.sketch.id])
   const s = runner.status
   return (
-    <div class={`app ${layout} ${st.code ? 'code-open' : ''} ${st.palette ? 'pal-open' : ''}`} data-layout={layout} data-testid="app">
+    <div class={`app lay-${layout} ${st.code ? 'code-open' : ''} ${st.palette ? 'pal-open' : ''}`} data-layout={layout} data-testid="app">
       <TopBar />
       <div class="main">
-        <Canvas />
+        <div class="canvas-col">
+          <Canvas />
+          <div class="banners-wrap">
+            <Banners />
+          </div>
+          <Palette onDragItem={(item, e) => canvasApi.dragItem(item, e)} />
+          <SelectionBar />
+          <Pip stage={stage} />
+        </div>
         {st.code && (
           <section class="codepane" aria-label="Code">
             <CodeDrawer selected={st.sel} onClose={() => ui.set({ code: false })} />
           </section>
         )}
-        <div class="banners-wrap">
-          <Banners />
-        </div>
-        <Palette onDragItem={(item, e) => canvasApi.dragItem(item, e)} />
-        <SelectionBar />
-        <Pip stage={stage} />
       </div>
       <footer class="foot">
         <FooterAbout />
