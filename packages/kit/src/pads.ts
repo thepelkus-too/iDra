@@ -128,6 +128,10 @@ export function bindToPad(sketch: Sketch, callId: string, index: number, current
   const name = knobNameFor(sketch, call.fn, input)
   const def = knobDef(name, current)
   const stmts = sketch.stmts.slice()
+  // the def has no source text, so the statement it goes before must start on a new line (a first statement's recorded
+  // leading whitespace is empty, which would glue the two together)
+  const nextStmt = stmts[at]
+  if (nextStmt.src && !nextStmt.src.before.includes('\n')) stmts[at] = { ...nextStmt, src: { ...nextStmt.src, before: '\n' } } as Stmt
   stmts.splice(at, 0, def)
   let next: Sketch = { ...sketch, stmts }
   next = setArg(next, callId, index, knobArg(name))

@@ -163,6 +163,19 @@ async function reach(S, sel) {
     })
     if (p) return p
   }
+  // a canvas editor (Blocks) can have the floating preview over the number: pan the workspace left once and look again
+  if (S.appName === 'blocks' && !S.panned) {
+    S.panned = true
+    const from = { x: Math.round(S.vp.width * 0.62), y: Math.round(S.vp.height * 0.85) }
+    await S.send('touchStart', [from])
+    for (let i = 1; i <= 10; i++) {
+      await S.send('touchMove', [{ x: from.x - i * 30, y: from.y }])
+      await sleep(20)
+    }
+    await S.send('touchEnd', [])
+    await sleep(300)
+    return reach(S, sel)
+  }
   throw new Error(`${sel} is covered or off screen`)
 }
 
@@ -203,8 +216,11 @@ async function grabRetry(S, tries = 3) {
   }
 }
 
+let current = null
 async function step(name, fn) {
   const s = Date.now()
+  // a failed step must not leave its popover over the next one
+  if (current) await closePopovers(current).catch(() => {})
   try {
     const note = await fn()
     results.push({ name, ok: true, ms: Date.now() - s, note })
@@ -223,6 +239,7 @@ for (const vp of VIEWPORTS) {
     const tag = `${appName} ${vp.name} ${vp.width}×${vp.height}`
     console.log(`${tag}`)
     const S = await session(appName, vp)
+    current = S
     let id
     let knob
     try {
@@ -321,7 +338,7 @@ for (const vp of VIEWPORTS) {
         await sleep(100)
         const afterEsc = await S.page.textContent('[data-testid=lp-value]')
         await S.page.keyboard.press('ArrowDown')
-        const mag = Number((await S.page.textContent('.ladder-panel .lp-value small')).replace(/[^\d.e-]/g, ''))
+        const mag = Number((await S.page.textContent('.ladder-panel .lp-value small')).match(/([\d.e+-]+)\s*$/)?.[1])
         await S.page.keyboard.press('ArrowRight')
         await S.page.keyboard.press('ArrowRight')
         await S.page.keyboard.press('Enter')
@@ -392,7 +409,8 @@ for (const vp of VIEWPORTS) {
         await waitRun(S)
         await sleep(600)
         const pad = await reach(S, `[data-testid="pad-${knob}"]`)
-        assert.equal(await S.page.locator(`[data-testid="pad-${knob}"].inert`).count(), 0, 'pad live (the sketch ran its code)')
+        const trust = await evalApp(S, (A) => ({ pending: A.runner.trust.pending, parts: A.runner.trust.parts.length, phase: A.runner.status.phase }))
+        assert.equal(await S.page.locator(`[data-testid="pad-${knob}"].inert`).count(), 0, `pad live (the sketch ran its code): ${JSON.stringify(trust)}`)
         const before = await grabRetry(S)
         await S.send('touchStart', [pad])
         await sleep(500)

@@ -31,10 +31,14 @@ jobs:
         run: node scripts/e2e-audio-plugins.mjs --skip-build
       - name: e2e hydra-motion (Motion lab with two touch points, vanilla Hydra compatibility, offline)
         run: node scripts/e2e-motion.mjs --skip-build
+      - name: e2e number editor (tap, long-press ladder, glide, pads; every editor at 1180×820 and 820×1180)
+        run: node scripts/e2e-numbers.mjs --skip-build
       - name: iPad-viewport screenshots and metrics
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: ipad-e2e
-          path: test-results/ipad
+          path: |
+            test-results/ipad
+            test-results/numbers
           if-no-files-found: ignore

@@ -45,7 +45,7 @@ and Vitest compile it with the editor's own `jsx: automatic, jsxImportSource: pr
      subscribe: (cb) => ctx.store.subscribe(cb),
      invoke: (name, method, args) => ctx.runner?.rt?.invoke(name, method, args) ?? false,
      trusted: () => !!ctx.runner && !ctx.runner.trust.pending,
-     approveOnce: () => ctx.runner?.approveOnce(),
+     approveOnce: () => (ctx.runner?.track(ctx.store.sketch), ctx.runner?.approveOnce()),
    })
    ```
    and add `padsTool()` to the switcher's `extraTools` so "Pads" is in the ⇄ menu.
@@ -140,3 +140,61 @@ These are still copied per editor. Graph, Blocks and Rack share `apps/<app>/src/
 
 Suggested order: `runner`, `problems`, `thumbs`, `model`, `Menu` (no behaviour change), then `store` (take Graph's `hold()`
 and the history cap; make Rack's `keepOnUndo` an option), then the code drawer and boot.
+
+## Tests
+
+* Unit (`npm test -w @hydra-ipad/kit`): the conversions, the ladder math (rungs per hint, default rung, grid snapping, wrap,
+  widened clamp, the pointer and keyboard state machine), glides on a fake clock (duration parsing with beats, frame values,
+  one undo step on the live path and on the drag path, retargeting, cancel on another edit, return), the curves against the
+  built hydra-motion's own `ease`, and the pad helpers (binding, names, nested calls, round trip, unbind, `livePads` after
+  undo, press and release per mode, `loopValue`).
+* End to end (`node scripts/e2e-numbers.mjs`, in CI): each editor at 1180×820 and 820×1180 with real timed touches through
+  the DevTools protocol: tap opens the tabbed editor and the tab is remembered; a 450 ms hold then a slide steps by 0.1,
+  then by 10, and the release is one undo step; the Ladder tab from a keyboard; a glide to a typed target moves the picture
+  and lands as one undo step, and ↩ glides back; binding a pad, holding it changes the rendered output and letting go
+  restores it. In landscape also: the self-contained export runs in a plain hydra-synth page on another origin and its knob
+  still plays, and the next editor opens the sketch with the binding, the pad and the open dock.
+
+## Retrospective (step 07)
+
+* **The ladder feels right on paper and in emulation; it is unproven under a real finger.** 24 px per step and 40 px per
+  rung came from arithmetic (ten 0.1 steps across a 0..1 input in one comfortable sweep, rungs as tall as the drawn rows),
+  not from an iPad. Emulated touches are perfectly steady; a real finger drifts a few points vertically while sliding
+  sideways, which could flip rungs by accident. If it does, add hysteresis on the rung (switch only after 60 % of a row).
+* **Long-press conflicts were the main design problem.** Chain Stack and Rack already used long-press for their menus. The
+  rule chosen: hold then *move* is the ladder, hold then *let go* is the old menu. It keeps every existing test and habit,
+  but the menu now opens on release instead of at 460 ms, which may feel slower. Graph and Blocks had no long-press on
+  numbers, so there it opens the Ladder tab.
+* **Two real bugs only showed up end to end.** (1) Under load (a recompile), the long-press timer could fire before a quick
+  tap's release was handled, so a tap opened the Ladder tab; the release now checks the events' own timestamps. Graph's
+  corpus acceptance caught it. (2) Binding on a sketch whose first statement is the bound chain glued the new def to the
+  chain in the export (`k = knob(0.8)osc(…)`); the unit tests only bound chains that were not first.
+* **Trust and pads.** Binding adds a plugin and a JS def, which makes the sketch "risky". Binding on an already trusted
+  sketch re-approves it once (the code is the owner's own). That exposed a race in each editor's runner (an async library
+  lookup could overwrite a fresh approval), fixed in all four copies, another reason to move the runner into the kit next.
+* **Undo and `meta.kit`.** Undo restores `meta[<app>]`, not `meta.kit`, so an undone bind leaves its pad config behind.
+  Pads whose knob is gone are hidden instead of extending every store's undo. A cleaner fix is for the stores to snapshot
+  `meta.kit` too, once the store is shared.
+* **`const` vs bare.** The plan said `const name = knob(…)`; core's `knobDef` and the contract require a bare assignment so
+  `runtime.invoke` can reach the knob. Followed core.
+* **Glide without a live slot.** Numbers that are not plain arguments of catalog float inputs (settings, array steps,
+  modulator rates) glide through the editor's coalesced drag commits instead of `setLive`, so each frame recompiles. That is
+  correct but heavier; on an older iPad a long glide on such a number may stutter.
+* **Not verified without an iPad:** feel of the step and rung sizes, whether iOS Safari's own long-press callout or text
+  selection ever fires first (the controls set `user-select: none` and cancel `contextmenu`), Apple Pencil hover and
+  pressure with the ladder, two hands on two pads plus a third finger on the ladder, and frame rate during glides.
+
+## iPad checklist
+
+1. Tap a number in each editor: the editor opens beside it, tabs switch, the tab you leave on is the one you get next time.
+2. Hold a number still for about ⅓ s, then slide: the ladder appears under your finger; up/down changes the step with a
+   visible pulse, left/right steps the value; lift: one ↶ undoes it. Slide right away instead: the old scrub/knob turn.
+3. Hold and lift without moving: Chain Stack shows the kind menu, Rack the knob menu, Graph and Blocks the Ladder tab.
+4. Double-tap a number: still resets to the default. Two-finger tap: still undoes.
+5. Keypad with Glide on: type 2, Go; the preview moves over the duration; ↶ once returns to the old value. Try `2b`.
+   Tap ↩ to glide back. Try "Loop between …" and check the code.
+6. Pad tab → Bind to a pad: the pad appears bottom right; hold it with one finger, then a second pad with another finger;
+   drag a pad by its grip; open ⇄ → Pads in each editor; in Rack performance mode, toggle Pads.
+7. Open a shared sketch with a pad: the pad is dimmed until you tap Run it.
+8. Export with "Make this sketch self-contained", paste into hydra.ojack.xyz, run `oscOffset.hold(3)` (your knob's name).
+9. Hardware keyboard: Ladder tab, arrows, Enter, Esc. Apple Pencil: hold and slide on a number.

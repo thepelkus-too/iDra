@@ -71,7 +71,7 @@ export class LadderGesture {
   private timer: ReturnType<typeof setTimeout> | undefined
   private st: LadderState | undefined
   private session: Session | undefined
-  private start = { x: 0, y: 0, id: -1 }
+  private start = { x: 0, y: 0, id: -1, t: 0 }
   private el: HTMLElement | undefined
   private moved = false
   private tick = 0
@@ -95,7 +95,7 @@ export class LadderGesture {
 
   arm(e: PointerEvent, el: HTMLElement): void {
     this.disarm()
-    this.start = { x: e.clientX, y: e.clientY, id: e.pointerId }
+    this.start = { x: e.clientX, y: e.clientY, id: e.pointerId, t: e.timeStamp }
     this.el = el
     this.moved = false
     this.timer = setTimeout(() => this.open(), this.opts.longMs ?? LADDER_LONG_MS)
@@ -152,6 +152,12 @@ export class LadderGesture {
     if (!this.st || e.pointerId !== this.start.id) return false
     const st = this.st
     this.close()
+    // a busy main thread (a recompile) can run the long-press timer before a quick tap's release is handled: the events'
+    // own timestamps say whether the finger was really down that long; if not, it was a tap and the control handles it
+    if (!this.moved && e.timeStamp - this.start.t < (this.opts.longMs ?? LADDER_LONG_MS)) {
+      this.session?.revert()
+      return false
+    }
     if (!this.moved) {
       this.session?.revert()
       if (this.el) this.opts.onStill?.(this.el)

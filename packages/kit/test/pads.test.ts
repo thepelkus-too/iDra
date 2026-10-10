@@ -22,6 +22,11 @@ describe('bindToPad', () => {
     // other apps' meta untouched; ours only under meta.kit
     expect(Object.keys(r.sketch.meta ?? {})).toEqual(['kit'])
   })
+  it('binding in the first statement puts the def on its own line (the export runs)', () => {
+    const s0 = sk('osc(20, 0, 0.8).rotate(0.8).out()')
+    const r = bindToPad(s0, callId(s0, 'osc'), 2, 0.8)!
+    expect(toCode(r.sketch).split('\n').filter((l) => !/loadScript|^$/.test(l))).toEqual(['oscOffset = knob(0.8)', 'osc(20, 0, oscOffset).rotate(0.8).out()'])
+  })
   it('round-trips through the code (another editor reopening it keeps the binding)', () => {
     const s0 = sk(code)
     const r = bindToPad(s0, callId(s0, 'rotate'), 0, 0.3)!

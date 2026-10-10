@@ -157,12 +157,18 @@ function Pad({ pad, host, base, compact }: { pad: PadConfig; host: KitHost; base
   const [, bump] = useState(0)
   const ptr = useRef<number | null>(null)
   const inert = !host.trusted()
+  // trust changes without a store change (the owner taps Run it, a re-run settles): look again while inert
+  useEffect(() => {
+    if (!inert) return
+    const t = setInterval(() => bump((n) => n + 1), 500)
+    return () => clearInterval(t)
+  }, [inert])
   const on = latched.get(pad.id) ?? false
   const press = (e: PointerEvent) => {
     e.stopPropagation()
     e.preventDefault()
     if (ptr.current !== null) return
-    if (inert) {
+    if (!host.trusted()) {
       if (Date.now() - warnedInert > 4000) toast('Pads are off until the sketch runs its code: tap Run it in the banner')
       warnedInert = Date.now()
       return

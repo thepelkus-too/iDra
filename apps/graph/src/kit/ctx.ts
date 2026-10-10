@@ -33,7 +33,11 @@ setKitHost({
   subscribe: (cb) => (ctx.store ? ctx.store.subscribe(cb) : () => {}),
   invoke: (name, method, args) => ctx.runner?.rt?.invoke(name, method, args) ?? false,
   trusted: () => !!ctx.runner && !ctx.runner.trust.pending,
-  approveOnce: () => ctx.runner?.approveOnce(),
+  // approve the content just committed (the runner may not have picked it up yet)
+  approveOnce: () => {
+    ctx.runner?.track(ctx.store.sketch)
+    ctx.runner?.approveOnce()
+  },
 })
 
 /** What the undo taps and ⌘Z / ⌘Enter act on. */
