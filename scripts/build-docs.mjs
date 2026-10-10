@@ -1,20 +1,41 @@
-// Renders the repository's docs (README.md and docs/*.md) to static pages in <out>/docs/, so they can be read inside
+// Renders the repository's docs (README.md and every .md under docs/, subfolders included) to static pages in <out>/docs/, so they can be read inside
 // the app and, because scripts/build-all.mjs precaches everything in dist/, offline.
 //   node scripts/build-docs.mjs [outDir=dist]
 // Links between docs are rewritten to the rendered pages; links to other repository files go to GitHub.
-import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, join, posix, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { escapeHtml, render } from './lib/markdown.mjs'
 
-const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const REPO = 'https://github.com/thepelkus-too/iDra/blob/main/'
 
-/** repository-relative path → page file name */
-const pageFor = (rel) => (rel === 'README.md' ? 'readme.html' : posix.basename(rel, '.md').toLowerCase() + '.html')
+/** repository-relative path → page file name (flat, so every page shares one folder: docs/guides/a.md → guides-a.html) */
+const pageFor = (rel) => (rel === 'README.md' ? 'readme.html' : rel.replace(/^docs\//, '').replace(/\.md$/, '').replace(/\//g, '-').toLowerCase() + '.html')
 
-export function buildDocs(outDir = join(root, 'dist')) {
-  const sources = ['README.md', ...readdirSync(join(root, 'docs')).filter((f) => f.endsWith('.md')).sort().map((f) => `docs/${f}`)]
+/** README.md plus every .md under docs/, at any depth, in path order */
+export function docSources(root = repoRoot) {
+  const walk = (dir) =>
+    readdirSync(join(root, dir))
+      .sort()
+      .flatMap((f) => {
+        const rel = `${dir}/${f}`
+        if (f.startsWith('.')) return []
+        if (statSync(join(root, rel)).isDirectory()) return walk(rel)
+        return f.endsWith('.md') ? [rel] : []
+      })
+  const top = walk('docs')
+  return ['README.md', ...top.filter((r) => r.split('/').length === 2), ...top.filter((r) => r.split('/').length > 2)]
+}
+
+export function buildDocs(outDir = join(repoRoot, 'dist'), root = repoRoot) {
+  const sources = docSources(root)
+  const pageNames = new Map()
+  for (const rel of sources) {
+    const page = pageFor(rel)
+    if (pageNames.has(page)) throw new Error(`docs: ${rel} and ${pageNames.get(page)} would both render to ${page}; rename one`)
+    pageNames.set(page, rel)
+  }
   const known = new Set(sources)
   const out = join(outDir, 'docs')
   mkdirSync(out, { recursive: true })
