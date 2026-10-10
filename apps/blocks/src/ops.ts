@@ -5,7 +5,7 @@ import { commit, metaNow, ui } from './doc'
 import { locate, mutateStmt, reorderByPosition } from './edit'
 import { ctx } from './kit/ctx'
 import { duplicateStmt, removeMod, removeStmt, setArg, updateChain } from './kit/model'
-import { toast } from './kit/overlay'
+import { toast } from '@hydra-ipad/kit'
 import { scriptSize, type XY } from './view'
 
 const freshCall = (c: Call): Call => ({ id: newId('c'), fn: c.fn, args: c.args.map((a) => (a.k === 'tex' ? { k: 'tex', chain: freshChain(a.chain) } : structuredClone(a))) })

@@ -25,6 +25,7 @@
     "@codemirror/state": "^6.4.1",
     "@codemirror/view": "^6.34.0",
     "@hydra-ipad/core": "*",
+    "@hydra-ipad/kit": "*",
     "@lezer/highlight": "^1.2.1",
     "preact": "^10.24.3"
   }

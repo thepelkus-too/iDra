@@ -1,6 +1,6 @@
 // Dragging a mod tile onto a knob, or a lane chip onto a patch jack. A press that does not move is a tap. While something is
 // held every target that takes it lights up (`body.dragging-<kind>`), the one under the finger glows (`.hot`).
-import { TAP_SLOP } from './kit/gestures'
+import { TAP_SLOP } from '@hydra-ipad/kit'
 import { ui } from './doc'
 
 export type Payload = { t: 'mod'; kind: string; bin?: number } | { t: 'lane'; name: string }

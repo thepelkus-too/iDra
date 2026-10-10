@@ -4,9 +4,8 @@ import { useEffect } from 'preact/hooks'
 import { trackHistory, ui, useUi } from './doc'
 import { Banners, FooterAbout } from './kit/Chrome'
 import { CodeDrawer, codeBridge } from './kit/CodeDrawer'
-import { ctx, useRunner, useStore } from './kit/ctx'
-import { useLayout, useShortcuts, useTapGestures } from './kit/gestures'
-import { closeAllOverlays, OverlayHost } from './kit/overlay'
+import { ctx, history, useRunner, useStore } from './kit/ctx'
+import { closeAllOverlays, OverlayHost, useLayout, useShortcuts, useTapGestures } from '@hydra-ipad/kit'
 import { deleteSel, duplicateSel } from './ops'
 import { Pip, SelectionBar, TopBar } from './ui/Bars'
 import { Palette } from './ui/Palette'
@@ -17,9 +16,10 @@ export function App({ stage }: { stage: HTMLElement }) {
   const st = useUi()
   const runner = useRunner()
   const layout = useLayout()
-  useTapGestures()
+  useTapGestures(history)
   useEffect(() => trackHistory(), [])
   useShortcuts(
+    history,
     (e, mod) => {
       const k = e.key.toLowerCase()
       if (mod && k === 'd') return duplicateSel(), true

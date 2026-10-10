@@ -5,8 +5,7 @@ import { useEffect, useRef, useState } from 'preact/hooks'
 import { composeFn, fmt, parseFnWrap } from '../conv'
 import { ctx, edit, useStore } from '../ctx'
 import { getArg, refKey, setArg, type ArgRef } from '../model'
-import { openPopover, openSheet } from '../overlay'
-import { Keypad } from './Keypad'
+import { Keypad, openPopover, openSheet } from '@hydra-ipad/kit'
 import { Scrub } from './Scrub'
 
 export const FN_CHIPS: Array<{ label: string; expr: string }> = [

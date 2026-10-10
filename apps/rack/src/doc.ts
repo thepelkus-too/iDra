@@ -5,7 +5,7 @@ import { useEffect, useState } from 'preact/hooks'
 import { ctx } from './kit/ctx'
 import { getArg, setArg, type ArgRef } from './kit/model'
 import type { CommitOpts } from './kit/store'
-import { toast } from './kit/overlay'
+import { toast } from '@hydra-ipad/kit'
 import { beatsToMs, Fader, liveTableOf, sameShape } from './fade'
 import { APP, bpmOf, metaOf, type RackMeta } from './view'
 

@@ -3,7 +3,7 @@
 // under the finger is "hot". A press that does not move is a tap.
 import type { Call, Value } from '@hydra-ipad/core'
 import { ui, type DragCat } from './doc'
-import { TAP_SLOP } from './kit/gestures'
+import { TAP_SLOP } from '@hydra-ipad/kit'
 import type { ArgRef } from './kit/model'
 import type { MathNode, MathPath } from './math'
 import type { XY } from './view'

@@ -3,7 +3,7 @@
 import { liveId, withMeta, type Sketch } from '@hydra-ipad/core'
 import { useEffect, useState } from 'preact/hooks'
 import { ctx } from './kit/ctx'
-import { toast } from './kit/overlay'
+import { toast } from '@hydra-ipad/kit'
 import type { CommitOpts } from './kit/store'
 import { graphToIR, irToGraph, type CompileResult, type GEdge, type Graph } from './model'
 import type { OpResult } from './ops'

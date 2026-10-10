@@ -1,4 +1,4 @@
-// Number helpers shared by the editor's controls. Pure.
+// Number helpers shared by every editor's controls. Pure.
 
 /** Decimal places needed to show a step like 0.01 / 0.5 / 1. */
 export function decimalsOf(step: number): number {

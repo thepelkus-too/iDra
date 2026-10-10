@@ -1,8 +1,8 @@
 // Popovers, sheets, toasts and the scrub HUD. One of each at a time; contents are closures that read the store when they
-// render, so an open editor follows the sketch (undo while it is open, the preview updating, ...).
+// render, so an open editor follows the sketch (undo while it is open, the preview updating, ...): the editor tells the kit
+// what to follow with setOverlaySource (its store's subscribe), once, before it renders.
 import type { ComponentChildren } from 'preact'
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks'
-import { useStore } from './ctx'
 
 type Render = (close: () => void) => ComponentChildren
 
@@ -35,6 +35,18 @@ const state = {
   hud: null as { x: number; y: number; text: string; sub?: string } | null,
 }
 const listeners = new Set<() => void>()
+
+type Subscribe = (cb: () => void) => () => void
+let source: Subscribe = () => () => {}
+/** What open popovers and sheets re-render on (the editor's document store). */
+export function setOverlaySource(subscribe: Subscribe): void {
+  source = subscribe
+}
+/** Re-render the calling component whenever the overlay source changes. */
+export function useOverlaySource(): void {
+  const [, set] = useState(0)
+  useEffect(() => source(() => set((v) => v + 1)), [])
+}
 let seq = 1
 const emit = () => listeners.forEach((l) => l())
 
@@ -125,7 +137,7 @@ const MARGIN = 8
 function Popover({ spec, level }: { spec: PopoverSpec; level: number }) {
   const ref = useRef<HTMLDivElement>(null)
   const [pos, setPos] = useState<{ left: number; top: number; maxH: number; arrowX: number; above: boolean }>({ left: 0, top: 0, maxH: 400, arrowX: 20, above: false })
-  useStore() // follow the sketch while open
+  useOverlaySource() // follow the sketch while open
   useLayoutEffect(() => {
     const el = ref.current
     if (!el) return
@@ -162,7 +174,7 @@ function Popover({ spec, level }: { spec: PopoverSpec; level: number }) {
 }
 
 function Sheet({ spec }: { spec: SheetSpec }) {
-  useStore()
+  useOverlaySource()
   return (
     <>
       <div class="scrim" onPointerDown={closeSheet} />

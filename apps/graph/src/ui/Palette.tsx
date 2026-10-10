@@ -8,7 +8,7 @@ import { applyGraph, graphOf, metaNow, posOf, tryApply, ui, useUi } from '../doc
 import { ctx, edit, useCatalogVersion } from '../kit/ctx'
 import { defaultSpec, MOD_ICON, MOD_LABEL, type ModKind } from '../kit/mods'
 import { insertStmt, setupInsertIndex } from '../kit/model'
-import { closePopover, openPopover, toast } from '../kit/overlay'
+import { closePopover, openPopover, toast } from '@hydra-ipad/kit'
 import { thumbs } from '../kit/thumbs'
 import { nodeById, type GEdge, type Graph, type Port } from '../model'
 import { appendAfter, connect, isGenerator, newCallNode, setModulator, splice, updateNode } from '../ops'

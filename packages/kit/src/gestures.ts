@@ -1,8 +1,15 @@
-// Pointer-event helpers shared by the editor: tap vs long-press, undo/redo taps, keyboard shortcuts, layout.
+// Pointer-event helpers shared by the editors: tap vs long-press, undo/redo taps, keyboard shortcuts, layout.
 // Everything uses Pointer Events, so mouse, finger and Apple Pencil go through one path. No hover-dependent behaviour.
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks'
-import { ctx } from './ctx'
 import { toast } from './overlay'
+
+/** What the undo gestures and shortcuts act on: the editor's document store (and its runner for ⌘Enter). */
+export interface History {
+  undo(): boolean
+  redo(): boolean
+  /** ⌘Enter: run now */
+  run?(): void
+}
 
 export const TAP_SLOP = 8
 export const LONG_MS = 460
@@ -71,7 +78,7 @@ export const isTextTarget = (t: EventTarget | null): boolean => {
 }
 
 /** Two-finger tap = undo, three-finger tap = redo (the iPadOS convention). A tap, not a drag, not a long hold. */
-export function useTapGestures(): void {
+export function useTapGestures(history: () => History): void {
   useEffect(() => {
     let t0 = 0
     let max = 0
@@ -101,9 +108,9 @@ export function useTapGestures(): void {
       // a multi-finger tap that started on a control (two knobs at once) is not an undo
       if ((e.target as HTMLElement | null)?.closest?.('[data-no-undo-tap]')) return
       if (n === 2) {
-        if (ctx.store.undo()) toast('Undo')
+        if (history().undo()) toast('Undo')
       } else if (n === 3) {
-        if (ctx.store.redo()) toast('Redo')
+        if (history().redo()) toast('Redo')
       }
     }
     document.addEventListener('touchstart', onStart, { passive: true })
@@ -117,8 +124,8 @@ export function useTapGestures(): void {
   }, [])
 }
 
-/** ⌘Z / ⇧⌘Z / ⌘Y / ⌘Enter plus app-specific keys (called with the key when ⌘/Ctrl is held, or for plain keys when `plain`). */
-export function useShortcuts(extra: (e: KeyboardEvent, mod: boolean) => boolean = () => false, flush: () => void = () => {}): void {
+/** ⌘Z / ⇧⌘Z / ⌘Y / ⌘Enter plus app-specific keys (`extra` gets every other key outside text fields; return true to consume it). */
+export function useShortcuts(history: () => History, extra: (e: KeyboardEvent, mod: boolean) => boolean = () => false, flush: () => void = () => {}): void {
   const ex = useRef(extra)
   ex.current = extra
   useEffect(() => {
@@ -128,19 +135,19 @@ export function useShortcuts(extra: (e: KeyboardEvent, mod: boolean) => boolean 
       if (mod && k === 'enter') {
         e.preventDefault()
         flush()
-        ctx.runner.run(true)
+        history().run?.()
         return
       }
       if (isTextTarget(e.target)) return
       if (mod && k === 'z') {
         e.preventDefault()
-        if (e.shiftKey) ctx.store.redo()
-        else ctx.store.undo()
+        if (e.shiftKey) history().redo()
+        else history().undo()
         return
       }
       if (mod && k === 'y') {
         e.preventDefault()
-        ctx.store.redo()
+        history().redo()
         return
       }
       if (ex.current(e, mod)) e.preventDefault()

@@ -6,7 +6,7 @@ import { APP, APP_TITLE } from '../app'
 import { duplicateCurrent, exportFile, importAsNew, newBlankSketch, openSketch, copyCode } from './actions'
 import { ctx, useBackdrop, useRunner, useStore } from './ctx'
 import { openMenu, type MenuItem } from './Menu'
-import { openSheet, toast } from './overlay'
+import { openSheet, toast } from '@hydra-ipad/kit'
 
 declare const __COMMIT__: string
 

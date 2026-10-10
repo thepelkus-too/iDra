@@ -3,8 +3,7 @@
 import type { Hint } from '@hydra-ipad/core'
 import { useRef } from 'preact/hooks'
 import { decimalsOf, fmt, roundTo } from '../conv'
-import { LONG_MS, TAP_SLOP } from '../gestures'
-import { hud } from '../overlay'
+import { hud, LONG_MS, TAP_SLOP, wrapInto } from '@hydra-ipad/kit'
 import { appPrefs } from '../prefs'
 
 /** Vertical distance (px) → step multiplier. */
@@ -37,12 +36,6 @@ export interface ScrubProps {
   suffix?: string
   /** drag starts the instant the finger moves (used inside popovers where there is no long-press) */
   onStart?: () => void
-}
-
-export function wrapInto(v: number, min: number, max: number): number {
-  const span = max - min
-  if (!(span > 0)) return v
-  return ((((v - min) % span) + span) % span) + min
 }
 
 export function Scrub(p: ScrubProps) {

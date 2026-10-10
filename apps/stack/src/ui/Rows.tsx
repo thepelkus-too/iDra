@@ -23,7 +23,7 @@ import { useContext, useMemo, useRef, useState } from 'preact/hooks'
 import type { RefObject } from 'preact'
 import type { Kind } from '../conv'
 import { ctx, edit, useStore } from '../ctx'
-import { useHandle, usePress, useSwipe } from '../gestures'
+import { useHandle, useSwipe } from '../gestures'
 import {
   duplicateMod,
   duplicateStmt,
@@ -44,13 +44,12 @@ import {
   uniqueName,
   updateCall,
 } from '../model'
-import { closePopover, openPopover, toast } from '../overlay'
+import { closePopover, Keypad, openPopover, toast, usePress } from '@hydra-ipad/kit'
 import { focusNode } from '../nav'
 import type { RowProblem } from '../problems'
 import { ArgView, argInfoFor, type ArgInfo } from './ArgView'
 import { openMenu, type MenuItem } from './Menu'
 import { FnPicker, RefPicker, useCatalogVersion } from './Picker'
-import { Keypad } from './Keypad'
 import { Scrub } from './Scrub'
 
 // ---------------------------------------------------------------- shared view state

@@ -2,7 +2,7 @@
 import { randomSketch, routeHash, toCode, type Sketch } from '@hydra-ipad/core'
 import { ctx, edit } from './ctx'
 import { mutateChain } from './mutate'
-import { toast } from './overlay'
+import { toast } from '@hydra-ipad/kit'
 import { appPrefs } from './prefs'
 import { APP } from './view'
 

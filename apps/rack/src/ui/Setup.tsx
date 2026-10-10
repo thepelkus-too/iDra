@@ -4,8 +4,7 @@ import { commit } from '../doc'
 import { ctx } from '../kit/ctx'
 import { openMenu } from '../kit/Menu'
 import { insertStmt, removeStmt, setupInsertIndex, updateStmt } from '../kit/model'
-import { NumSlider } from '../kit/NumSlider'
-import { openSheet } from '../kit/overlay'
+import { NumSlider, openSheet } from '@hydra-ipad/kit'
 
 export const SETTING_HINT: Record<'bpm' | 'speed', Hint> = { bpm: { min: 20, max: 300, step: 1, integer: true }, speed: { min: 0, max: 4, step: 0.01 } }
 export const SETTING_DEFAULT = { bpm: 30, speed: 1 }

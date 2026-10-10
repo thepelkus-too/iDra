@@ -1,0 +1,24 @@
+{
+  "name": "@hydra-ipad/kit",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Shared Preact UI kit for the iDra editors: number editing (NumSlider, Keypad, NumberEditor, ladder, glide), pads, popovers, gestures.",
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/thepelkus-too/iDra.git"
+  },
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit -p ."
+  },
+  "dependencies": {
+    "@hydra-ipad/core": "*",
+    "preact": "^10.24.3"
+  },
+  "sideEffects": false
+}

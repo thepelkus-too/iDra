@@ -1,67 +1,8 @@
-// Pointer-event gestures shared by the rows. Everything uses Pointer Events, so mouse, finger and Apple Pencil go through
-// one path (pointerType 'pen' behaves like touch). No hover-dependent behaviour anywhere.
+// Pointer-event gestures of the rows: swipe to delete and drag to reorder (tap vs long-press, TAP_SLOP and LONG_MS come from
+// the kit). Everything uses Pointer Events, so mouse, finger and Apple Pencil go through one path (pointerType 'pen' behaves
+// like touch). No hover-dependent behaviour anywhere.
+import { TAP_SLOP } from '@hydra-ipad/kit'
 import { useMemo, useRef } from 'preact/hooks'
-
-export const TAP_SLOP = 8
-export const LONG_MS = 460
-
-export interface PressConfig {
-  onTap?: (e: PointerEvent, el: HTMLElement) => void
-  onLong?: (e: PointerEvent, el: HTMLElement) => void
-  longMs?: number
-  /** called on pointerdown (e.g. to select the row) */
-  onDown?: (e: PointerEvent, el: HTMLElement) => void
-}
-
-/** Tap vs long-press on one element. Handlers are stable across renders. */
-export function usePress(cfg: PressConfig) {
-  const c = useRef(cfg)
-  c.current = cfg
-  const st = useRef<{ id: number; x: number; y: number; fired: boolean; moved: boolean; timer?: ReturnType<typeof setTimeout> } | null>(null)
-  return useMemo(() => {
-    const clear = () => {
-      if (st.current?.timer) clearTimeout(st.current.timer)
-    }
-    return {
-      onPointerDown(e: PointerEvent) {
-        if (e.pointerType === 'mouse' && e.button !== 0) return
-        const el = e.currentTarget as HTMLElement
-        st.current = { id: e.pointerId, x: e.clientX, y: e.clientY, fired: false, moved: false }
-        c.current.onDown?.(e, el)
-        if (c.current.onLong) {
-          const s = st.current
-          s.timer = setTimeout(() => {
-            if (st.current !== s || s.moved) return
-            s.fired = true
-            c.current.onLong!(e, el)
-          }, c.current.longMs ?? LONG_MS)
-        }
-      },
-      onPointerMove(e: PointerEvent) {
-        const s = st.current
-        if (!s || s.id !== e.pointerId || s.moved) return
-        if (Math.hypot(e.clientX - s.x, e.clientY - s.y) > TAP_SLOP) {
-          s.moved = true
-          clear()
-        }
-      },
-      onPointerUp(e: PointerEvent) {
-        const s = st.current
-        if (!s || s.id !== e.pointerId) return
-        clear()
-        st.current = null
-        if (!s.fired && !s.moved) c.current.onTap?.(e, e.currentTarget as HTMLElement)
-      },
-      onPointerCancel() {
-        clear()
-        st.current = null
-      },
-      onContextMenu(e: Event) {
-        e.preventDefault()
-      },
-    }
-  }, [])
-}
 
 // ---------------------------------------------------------------- swipe to delete
 

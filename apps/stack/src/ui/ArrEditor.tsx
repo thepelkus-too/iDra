@@ -4,8 +4,7 @@ import { useEffect, useRef, useState } from 'preact/hooks'
 import { fmt, roundTo } from '../conv'
 import { ctx, edit, useStore } from '../ctx'
 import { getArg, refKey, setArg, type ArgRef } from '../model'
-import { openPopover } from '../overlay'
-import { Keypad } from './Keypad'
+import { Keypad, openPopover } from '@hydra-ipad/kit'
 import { Scrub } from './Scrub'
 
 export const EASES = [

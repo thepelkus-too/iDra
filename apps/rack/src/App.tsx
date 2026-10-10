@@ -3,9 +3,8 @@
 import { ui, useUi, recallScene, storeScene } from './doc'
 import { Banners, FooterAbout } from './kit/Chrome'
 import { CodeDrawer, codeBridge } from './kit/CodeDrawer'
-import { ctx, useCatalogVersion, useRunner, useStore } from './kit/ctx'
-import { useLayout, useShortcuts, useTapGestures } from './kit/gestures'
-import { closeAllOverlays, OverlayHost } from './kit/overlay'
+import { ctx, history, useCatalogVersion, useRunner, useStore } from './kit/ctx'
+import { closeAllOverlays, OverlayHost, useLayout, useShortcuts, useTapGestures } from '@hydra-ipad/kit'
 import { freeze, Mixer, ModBay, Pip, Scenes, SLOTS, TopBar } from './ui/Bars'
 import { Rack } from './ui/Lanes'
 
@@ -15,8 +14,9 @@ export function App({ stage }: { stage: HTMLElement }) {
   const st = useUi()
   const runner = useRunner()
   const layout = useLayout()
-  useTapGestures()
+  useTapGestures(history)
   useShortcuts(
+    history,
     (e, mod) => {
       const k = e.key.toLowerCase()
       if (mod && k === 'e') return ui.set({ code: !ui.state.code }), true

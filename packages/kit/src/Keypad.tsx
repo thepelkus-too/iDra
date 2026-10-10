@@ -2,8 +2,7 @@
 // (the preview follows), and the whole session is one undo step.
 import type { Hint } from '@hydra-ipad/core'
 import { useRef, useState } from 'preact/hooks'
-import { fmt, roundTo } from '../conv'
-import { wrapInto } from './Scrub'
+import { fmt, roundTo, wrapInto } from './conv'
 
 export interface KeypadProps {
   title: string

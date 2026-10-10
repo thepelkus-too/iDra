@@ -13,14 +13,12 @@ import {
   rollDice,
 } from '../actions'
 import { ctx, edit, useBackdrop, useRunner, useStore } from '../ctx'
-import { usePress } from '../gestures'
 import { setOut, updateStmt } from '../model'
-import { closeSheet, openPopover, openSheet, toast } from '../overlay'
+import { closeSheet, Keypad, openPopover, openSheet, toast, usePress } from '@hydra-ipad/kit'
 import { appPrefs } from '../prefs'
 import { autoView, metaOf, stripOf } from '../view'
 import { focusNode } from '../nav'
 import { AudioMount } from './FnEditor'
-import { Keypad } from './Keypad'
 import { openMenu } from './Menu'
 import { addStatement } from './Rows'
 

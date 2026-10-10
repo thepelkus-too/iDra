@@ -1,5 +1,6 @@
 // Process-wide handles the components share. Set once in boot (tests set their own).
 import { catalog, getAudioEngine, getLibrary, type AudioEngine, type BackdropController, type BackdropState, type Catalog, type Library, type Sketch } from '@hydra-ipad/core'
+import { setOverlaySource, type History } from '@hydra-ipad/kit'
 import { useEffect, useState } from 'preact/hooks'
 import type { Runner } from './runner'
 import { Store, type CommitOpts } from './store'
@@ -21,6 +22,12 @@ export const ctx: Ctx = {
   audio: getAudioEngine(),
   catalog,
 }
+
+// open popovers and sheets follow the document (undo while one is open, the preview updating, ...)
+setOverlaySource((cb) => (ctx.store ? ctx.store.subscribe(cb) : () => {}))
+
+/** What the undo taps and ⌘Z / ⌘Enter act on. */
+export const history = (): History => ({ undo: () => ctx.store.undo(), redo: () => ctx.store.redo(), run: () => ctx.runner.run(true) })
 
 /** Apply a pure edit to the current sketch. */
 export function edit(f: (s: Sketch) => Sketch, opts?: CommitOpts): void {
