@@ -9,6 +9,7 @@ h2{margin:0 0 8px;font-size:18px}
 .dim{color:var(--hi-dim);font-size:13px}
 .pad{padding:10px 12px}
 button,.btn,input[type=text],select{min-height:44px;padding:0 14px;border-radius:10px;border:1px solid var(--hi-line);background:var(--hi-panel);color:var(--hi-text)}
+a.btn{display:inline-flex;align-items:center;text-decoration:none}
 button:active{filter:brightness(1.2)}
 button.primary{background:var(--hi-accent);border-color:transparent;color:#04201f;font-weight:600}
 button.danger{color:var(--hi-bad);border-color:var(--hi-bad)}
