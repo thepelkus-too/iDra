@@ -321,6 +321,7 @@ async function render() {
       h('button', { type: 'button', onclick: restoreDialog }, 'Restore…'),
       h('button', { type: 'button', 'data-role': 'open-plugins', onclick: () => void openPluginSheet({ title: 'Plugins on this device' }) }, 'Plugins…'),
       h('button', { type: 'button', onclick: () => void aboutDialog() }, 'Storage & about'),
+      h('a', { class: 'btn', href: './docs/', 'data-role': 'open-docs' }, 'Docs'),
     ),
   )
   const storage = h('p', { class: 'dim storage' })

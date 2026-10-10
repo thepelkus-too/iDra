@@ -16,7 +16,7 @@
   "scripts": {
     "build:frame": "node packages/core/scripts/build-frame.mjs",
     "build:all": "node scripts/build-all.mjs",
-    "test": "npm run test -w @hydra-ipad/core && npm run test -w hydra-motion && node scripts/sync-motion.mjs --check",
+    "test": "node --test scripts/lib/markdown.test.mjs scripts/build-docs.test.mjs && npm run test -w @hydra-ipad/core && npm run test -w hydra-motion && node scripts/sync-motion.mjs --check",
     "test:e2e": "node scripts/e2e.mjs",
     "test:e2e:audio": "node scripts/e2e-audio-plugins.mjs",
     "typecheck": "npm run typecheck --workspaces --if-present",
