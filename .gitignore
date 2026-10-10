@@ -150,6 +150,8 @@ vite.config.ts.timestamp-*
 
 # project
 dist/
+# hydra-motion's built file is committed: tagged releases are served from the repository (packages/motion/README.md)
+!packages/motion/dist/
 dist-frame/
 .vercel/
 .env

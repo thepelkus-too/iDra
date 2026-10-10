@@ -10,7 +10,7 @@ import { toCode } from '../src/codegen'
 import { validate } from '../src/validate'
 import {
   pluginRegistry, pluginIdFromUrl, versionFromUrl, PluginStore, findLoadScripts, withPlugin, withoutPlugin, pluginRefFromUrl,
-  pluginRefFor, onPluginLoaded,
+  pluginRefFor, onPluginLoaded, siteBaseUrl,
 } from '../src/plugins'
 import { MidiHub, midiChip, parseMidiChip, usesMidi, webMidiAvailable, TOUCH_INPUT } from '../src/midi'
 import { midiBanner, midiNoteName } from '../src/midi-panel'
@@ -46,7 +46,9 @@ describe('registry', () => {
       expect(e.id, e.id).toMatch(/^[a-z0-9._-]+$/)
       expect(ids.has(e.id)).toBe(false)
       ids.add(e.id)
-      expect(e.url).toMatch(/^https:\/\//)
+      // https, or a file this site serves itself (resolved against the site root) pinned by its SRI
+      if (e.integrity) expect(e.url.startsWith(siteBaseUrl()) || /^https:\/\//.test(e.url), e.url).toBe(true)
+      else expect(e.url).toMatch(/^https:\/\//)
       expect(e.homepage).toMatch(/^https:\/\//)
       expect(['functions', 'js', 'mixed']).toContain(e.kind)
       expect(['verified', 'unverified']).toContain(e.verified.status)

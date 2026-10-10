@@ -10,6 +10,7 @@ import {
 } from './ir'
 import { isSafeExpression } from './safe-expr'
 import { loadScriptUrls } from './plugin-id'
+import { activePrelude, knobInitial, MOTION_PLUGIN_ID } from './motion-core'
 
 // ---------------------------------------------------------------- pieces with relative marks
 
@@ -340,7 +341,8 @@ export function toCodeWithMap(sketch: Sketch, opts: CodegenOptions = {}): { code
   const ctx = makeCtx(sketch, opts)
   const pieces: Piece[] = []
   let prev: Stmt | undefined
-  let code = pluginPreamble(sketch)
+  const head = ctx.fresh ? undefined : activePrelude(sketch)
+  let code = (head ?? '') + pluginPreamble(sketch, { skip: head ? MOTION_PLUGIN_ID : undefined })
   const map: CodeMap = {}
   sketch.stmts.forEach((s, i) => {
     const sep = !ctx.fresh && s.src ? (i === 0 ? s.src.before : s.src.before) : defaultSep(prev, s)
@@ -360,8 +362,8 @@ export function toCodeWithMap(sketch: Sketch, opts: CodegenOptions = {}): { code
  * `await loadScript('<url>')` per URL plugin, unless a statement already loads that URL (imported text keeps its own
  * lines byte-for-byte), and a comment for pasted-code plugins, which plain text cannot carry.
  */
-export function pluginPreamble(sketch: Sketch): string {
-  const plugins = sketch.plugins ?? []
+export function pluginPreamble(sketch: Sketch, opts: { skip?: string } = {}): string {
+  const plugins = (sketch.plugins ?? []).filter((p) => p.id !== opts.skip)
   if (!plugins.length) return ''
   const already = new Set<string>()
   for (const s of sketch.stmts) if (s.k === 'raw') for (const u of loadScriptUrls(s.code)) already.add(u)
@@ -403,6 +405,13 @@ export function toRunnable(sketch: Sketch, opts: RunnableOptions = {}): Runnable
     if (s.k === 'comment') continue
     if (s.k === 'source' && opts.skipSource?.(s)) continue
     if (ctx.safe) {
+      // safe mode never loads plugins: a hydra-motion knob runs as its initial number, so the sketch still shows
+      const knob = s.k === 'def' ? knobInitial(s.value) : undefined
+      if (s.k === 'def' && knob !== undefined) {
+        ctx.skipped.push({ id: s.id, reason: 'knob (needs the hydra-motion plugin): its initial number is used' })
+        out.push(`${s.decl === 'bare' ? '' : s.decl + ' '}${s.name} = ${fmtNum(knob)}`)
+        continue
+      }
       if (s.k === 'raw') {
         ctx.skipped.push({ id: s.id, reason: 'raw code' })
         continue

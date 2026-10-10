@@ -66,6 +66,17 @@ export async function evalScript(win: any, src: string): Promise<void> {
   await (0, win.eval)(`(async () => {\n${src}\n})()`)
 }
 
+const INVOKE_METHODS = ['set', 'to', 'hold', 'release']
+const RESERVED = new Set(['__proto__', 'constructor', 'prototype', 'window', 'globalThis', 'self', 'top', 'parent', 'document', 'eval'])
+/** A plain identifier that is not one of the page's own objects. */
+export function isInvokeName(name: unknown): name is string {
+  return typeof name === 'string' && name.length <= 64 && /^[A-Za-z_$][\w$]*$/.test(name) && !RESERVED.has(name)
+}
+/** At most 6 arguments, each a finite number or a string of up to 64 characters. */
+export function validInvokeArgs(args: unknown): args is Array<number | string> {
+  return Array.isArray(args) && args.length <= 6 && args.every((a) => (typeof a === 'number' && Number.isFinite(a)) || (typeof a === 'string' && a.length <= 64))
+}
+
 export class Bridge {
   private hydra: any
   private canvas?: HTMLCanvasElement
@@ -128,6 +139,8 @@ export class Bridge {
           return this.midi?.setInputs(msg.inputs)
         case 'midi':
           return this.midi?.receive(msg.input, msg.data)
+        case 'invoke':
+          return this.invoke(msg.name, msg.method, msg.args)
         case 'dispose':
           return this.dispose()
       }
@@ -321,6 +334,25 @@ export class Bridge {
   }
 
   // ---------------------------------------------------------------- actions
+  /**
+   * `k.hold(0.9)` for a pad, the same call a person could type. Checked again here (the host checks first): a plain name,
+   * one of four methods, numbers and short strings only, and the target must be a hydra-motion knob (`hydraMotion.isKnob`).
+   */
+  private invoke(name: string, method: string, args: unknown[]) {
+    const win = this.env.win
+    if (!isInvokeName(name) || !INVOKE_METHODS.includes(method) || !validInvokeArgs(args)) return this.error('warning', `ignored a pad call to ${String(name)}.${String(method)}: not allowed`)
+    const hm = win.hydraMotion
+    const target = Object.prototype.hasOwnProperty.call(win, name) ? win[name] : undefined
+    if (!hm || typeof hm.isKnob !== 'function' || !hm.isKnob(target)) {
+      return this.error('warning', `"${name}" is not a hydra-motion knob in the running sketch${hm ? '' : ' (the hydra-motion plugin is not loaded)'}`)
+    }
+    try {
+      target[method](...args)
+    } catch (e: any) {
+      this.error('runtime', `${name}.${method}: ${e?.message ?? e}`)
+    }
+  }
+
   private mergeLive(table: Record<string, number>) {
     const live = (this.env.win[LIVE_NAME] ??= {})
     for (const k in table) live[k] = table[k]

@@ -1,3 +1,4 @@
+import { compat, type Compat } from './compat'
 import { SOURCE_NAMES, type Chain, type OutName, type RefName, type Sketch, type SourceName, type Value } from './ir'
 
 export interface ChainFacts {
@@ -39,6 +40,8 @@ export interface Description {
   usesCamera: boolean
   usesPrev: boolean
   settings: Record<string, number>
+  /** will the exported text run in vanilla Hydra? (`compat(sketch)`; pass the audio source to `compat` yourself for the full answer) */
+  compat: Compat
 }
 
 function scanValue(v: Value, f: { outs: Set<OutName>; srcs: Set<SourceName>; vars: Set<string>; depth: number; audio: boolean; prev: boolean }, d: number) {
@@ -185,6 +188,7 @@ export function describe(sketch: Sketch): Description {
     usesCamera,
     usesPrev,
     settings,
+    compat: compat(sketch),
   }
 }
 

@@ -131,6 +131,23 @@ Everything below is **additive**: nothing above changed, and an editor that igno
 
 See docs/audio.md, docs/plugins.md and docs/midi.md.
 
+### 7b. Additions (hydra-motion: glides, holds, pads)
+
+Additive again; an editor that ignores it keeps working. Details and the frozen plugin surface: docs/motion.md.
+
+* **Knobs.** A knob is a def `k = knob(0.5)`: make it with `knobDef(name, initial)`, read it with `parseKnobDef(stmt)` /
+  `knobDefs(sketch)`, and bind a numeric argument to it with `setArg(sketch, callId, i, knobArg(name))` (a `{ k: 'var', name }`
+  value). Add the plugin with `withMotion(sketch)` (the registry's pinned ref). Show a knob def like any def; never turn it
+  into a `const`, or pads cannot reach it.
+* **Pads.** `rt.invoke(name, 'set' | 'to' | 'hold' | 'release', args)` calls the knob's method in the running sketch
+  (numbers and short strings only; ordered, never coalesced; returns false and reports a warning when refused). Give each
+  pad its own hold id (`rt.invoke('k', 'hold', [v, attack, ease, padId])`, release with the same id) so two fingers work.
+  Easing names for pickers: `MOTION_EASINGS`.
+* **Export.** `exportWithPrelude(sketch)` is the "self-contained" export (plugin inlined); `toCode` is unchanged. Mount
+  `mountCompatBadge(el, sketch, { audio: getAudioEngine() })` next to your Export button and call `.update(sketch)` on change;
+  `describe(sketch).compat` has the same answer without the audio source.
+* **Safe mode** runs knob defs as their initial numbers; nothing to do.
+
 ## 8. Fast numeric edits
 
 On a numeric drag call `rt.setLive(liveId(call.id, argIndex), value)` for instant feedback (no recompile, coalesced to one message per frame), update the IR with `setArg`, and `autosave`. `rt.run(sketch)` after any edit is always correct: when only numbers changed it detects identical code and just updates the live table (`RunResult.recompiled === false`). Only plain `num` args of catalog-known `float` inputs are live; everything else recompiles. See `docs/live-edit.md`.
@@ -149,4 +166,4 @@ Using `import { corpus } from '@hydra-ipad/core/corpus'` (33 sketches, one delib
 
 ## 10. Branch and PR conventions
 
-Each editor lives on its own branch (`proto/stack`, `proto/graph`, `proto/blocks`, `proto/rack`) and touches **only** `apps/<name>/**` (plus its own tests). Do not edit `packages/core`, `apps/shell`, `apps/harness`, root configs or docs from an editor branch. Vercel gives every pushed branch a preview URL (`docs/previews.md`); open the PR against `main`.
+Each editor is developed on the `claude/...` branch its session is given (the planned `proto/<name>` names were never used) and touches **only** `apps/<name>/**` (plus its own tests). Do not edit `packages/core`, `apps/shell`, `apps/harness`, root configs or docs from an editor branch. Vercel gives every pushed branch a preview URL (`docs/previews.md`); open the PR against `main`.

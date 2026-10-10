@@ -5,7 +5,8 @@
 // It builds with base './' (so the app works at any path under the shared origin), copies the sandboxed-frame bundle next to the
 // page as hydra-frame.js, and injects __REPO_URL__ / __COMMIT__ / __BRANCH__ (used by the About link and build info).
 import { readFileSync, existsSync } from 'node:fs'
-import { dirname, resolve } from 'node:path'
+import { createRequire } from 'node:module'
+import { basename, dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -48,6 +49,31 @@ export function hydraFrame() {
   }
 }
 
+// Dev server only: serve hydra-motion's built file at the site paths build-all.mjs copies it to (plugins/…), so the
+// registry's site-relative URL works under `vite dev` too.
+export function hydraMotionDev() {
+  let file
+  try {
+    const req = createRequire(resolve(here, 'package.json'))
+    const dir = dirname(req.resolve('hydra-motion/package.json'))
+    file = resolve(dir, JSON.parse(readFileSync(resolve(dir, 'package.json'), 'utf8')).main)
+  } catch {
+    file = undefined
+  }
+  return {
+    name: 'hydra-motion-dev',
+    apply: 'serve',
+    configureServer(server) {
+      server.middlewares.use((req, res, next) => {
+        if (file && /\/plugins\/hydra-motion(@[^/]+\/hydra-motion)?\.js$/.test((req.url || '').split('?')[0])) {
+          res.setHeader('content-type', 'text/javascript')
+          res.end(readFileSync(file))
+        } else next()
+      })
+    },
+  }
+}
+
 export function hydraApp(metaUrl, extra = {}) {
   const root = dirname(fileURLToPath(metaUrl))
   const env = process.env
@@ -57,8 +83,10 @@ export function hydraApp(metaUrl, extra = {}) {
   return {
     root,
     base: './',
-    plugins: [hydraFrame(), ...plugins],
+    plugins: [hydraFrame(), hydraMotionDev(), ...plugins],
     define: {
+      // where the site root is relative to this app (the shell is the root; every other app is in <root>/<name>/)
+      __SITE_ROOT__: JSON.stringify(basename(root) === 'shell' ? './' : '../'),
       __REPO_URL__: JSON.stringify(repoUrlFrom(root)),
       __COMMIT__: JSON.stringify(commit),
       __BRANCH__: JSON.stringify(branch),

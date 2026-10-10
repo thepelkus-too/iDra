@@ -15,6 +15,11 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - name: hydra-motion build is reproducible and committed (packages/motion/dist, registry entry)
+        run: |
+          npm run build -w hydra-motion
+          node scripts/sync-motion.mjs --check
+          git diff --exit-code -- packages/motion/dist packages/core/plugins/registry.json
       - run: npm run typecheck
       - run: npm test
       - run: npm run build:all
@@ -24,6 +29,8 @@ jobs:
           node scripts/e2e.mjs --skip-build
       - name: e2e audio, plugins, MIDI (Chromium, fake devices, local servers)
         run: node scripts/e2e-audio-plugins.mjs --skip-build
+      - name: e2e hydra-motion (Motion lab with two touch points, vanilla Hydra compatibility, offline)
+        run: node scripts/e2e-motion.mjs --skip-build
       - name: iPad-viewport screenshots and metrics
         if: always()
         uses: actions/upload-artifact@v4

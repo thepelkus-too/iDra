@@ -14,6 +14,7 @@ import {
   type Stmt,
   type Value,
 } from './ir'
+import { preludePluginRef, splitPrelude } from './motion-core'
 
 // Text → IR. The guarantee: no code is ever lost. Every character outside whitespace is either
 // part of a recognized node (and kept verbatim in `src` records) or inside a verbatim `raw` stmt.
@@ -444,7 +445,11 @@ function rawFallback(code: string, ctxWarnings: string[], why: string): { stmts:
   return { stmts: [{ ...s, src: { text: body, hash: contentHash(s), before: lead } }], tail }
 }
 
-export function importText(code: string, opts: ImportOptions = {}): ImportResult {
+export function importText(text: string, opts: ImportOptions = {}): ImportResult {
+  // an inlined hydra-motion block ("self-contained" export) is the plugin, not code: it becomes a plugin ref, and the exact
+  // text is kept so an untouched sketch exports byte for byte
+  const prelude = splitPrelude(text)
+  const code = prelude ? prelude.rest : text
   const c: Ctx = { code, cat: opts.catalog ?? defaultCatalog, defs: new Set(), unknown: new Set(), warnings: [] }
   const report = emptyReport()
   let result: { stmts: Stmt[]; tail: string }
@@ -472,8 +477,12 @@ export function importText(code: string, opts: ImportOptions = {}): ImportResult
     stmts: result.stmts,
     src: { tail: result.tail, semi: detectSemi(result.stmts) },
   }
+  if (prelude) {
+    sketch.src!.head = prelude.block
+    sketch.plugins = [preludePluginRef(prelude)]
+  }
   report.statements = sketch.stmts.length
-  report.totalChars = code.length
+  report.totalChars = text.length
   for (const s of sketch.stmts) {
     switch (s.k) {
       case 'chain':

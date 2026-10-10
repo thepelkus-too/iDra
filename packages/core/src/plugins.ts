@@ -24,11 +24,36 @@ export interface RegistryEntry {
   kind: 'functions' | 'js' | 'mixed'
   description: string
   verified: { status: 'verified' | 'unverified'; checked: string; how: string }
+  /** SRI (`sha256-…`) of the exact file, for entries built in this repository (hydra-motion); the runtime refuses anything else */
+  integrity?: string
 }
 
-/** The curated list in `packages/core/plugins/registry.json`. */
+declare const __SITE_ROOT__: string | undefined
+
+/**
+ * The site root this app is served under (the shell's folder). Apps built with `hydraApp` get `__SITE_ROOT__` ('./' for the
+ * shell, '../' for apps in `<root>/<name>/`); elsewhere (tests, other embeddings) the page's own folder.
+ */
+export function siteBaseUrl(): string {
+  let rel = './'
+  try {
+    if (typeof __SITE_ROOT__ !== 'undefined' && __SITE_ROOT__) rel = __SITE_ROOT__
+  } catch {
+    /* not defined */
+  }
+  const here = typeof document !== 'undefined' && document.baseURI ? document.baseURI : typeof location !== 'undefined' ? location.href : 'https://x.invalid/'
+  return new URL(rel, here).href
+}
+
+/** Registry URLs may be site-relative (`plugins/…`: files this site serves itself); resolve them against the site root. */
+export function resolveRegistryUrl(url: string, base: string = siteBaseUrl()): string {
+  return /^[a-z][\w+.-]*:/i.test(url) ? url : new URL(url, base).href
+}
+
+/** The curated list in `packages/core/plugins/registry.json` (site-relative URLs resolved). */
 export function pluginRegistry(): RegistryEntry[] {
-  return (registryJson as { plugins: RegistryEntry[] }).plugins.map((e) => ({ ...e }))
+  const base = siteBaseUrl()
+  return (registryJson as { plugins: RegistryEntry[] }).plugins.map((e) => ({ ...e, url: resolveRegistryUrl(e.url, base) }))
 }
 export function registryEntryForUrl(url: string): RegistryEntry | undefined {
   return pluginRegistry().find((e) => e.url === url)
@@ -122,6 +147,8 @@ export class PluginStore {
     const r = await this.cache.get(abs, o)
     const reg = registryEntryForUrl(abs)
     const pinned = isPinnedScriptUrl(abs)
+    const integrity = pinned || reg?.integrity ? await integrityOf(r.text) : undefined
+    const mismatch = reg?.integrity && integrity && integrity !== reg.integrity ? `the file does not match the registry's integrity (${reg.integrity}); do not install it` : undefined
     return {
       id: reg?.id ?? pluginIdFromUrl(abs),
       name: reg?.name ?? pluginIdFromUrl(abs),
@@ -129,12 +156,12 @@ export class PluginStore {
       src: r.text,
       size: r.text.length,
       hash: r.hash ?? (await sha256Hex(r.text)),
-      integrity: pinned ? await integrityOf(r.text) : undefined,
+      integrity,
       version: reg?.version ?? versionFromUrl(abs),
-      pinned,
+      pinned: pinned || !!reg?.integrity,
       from: r.from,
       registry: reg,
-      warning: r.warning,
+      warning: mismatch ?? r.warning,
     }
   }
   /** Describe pasted code. */

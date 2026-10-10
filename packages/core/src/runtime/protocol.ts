@@ -37,6 +37,8 @@ export type HostToFrame =
   | { t: 'midiInputs'; inputs: MidiPortInfo[] }
   /** one MIDI message from input `input` (raw bytes: status, data1, data2) */
   | { t: 'midi'; input: string; data: number[] }
+  /** call `<name>.<method>(...args)` on a hydra-motion knob of the running sketch (pads); never coalesced, never evaluated as text */
+  | { t: 'invoke'; name: string; method: 'set' | 'to' | 'hold' | 'release'; args: Array<number | string> }
   | { t: 'dispose' }
 
 export interface MidiPortInfo {
