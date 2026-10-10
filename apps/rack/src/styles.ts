@@ -210,6 +210,8 @@ body.dragging-lane .jack{outline:1px dashed var(--c-ref)}
 .perform-ui .exit{position:absolute;right:max(12px,env(safe-area-inset-right));top:max(12px,env(safe-area-inset-top));background:rgba(0,0,0,.55)}
 .pins{position:absolute;left:50%;transform:translateX(-50%);bottom:max(14px,env(safe-area-inset-bottom));display:flex;gap:8px;padding:8px 10px;border-radius:18px;background:rgba(0,0,0,.35);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);max-width:calc(100% - 24px);overflow-x:auto}
 .pins .knob{opacity:.88}
+.perform-ui .padpin{position:absolute;right:max(12px,env(safe-area-inset-right));top:calc(max(12px,env(safe-area-inset-top)) + 54px);background:rgba(0,0,0,.55)}
+.perform-pads{position:absolute;left:max(12px,env(safe-area-inset-left));bottom:calc(max(14px,env(safe-area-inset-bottom)) + 96px);padding:8px;border-radius:18px;background:rgba(0,0,0,.35);max-width:45%}
 .pins .knob .kl{color:#ddd}
 .nopins{color:#ddd;padding:8px}
 .app.performing .toasts{top:max(12px,env(safe-area-inset-top));bottom:auto}

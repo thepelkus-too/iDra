@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'preact/hooks'
 import { fmt, roundTo } from '../conv'
 import { ctx, edit, useStore } from '../ctx'
 import { getArg, refKey, setArg, type ArgRef } from '../model'
-import { Keypad, openPopover } from '@hydra-ipad/kit'
+import { openNumberEditor, openPopover, simpleField } from '@hydra-ipad/kit'
 import { Scrub } from './Scrub'
 
 export const EASES = [
@@ -135,22 +135,24 @@ export function ArrEditor({ refd, title, hint, def }: ArrEditorProps) {
             if (cur?.k === 'arr') write(cur.v, setMod(cur.mods, name, n))
           }}
           onTap={(el) =>
-            openPopover(
+            openNumberEditor(
               el,
-              (close) => (
-                <Keypad
-                  title={name}
-                  value={val ?? dflt}
-                  def={dflt}
-                  hint={h}
-                  onChange={(n) => {
-                    const cur = getArg(ctx.store.sketch, refd)
-                    if (cur?.k === 'arr') write(cur.v, setMod(cur.mods, name, n))
-                  }}
-                  onClose={close}
-                />
-              ),
-              { width: 260, label: name, stack: true, onClose: () => ctx.store.endGroup() },
+              simpleField({
+                id: `stack:arr:${refKey(refd)}:${name}`,
+                label: name,
+                hint: h,
+                def: dflt,
+                get: () => {
+                  const cur = getArg(ctx.store.sketch, refd)
+                  return (cur?.k === 'arr' ? (cur.mods[name] as number | undefined) : undefined) ?? dflt
+                },
+                set: (n) => {
+                  const cur = getArg(ctx.store.sketch, refd)
+                  if (cur?.k === 'arr') write(cur.v, setMod(cur.mods, name, n))
+                },
+                end: () => ctx.store.endGroup(),
+              }),
+              { stack: true },
             )
           }
         />
@@ -197,10 +199,10 @@ export function ArrEditor({ refd, title, hint, def }: ArrEditorProps) {
                 class="barval"
                 data-testid={`arr-val-${i}`}
                 onClick={(e) =>
-                  openPopover(
+                  openNumberEditor(
                     e.currentTarget as HTMLElement,
-                    (close) => <Keypad title={`step ${i + 1}`} value={getValueAt(refd, i, val)} def={def} hint={hint} onChange={(n) => setBar(i, n)} onClose={close} />,
-                    { width: 260, stack: true, onClose: () => ctx.store.endGroup() },
+                    simpleField({ id: `stack:arr:${refKey(refd)}:${i}`, label: `step ${i + 1}`, hint, def, get: () => getValueAt(refd, i, val), set: (n) => setBar(i, n), end: () => ctx.store.endGroup() }),
+                    { stack: true },
                   )
                 }
               >

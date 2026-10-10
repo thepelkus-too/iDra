@@ -8,7 +8,7 @@ import { pressToDrag } from '../drag'
 import { BackdropButtons, Meter, Switcher, SketchName, UndoRedo, openMoreMenu } from '../kit/Chrome'
 import { codeBridge } from '../kit/CodeDrawer'
 import { ctx, useRunner, useStore } from '../kit/ctx'
-import { LONG_MS, NumSlider, toast } from '@hydra-ipad/kit'
+import { livePads, LONG_MS, NumSlider, PadStrip, toast } from '@hydra-ipad/kit'
 import { LFO_KINDS, MOD_ICON, MOD_LABEL, type ModKind } from '../kit/mods'
 import { commit } from '../doc'
 import { mutateLanes, routeLane, unrouteLane } from '../ops'
@@ -16,7 +16,7 @@ import { appPrefs } from '../prefs'
 import { parseKey, refInfo } from '../refs'
 import { readsOf } from '../view'
 import { MousePad } from './Controls'
-import { Knob } from './Knob'
+import { Knob, togglePin } from './Knob'
 import { renderTarget, setRender } from './Lanes'
 import { SETTING_DEFAULT, SETTING_HINT, openSources, setSetting, settingOf } from './Setup'
 
@@ -390,16 +390,32 @@ export function Pip({ stage }: { stage: HTMLElement }) {
   )
 }
 
-/** Performance mode: up to eight pinned controls float translucent along the bottom edge; scenes stay on the right. */
+/** The pin key of the kit's pad strip (a pinnable element, not a knob). */
+export const PADS_PIN = 'kit:pads'
+
+/** Performance mode: up to eight pinned controls float translucent along the bottom edge; scenes stay on the right; the
+ * sketch's pads (when pinned) sit bottom left. */
 function PinBar() {
   useStore()
   const st = useUi()
-  const pins = (metaNow().pins ?? []).filter((k) => refInfo(ctx.store.sketch, parseKey(k), ctx.catalog).exists)
+  const pins = (metaNow().pins ?? []).filter((k) => k !== PADS_PIN && refInfo(ctx.store.sketch, parseKey(k), ctx.catalog).exists)
+  const hasPads = livePads(ctx.store.sketch).length > 0
+  const padsPinned = (metaNow().pins ?? []).includes(PADS_PIN)
   return (
     <div class="perform-ui">
       <button type="button" class="btn exit" data-testid="perform-exit" onClick={() => ui.set({ perform: false })}>
         Exit
       </button>
+      {hasPads && (
+        <button type="button" class={`btn padpin ${padsPinned ? 'on' : ''}`} data-testid="perform-pads" aria-pressed={padsPinned} onClick={() => togglePin(PADS_PIN)}>
+          Pads
+        </button>
+      )}
+      {hasPads && padsPinned && (
+        <div class="perform-pads">
+          <PadStrip />
+        </div>
+      )}
       <div class="pins" data-testid="pins">
         {pins.length ? pins.map((k) => <Knob key={k} r={parseKey(k)} />) : <small class="nopins">Long-press any knob and choose “Pin to performance” to bring it here.</small>}
       </div>

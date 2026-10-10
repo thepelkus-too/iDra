@@ -1,9 +1,10 @@
 // A number you can drag. Horizontal drag changes the value; the further the finger is from where it started (vertically),
-// the finer the steps (like scrubbing video on iOS). Tap = keypad. Long-press = the owner's menu (name, default, kind switch).
+// the finer the steps (like scrubbing video on iOS). Tap = the number editor (the owner opens it). Long-press = the ladder
+// under the finger when the owner passes a `field`; released without moving, the owner's menu (name, default, kind switch).
 import type { Hint } from '@hydra-ipad/core'
-import { useRef } from 'preact/hooks'
+import { useMemo, useRef } from 'preact/hooks'
 import { decimalsOf, fmt, roundTo } from '../conv'
-import { hud, LONG_MS, TAP_SLOP, wrapInto } from '@hydra-ipad/kit'
+import { hud, LadderGesture, LONG_MS, openNumberEditor, TAP_SLOP, wrapInto, type NumberField } from '@hydra-ipad/kit'
 import { appPrefs } from '../prefs'
 
 /** Vertical distance (px) → step multiplier. */
@@ -36,6 +37,8 @@ export interface ScrubProps {
   suffix?: string
   /** drag starts the instant the finger moves (used inside popovers where there is no long-press) */
   onStart?: () => void
+  /** the number as the kit sees it: enables the long-press ladder (onLong then runs when it is released without moving) */
+  field?: () => NumberField
 }
 
 export function Scrub(p: ScrubProps) {
@@ -54,6 +57,17 @@ export function Scrub(p: ScrubProps) {
   } | null>(null)
   const pr = useRef(p)
   pr.current = p
+  const ladder = useMemo(
+    () =>
+      new LadderGesture(() => pr.current.field!(), {
+        onOpen: () => {
+          pr.current.onStart?.()
+          hud.hide()
+        },
+        onStill: (el) => (pr.current.onLong ? pr.current.onLong(el) : openNumberEditor(el, pr.current.field!(), { tab: 'ladder' })),
+      }),
+    [],
+  )
 
   const base = (h: Hint) => (h.integer ? 1 / 14 : (h.max - h.min) / 320)
 
@@ -80,7 +94,8 @@ export function Scrub(p: ScrubProps) {
     } catch {
       /* ignore */
     }
-    if (pr.current.onLong) {
+    if (pr.current.field) ladder.arm(e, el)
+    else if (pr.current.onLong) {
       ;(s as { timer?: ReturnType<typeof setTimeout> }).timer = setTimeout(() => {
         if (g.current !== s || s.state === 'scrub') return
         s.long = true
@@ -92,11 +107,14 @@ export function Scrub(p: ScrubProps) {
   const move = (e: PointerEvent) => {
     const s = g.current
     if (!s || s.id !== e.pointerId || s.long) return
+    if (ladder.active) return ladder.move(e)
+    if (s.state === 'pending') ladder.check(e)
     const dxTotal = e.clientX - s.x
     if (s.state === 'pending') {
       if (Math.abs(dxTotal) <= TAP_SLOP) return
       s.state = 'scrub'
       clearTimeout(s.timer)
+      ladder.disarm()
       s.lastX = e.clientX
       pr.current.onStart?.()
       s.el.classList.add('scrubbing')
@@ -126,6 +144,8 @@ export function Scrub(p: ScrubProps) {
     clearTimeout(s.timer)
     g.current = null
     s.el.classList.remove('scrubbing')
+    if (cancelled) ladder.cancel()
+    else if (ladder.up(e)) return
     if (s.state === 'scrub') {
       hud.hide()
       pr.current.onChange(pr.current.value, 'end')

@@ -6,7 +6,7 @@ import { useRef } from 'preact/hooks'
 import { asPlainRef, convertValue, defaultNumber, fmt, kindOf, kindsFor, KIND_LABEL, evalNumeric, type Kind } from '../conv'
 import { ctx, edit, useStore } from '../ctx'
 import { defsBefore, getArg, refKey, setArg, type ArgRef } from '../model'
-import { closePopover, Keypad, openPopover, usePress } from '@hydra-ipad/kit'
+import { openNumberEditor, openPopover, usePress, type NumberField } from '@hydra-ipad/kit'
 import { focusNode } from '../nav'
 import { ArrEditor } from './ArrEditor'
 import { FnEditor, Meter, fnLabel } from './FnEditor'
@@ -74,21 +74,29 @@ function select(a: ArgInfo): void {
   ctx.store.select(a.owner)
 }
 
+/** The number as the kit's number editor and ladder see it. */
+export function argField(a: ArgInfo, value: number, def?: number): NumberField {
+  const read = (): number => {
+    const v = getArg(ctx.store.sketch, a.refd)
+    if (v?.k === 'num') return v.v
+    if (v?.k === 'default') return defaultNumber(a.input)
+    return value
+  }
+  return {
+    id: `stack:${refKey(a.refd)}`,
+    label: labelOf(a),
+    hint: a.hint,
+    def: a.input ? defaultNumber(a.input) : def,
+    get: read,
+    onChange: (v, ph) => setNumber(a, v, ph),
+    // only a number that is already plain in the code has a live slot
+    live: a.liveKey ? (v) => getArg(ctx.store.sketch, a.refd)?.k === 'num' && (ctx.runner.setLive(a.liveKey!, v), true) : undefined,
+    arg: 'call' in a.refd ? { callId: a.refd.call, index: a.refd.i, fn: a.fn, input: a.input?.name } : undefined,
+  }
+}
+
 export function openKeypad(el: HTMLElement, a: ArgInfo, value: number, def: number): void {
-  openPopover(
-    el,
-    () => (
-      <Keypad
-        title={labelOf(a)}
-        value={value}
-        def={a.input ? defaultNumber(a.input) : def}
-        hint={a.hint}
-        onChange={(v) => setNumber(a, v, 'pad')}
-        onClose={closePopover}
-      />
-    ),
-    { width: 268, label: labelOf(a), onClose: () => setNumber(a, 0, 'end') },
-  )
+  openNumberEditor(el, argField(a, value, def))
 }
 
 export function openFnEditor(el: HTMLElement, a: ArgInfo): void {
@@ -226,6 +234,7 @@ function NumTok({ a, value, dim }: { a: ArgInfo; value: number; dim?: boolean })
       onChange={(v, ph) => setNumber(a, v, ph)}
       onTap={(el) => (select(a), openKeypad(el, a, value, defaultNumber(a.input)))}
       onLong={(el) => (select(a), openKindMenu(el, a))}
+      field={() => argField(a, value, defaultNumber(a.input))}
     />
   )
 }
@@ -340,21 +349,38 @@ function VecTok({ a, v }: { a: ArgInfo; v: Extract<Value, { k: 'vec4' }> }) {
           hint={a.hint}
           label={`${labelOf(a)}[${i}]`}
           onStart={() => select(a)}
-          onChange={(n, ph) => {
-            if (ph === 'end') return ctx.store.endGroup()
-            const cur = getArg(ctx.store.sketch, a.refd)
-            if (cur?.k !== 'vec4') return
-            const nv = cur.v.slice()
-            nv[i] = n
-            edit((s) => setArg(s, a.refd, { k: 'vec4', v: nv } as Value), { coalesce: `vec:${refKey(a.refd)}:${i}` })
-          }}
-          onTap={(el) => openKeypad(el, { ...a, liveKey: undefined, refd: a.refd }, x, 0)}
+          onChange={(n, ph) => setVecPart(a, i, n, ph)}
+          onTap={(el) => openNumberEditor(el, vecField(a, i))}
+          field={() => vecField(a, i)}
           onLong={(el) => openKindMenu(el, a)}
         />
       ))}
       <span class="p">]</span>
     </span>
   )
+}
+
+function setVecPart(a: ArgInfo, i: number, n: number, ph: 'drag' | 'end' | 'key'): void {
+  if (ph === 'end') return ctx.store.endGroup()
+  const cur = getArg(ctx.store.sketch, a.refd)
+  if (cur?.k !== 'vec4') return
+  const nv = cur.v.slice()
+  nv[i] = n
+  edit((s) => setArg(s, a.refd, { k: 'vec4', v: nv } as Value), { coalesce: `vec:${refKey(a.refd)}:${i}` })
+}
+
+/** One component of a vector: no live slot, not bindable to a pad. */
+function vecField(a: ArgInfo, i: number): NumberField {
+  return {
+    id: `stack:${refKey(a.refd)}:${i}`,
+    label: `${labelOf(a)}[${i}]`,
+    hint: a.hint,
+    get: () => {
+      const cur = getArg(ctx.store.sketch, a.refd)
+      return cur?.k === 'vec4' ? (cur.v[i] ?? 0) : 0
+    },
+    onChange: (v, ph) => setVecPart(a, i, v, ph),
+  }
 }
 
 function TexMissing({ a }: { a: ArgInfo }) {

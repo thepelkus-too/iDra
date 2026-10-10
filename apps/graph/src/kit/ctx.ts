@@ -1,7 +1,8 @@
 // Process-wide handles the components share. Set once in boot (tests set their own).
 import { catalog, getAudioEngine, getLibrary, type AudioEngine, type BackdropController, type BackdropState, type Catalog, type Library, type Sketch } from '@hydra-ipad/core'
-import { setOverlaySource, type History } from '@hydra-ipad/kit'
+import { setKitHost, type History } from '@hydra-ipad/kit'
 import { useEffect, useState } from 'preact/hooks'
+import { APP } from '../app'
 import type { Runner } from './runner'
 import { Store, type CommitOpts } from './store'
 
@@ -23,8 +24,17 @@ export const ctx: Ctx = {
   catalog,
 }
 
-// open popovers and sheets follow the document (undo while one is open, the preview updating, ...)
-setOverlaySource((cb) => (ctx.store ? ctx.store.subscribe(cb) : () => {}))
+// the kit edits through the store like everything else; its popovers, sheets and pads follow the document
+setKitHost({
+  app: APP,
+  sketch: () => ctx.store.sketch,
+  commit: (next, opts) => ctx.store.commit(next, opts),
+  endGroup: () => ctx.store.endGroup(),
+  subscribe: (cb) => (ctx.store ? ctx.store.subscribe(cb) : () => {}),
+  invoke: (name, method, args) => ctx.runner?.rt?.invoke(name, method, args) ?? false,
+  trusted: () => !!ctx.runner && !ctx.runner.trust.pending,
+  approveOnce: () => ctx.runner?.approveOnce(),
+})
 
 /** What the undo taps and ⌘Z / ⌘Enter act on. */
 export const history = (): History => ({ undo: () => ctx.store.undo(), redo: () => ctx.store.redo(), run: () => ctx.runner.run(true) })

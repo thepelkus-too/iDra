@@ -6,7 +6,7 @@ import { APP, APP_TITLE } from '../app'
 import { duplicateCurrent, exportFile, importAsNew, newBlankSketch, openSketch, copyCode } from './actions'
 import { ctx, useBackdrop, useRunner, useStore } from './ctx'
 import { openMenu, type MenuItem } from './Menu'
-import { openSheet, toast } from '@hydra-ipad/kit'
+import { openSheet, padsTool, toast } from '@hydra-ipad/kit'
 
 declare const __COMMIT__: string
 
@@ -17,7 +17,7 @@ export function Switcher() {
   const id = ctx.store.sketch.id
   useEffect(() => {
     if (!sw.current) return
-    handle.current = mountSwitcher(sw.current, { current: APP, sketchId: ctx.store.sketch.id })
+    handle.current = mountSwitcher(sw.current, { current: APP, sketchId: ctx.store.sketch.id, extraTools: [padsTool()] })
     return () => handle.current?.destroy()
   }, [])
   useEffect(() => handle.current?.refresh(id), [id])

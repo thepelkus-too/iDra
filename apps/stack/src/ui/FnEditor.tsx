@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from 'preact/hooks'
 import { composeFn, fmt, parseFnWrap } from '../conv'
 import { ctx, edit, useStore } from '../ctx'
 import { getArg, refKey, setArg, type ArgRef } from '../model'
-import { Keypad, openPopover, openSheet } from '@hydra-ipad/kit'
+import { openNumberEditor, openPopover, openSheet, simpleField } from '@hydra-ipad/kit'
 import { Scrub } from './Scrub'
 
 export const FN_CHIPS: Array<{ label: string; expr: string }> = [
@@ -85,6 +85,8 @@ export function FnEditor({ refd, title, hint }: FnEditorProps) {
   const [body, setBody] = useState(parsed?.body ?? src)
   const [scale, setScale] = useState(parsed?.scale ?? 1)
   const [offset, setOffset] = useState(parsed?.offset ?? 0)
+  const now = useRef({ body, scale, offset })
+  now.current = { body, scale, offset }
   const composed = useRef(src)
   const inputRef = useRef<HTMLInputElement>(null)
 
@@ -204,7 +206,7 @@ export function FnEditor({ refd, title, hint }: FnEditorProps) {
               setScale(n)
               push(body, n, offset)
             }}
-            onTap={(el) => openKeypadFor(el, 'scale', scale, 1, { min: -8, max: 8, step: 0.01 }, (n) => (setScale(n), push(body, n, offset)))}
+            onTap={(el) => openKeypadFor(el, `${refKey(refd)}:scale`, 'scale', () => now.current.scale, 1, { min: -8, max: 8, step: 0.01 }, (n) => (setScale(n), push(now.current.body, n, now.current.offset)))}
           />
           <span class="lbl">offset</span>
           <Scrub
@@ -218,7 +220,7 @@ export function FnEditor({ refd, title, hint }: FnEditorProps) {
               setOffset(n)
               push(body, scale, n)
             }}
-            onTap={(el) => openKeypadFor(el, 'offset', offset, 0, { min: Math.min(hint.min, -1), max: Math.max(hint.max, 1), step: hint.step ?? 0.01 }, (n) => (setOffset(n), push(body, scale, n)))}
+            onTap={(el) => openKeypadFor(el, `${refKey(refd)}:offset`, 'offset', () => now.current.offset, 0, { min: Math.min(hint.min, -1), max: Math.max(hint.max, 1), step: hint.step ?? 0.01 }, (n) => (setOffset(n), push(now.current.body, now.current.scale, n)))}
           />
         </div>
       ) : (
@@ -228,8 +230,8 @@ export function FnEditor({ refd, title, hint }: FnEditorProps) {
   )
 }
 
-function openKeypadFor(el: HTMLElement, title: string, value: number, def: number, hint: Hint, onChange: (n: number) => void) {
-  openPopover(el, (close) => <Keypad title={title} value={value} def={def} hint={hint} onChange={onChange} onClose={close} />, { width: 260, label: title, stack: true, onClose: () => ctx.store.endGroup() })
+function openKeypadFor(el: HTMLElement, id: string, title: string, get: () => number, def: number, hint: Hint, onChange: (n: number) => void) {
+  openNumberEditor(el, simpleField({ id: `stack:fn:${id}`, label: title, hint, def, get, set: onChange, end: () => ctx.store.endGroup() }), { stack: true })
 }
 
 /** core's audio panel inside a sheet. */

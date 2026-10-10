@@ -1,14 +1,14 @@
 // The rotary knob (and its vertical-fader twin for colour blocks): one number input of one module, or one variable.
 //
 // Drag up or right to turn it up (Apple Pencil is finer; a second finger on the same knob while dragging is ×0.1 fine
-// mode). Tap: keypad (or the modulator's editor). Double-tap: default. Long-press: name, exact value and a menu (pin,
-// modulate, remove the modulation, reset). A modulated knob grows a ring showing the swing around its centre; drag on the
+// mode). Tap: the number editor (or the modulator's editor). Double-tap: default. Long-press a number: the ladder under the
+// finger; released without moving, the name, exact value and a menu (pin, modulate, remove the modulation, reset). A modulated knob grows a ring showing the swing around its centre; drag on the
 // outer ring to change the depth, inside it to move the centre. Each knob captures its own pointer, so two knobs turn at
 // once, and all knobs moving together are one undo step.
-import { num, type Value } from '@hydra-ipad/core'
-import { useRef } from 'preact/hooks'
+import { liveId, num, type Value } from '@hydra-ipad/core'
+import { useMemo, useRef } from 'preact/hooks'
 import { metaNow, setValue, setView, ui } from '../doc'
-import { clamp, closePopover, fmt, hud, Keypad, LONG_MS, openPopover, roundTo, toast, wrapInto } from '@hydra-ipad/kit'
+import { clamp, closePopover, fmt, hasLiveSlot, hud, LadderGesture, LONG_MS, openNumberEditor, roundTo, toast, wrapInto, type NumberField } from '@hydra-ipad/kit'
 import { ctx } from '../kit/ctx'
 import { openMenu, type MenuItem } from '../kit/Menu'
 import { getArg } from '../kit/model'
@@ -93,25 +93,37 @@ export function assignTo(r: ArgRef, kind: ModKind, bin?: number): void {
   ctx.store.commit(assignMod(sk, r, kind, ctx.catalog, bin !== undefined ? { bin } : {}))
 }
 
-function openKeypad(el: Element, r: ArgRef, info: RefInfo, v: number): void {
+/** A knob's number as the kit sees it (number editor, ladder, glide, pad). */
+export function knobField(r: ArgRef): NumberField {
   const key = `kp:${refKey(r)}`
-  openPopover(
-    el,
-    () => (
-      <Keypad
-        title={info.label}
-        value={v}
-        def={info.def}
-        hint={info.hint}
-        onChange={(x) => setValue(r, num(info.hint.integer ? Math.round(x) : x), key)}
-        onClose={() => {
-          ctx.store.endGroup()
-          closePopover()
-        }}
-      />
-    ),
-    { width: 268, label: `${info.label} keypad`, onClose: () => ctx.store.endGroup() },
-  )
+  const info = () => refInfo(ctx.store.sketch, r, ctx.catalog)
+  const call = 'call' in r ? r : undefined
+  return {
+    id: `rack:${refKey(r)}`,
+    get label() {
+      return info().label
+    },
+    get hint() {
+      return info().hint
+    },
+    get def() {
+      return info().def
+    },
+    get arg() {
+      const i = info()
+      return call && { callId: call.call, index: call.i, fn: i.fn, input: i.inp?.name }
+    },
+    get: () => {
+      const v = getArg(ctx.store.sketch, r)
+      return v?.k === 'num' ? v.v : (info().def ?? 0)
+    },
+    onChange: (x, ph) => (ph === 'end' ? ctx.store.endGroup() : setValue(r, num(info().hint.integer ? Math.round(x) : x), key)),
+    live: call && ((x) => hasLiveSlot(ctx.store.sketch, call.call, call.i, ctx.catalog) && (ctx.runner.setLive(liveId(call.call, call.i), x), true)),
+  }
+}
+
+function openKeypad(el: Element, r: ArgRef): void {
+  openNumberEditor(el, knobField(r))
 }
 
 function focusVar(name: string): void {
@@ -129,7 +141,7 @@ export function openKnobMenu(el: Element, r: ArgRef): void {
   const pinned = (metaNow().pins ?? []).includes(key)
   const shown = f.k === 'num' ? fmt(f.v) + (f.dim ? ' (default)' : '') : f.k === 'mod' ? `${MOD_ICON[f.spec.kind]} around ${fmt(baseOfFace(f))}` : f.k === 'var' ? f.name : f.k === 'expr' ? f.src : f.text
   const items: MenuItem[] = []
-  if (f.k === 'num') items.push({ label: 'Type a value…', run: () => openKeypad(el, r, info, f.v), testid: 'menu-type' })
+  if (f.k === 'num') items.push({ label: 'Type a value…', run: () => openKeypad(el, r), testid: 'menu-type' })
   if (f.k === 'mod' || f.k === 'expr') items.push({ label: 'Edit the modulation…', run: () => openModEditor(el, r), testid: 'menu-edit-mod' })
   if (f.k === 'var') items.push({ label: `Open ${f.name}`, run: () => focusVar(f.name) })
   items.push({ label: pinned ? 'Unpin from performance' : 'Pin to performance', run: () => togglePin(key), testid: 'menu-pin' })
@@ -188,6 +200,7 @@ export function Knob({ r, size = 'big', variant = 'knob', label }: KnobProps) {
   const lastTap = useRef(0)
   const step = h.integer ? 1 : (h.step ?? 0.01)
   const pinned = (metaNow().pins ?? []).includes(key)
+  const ladder = useMemo(() => new LadderGesture(() => knobField(r), { onStill: (el) => openKnobMenu(el, r), onOpen: () => hud.hide() }), [key])
 
   const apply = (d: Drag, val: Value, now: boolean) => {
     d.pending = val
@@ -244,11 +257,14 @@ export function Knob({ r, size = 'big', variant = 'knob', label }: KnobProps) {
       lastAt: 0,
     }
     st.current = d
-    d.timer = setTimeout(() => {
-      if (st.current !== d || d.moved) return
-      d.fired = true
-      openKnobMenu(el, r)
-    }, LONG_MS)
+    // a number: long-press opens the ladder (released without moving: the menu); anything else: the menu at once
+    if (f.k === 'num' && !spec) ladder.arm(e, el)
+    else
+      d.timer = setTimeout(() => {
+        if (st.current !== d || d.moved) return
+        d.fired = true
+        openKnobMenu(el, r)
+      }, LONG_MS)
   }
 
   const onMove = (e: PointerEvent) => {
@@ -256,11 +272,15 @@ export function Knob({ r, size = 'big', variant = 'knob', label }: KnobProps) {
     if (!d) return
     if (d.extra.has(e.pointerId)) return
     if (d.id !== e.pointerId) return
+    if (ladder.active) return ladder.move(e)
     d.lx = e.clientX
     d.ly = e.clientY
     const delta = d.y0 - e.clientY + (variant === 'knob' ? (e.clientX - d.x0) * 0.6 : 0)
     // any real movement means "turning", not "holding for the menu", even before the turn threshold
-    if (!d.moved && Math.hypot(e.clientX - d.x0, e.clientY - d.y0) > 3) clearTimeout(d.timer)
+    if (!d.moved && Math.hypot(e.clientX - d.x0, e.clientY - d.y0) > 3) {
+      clearTimeout(d.timer)
+      ladder.disarm()
+    }
     if (!d.moved && Math.abs(delta) < 6 && Math.hypot(e.clientX - d.x0, e.clientY - d.y0) < 8) return
     if (d.fired) return
     d.moved = true
@@ -302,7 +322,9 @@ export function Knob({ r, size = 'big', variant = 'knob', label }: KnobProps) {
     hud.hide()
     if (d.pending) setValue(r, d.pending, d.key)
     endGesture()
-    if (d.fired || e.type === 'pointercancel') return
+    if (e.type === 'pointercancel') return ladder.cancel()
+    if (ladder.up(e)) return
+    if (d.fired) return
     if (d.moved) return
     const el = e.currentTarget as HTMLElement
     // tap
@@ -321,7 +343,7 @@ export function Knob({ r, size = 'big', variant = 'knob', label }: KnobProps) {
       return
     }
     lastTap.current = now
-    if (f.k === 'num') openKeypad(el, r, info, f.v)
+    if (f.k === 'num') openKeypad(el, r)
     else if (f.k === 'mod' || f.k === 'expr') openModEditor(el, r)
     else if (f.k === 'var') focusVar(f.name)
     else openKnobMenu(el, r)

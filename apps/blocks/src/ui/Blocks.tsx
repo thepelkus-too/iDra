@@ -4,12 +4,12 @@
 // whole stack, an output, a source or a variable). Row heights come from view.ts so the layout is exact.
 //
 // Each draggable part carries a payload (drag.ts) and each place that takes something carries `data-drop`.
-import { DEFAULT, OUT_NAMES, SOURCE_NAMES, num, type Call, type Chain, type Hint, type InputDef, type Stmt, type Value } from '@hydra-ipad/core'
+import { DEFAULT, liveId, OUT_NAMES, SOURCE_NAMES, num, type Call, type Chain, type Hint, type InputDef, type Stmt, type Value } from '@hydra-ipad/core'
 import type { JSX } from 'preact'
 import { setValue, ui } from '../doc'
 import { pressToDrag, refAttr, type Payload } from '../drag'
 import { ctx, edit } from '../kit/ctx'
-import { fmt, NumSlider } from '@hydra-ipad/kit'
+import { fmt, hasLiveSlot, NumSlider } from '@hydra-ipad/kit'
 import { Meter } from '../kit/Chrome'
 import { openMenu } from '../kit/Menu'
 import { LFO_KINDS, MOD_ICON, MOD_LABEL, modToValue, valueToMod, type ModSpec } from '../kit/mods'
@@ -195,15 +195,20 @@ function Arg({ call, i, inp, look, stmtId }: { call: Call; i: number; inp?: Inpu
   if (inp?.type === 'sampler2D' || v.k === 'tex') return <Socket refr={ref} v={v} label={label} look={look} stmtId={stmtId} />
   const d = typeof inp?.default === 'number' ? inp.default : 0
   const hint: Hint = inp ? ctx.catalog.hint(call.fn, label) : { min: -1, max: Math.max(2, Math.abs(v.k === 'num' ? v.v : 1) * 4), step: 0.01 }
-  return <Slot refr={ref} v={v} label={label} def={inp ? d : undefined} hint={hint} />
+  return <Slot refr={ref} v={v} label={label} def={inp ? d : undefined} hint={hint} fn={call.fn} />
 }
 
 /** A round slot: a number, or a reporter dropped into it. */
-export function Slot({ refr, v, label, def, hint }: { refr: ArgRef; v: Value; label: string; def?: number; hint: Hint }) {
+export function Slot({ refr, v, label, def, hint, fn }: { refr: ArgRef; v: Value; label: string; def?: number; hint: Hint; fn?: string }) {
   const key = refAttr(refr)
+  const call = 'call' in refr ? refr : undefined
   let body
   if (v.k === 'num' || v.k === 'default') {
-    body = <NumSlider label={label} value={v.k === 'num' ? v.v : (def ?? 0)} def={def} dim={v.k === 'default'} hint={hint} testid={`num-${key}`} compact onChange={(x, ph) => numEnd(ph) || setValue(refr, num(x), `num:${key}`)} />
+    body = <NumSlider label={label} value={v.k === 'num' ? v.v : (def ?? 0)} def={def} dim={v.k === 'default'} hint={hint} testid={`num-${key}`} compact onChange={(x, ph) => numEnd(ph) || setValue(refr, num(x), `num:${key}`)}
+        id={`blocks:${key}`}
+        live={call && ((x) => hasLiveSlot(ctx.store.sketch, call.call, call.i, ctx.catalog) && (ctx.runner.setLive(liveId(call.call, call.i), x), true))}
+        arg={call && { callId: call.call, index: call.i, fn, input: label }}
+      />
   } else {
     body = (
       <>

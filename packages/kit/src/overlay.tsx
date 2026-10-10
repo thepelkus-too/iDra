@@ -3,6 +3,8 @@
 // what to follow with setOverlaySource (its store's subscribe), once, before it renders.
 import type { ComponentChildren } from 'preact'
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks'
+import { LadderLayer } from './Ladder'
+import { PadDock } from './PadDock'
 
 type Render = (close: () => void) => ComponentChildren
 
@@ -206,10 +208,12 @@ export function OverlayHost() {
   const { popovers, sheet, toasts, hud: h } = state
   return (
     <div class="overlays">
+      <PadDock />
       {sheet && <Sheet key={sheet.id} spec={sheet} />}
       {popovers.map((p, i) => (
         <Popover key={p.id} spec={p} level={i} />
       ))}
+      <LadderLayer />
       {h && (
         <div class="hud" style={{ left: `${h.x}px`, top: `${h.y}px` }}>
           <b>{h.text}</b>

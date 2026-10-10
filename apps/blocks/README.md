@@ -17,7 +17,7 @@ anything made in another editor opens here and the other way round.
 | **Hat** (rounded top) | the generator: `osc ( 20 , 0.1 , 0.8 )`. Hats never snap under anything; a hat dropped on empty workspace starts a script |
 | **Stack block** | one chain call (Geometry, Color, Blend, Modulate, Plugins), coloured by category with an icon and a label |
 | **Cap** `show on [o0 ▾]` | `.out(oN)`. A script with no `.out` ends in an open, dashed cap "not rendered" with a one-tap **show on o0**; its blocks are dimmed |
-| **Round slot** | a number. Drag sideways to scrub (finer the further your finger is above or below), tap for the keypad, double-tap for the default |
+| **Round slot** | a number. Drag sideways to scrub (finer the further your finger is above or below), tap for the number editor, double-tap for the default |
 | **Square socket** | a texture input. Takes a whole stack (hat + blocks, no cap), `o0`–`o3`, `s0`–`s3` or a picture variable. Lights up while you hold something it takes |
 | **Reporters** | sine / saw / triangle / square waves and random steps (with `freq`, `amount`, `offset` slots), `time`, `mouse x/y`, `audio bin [0]` (core's `audioChip`, with a live meter), `volume`, a **pattern** step sequencer, and a JS expression. They write arrow functions or arrays |
 | **Pattern** | a step sequencer in a pill: tap a step to type it, drag it up or down, ＋/− steps, `×` speed (`.fast`), `smooth` |
@@ -43,6 +43,9 @@ and `sum` are marked `TODO review`); plugin functions get a generic line naming 
 | **Delete** | drop onto the palette or the 🗑 that appears while dragging; or select and tap Delete |
 | **Reporters** | drag a reporter out of the palette into a slot or socket; drag it out of the slot to take it away (a wave leaves behind the number it was centred on) |
 | **Palette** | left flyout in landscape, bottom drawer in portrait; category tabs and search. Tap a block to add it where it makes sense (a hat as a new script, a stack block under the selected block, a cap on the selected script); hold for a "what does this do?" card |
+| **Numbers** | drag a round slot sideways to scrub (finer the further your finger is above or below); tap for the number editor (tabs **Keypad** with Glide, **Ladder**, **Pad**; the last tab is remembered); double-tap for the default |
+| **Ladder** | long-press a number (hold still ⅓ s), then without lifting: slide up or down to pick the step, left or right to change the value by it; let go to keep it (one undo step), Esc to cancel. Hold still and let go: the Ladder tab |
+| **Pads** | in a number's Pad tab, **Bind to a pad**: the number becomes a hydra-motion knob played from a floating pad (hold, latch or trigger). ⇄ → **Pads** shows or hides them |
 | **Undo / redo** | two-finger tap / three-finger tap, the ↶ ↷ buttons, ⌘Z / ⇧⌘Z |
 | **Keyboard** | ⌘D duplicate, ⌫ delete, ⌘K palette, ⌘Enter run, Esc clear |
 

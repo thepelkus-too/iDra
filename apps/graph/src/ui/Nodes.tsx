@@ -6,7 +6,7 @@ import { memo } from 'preact/compat'
 import { useState } from 'preact/hooks'
 import { applyGraph, graphOf, liveIdsFor, posOf, ui } from '../doc'
 import { ctx, edit } from '../kit/ctx'
-import { fmt, NumSlider, toast } from '@hydra-ipad/kit'
+import { fmt, hasLiveSlot, NumSlider, toast } from '@hydra-ipad/kit'
 import { openMenu } from '../kit/Menu'
 import { defaultSpec, LFO_KINDS, MOD_ICON, MOD_LABEL, modToValue, valueToMod, type ModKind, type ModSpec } from '../kit/mods'
 import { updateStmt } from '../kit/model'
@@ -58,6 +58,15 @@ export function setCallNum(nodeId: string, i: number, v: number, phase: 'drag' |
   const g = { nodes: g0.nodes, edges: g0.edges }
   setNodeArg(g, nodeId, i, num(v))
   applyGraph(g, { coalesce: `num:${nodeId}:${i}` })
+}
+
+/** The live path for a call's number: every compiled copy of the node gets the value, no recompile. */
+export function liveFor(nodeId: string, i: number): (v: number) => boolean {
+  return (v) => {
+    if (!hasLiveSlot(ctx.store.sketch, nodeId, i, ctx.catalog)) return false
+    for (const id of liveIdsFor(nodeId, i)) ctx.runner.setLive(id, v)
+    return true
+  }
 }
 
 function setCallValue(nodeId: string, i: number, v: Value): void {
@@ -150,7 +159,7 @@ function CallCard(p: NodeProps) {
           } else if (a.k === 'num' || a.k === 'default') {
             const d = typeof inp?.default === 'number' ? inp.default : 0
             const hint: Hint = def ? ctx.catalog.hint(call.fn, label) : { min: -1, max: Math.max(2, Math.abs(a.k === 'num' ? a.v : 1) * 4), step: 0.01 }
-            body = <NumSlider label={label} value={a.k === 'num' ? a.v : d} def={inp ? d : undefined} dim={a.k === 'default'} hint={hint} testid={`num-${call.fn}-${i}`} onChange={(v, ph) => setCallNum(n.id, i, v, ph)} compact />
+            body = <NumSlider label={label} value={a.k === 'num' ? a.v : d} def={inp ? d : undefined} dim={a.k === 'default'} hint={hint} testid={`num-${call.fn}-${i}`} onChange={(v, ph) => setCallNum(n.id, i, v, ph)} compact id={`graph:${n.id}:${i}`} live={liveFor(n.id, i)} arg={{ callId: n.id, index: i, fn: call.fn, input: inp?.name }} />
           } else if (a.k === 'vec4') {
             body = (
               <span class="vec">

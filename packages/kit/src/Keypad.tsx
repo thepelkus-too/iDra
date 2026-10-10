@@ -1,5 +1,7 @@
 // Compact numeric keypad popover: digits, ., ±, backspace, and the nudges ×2 ÷2 ±1. Every key applies immediately
-// (the preview follows), and the whole session is one undo step.
+// (the preview follows), and the whole session is one undo step. In target mode (the number editor's Glide) the keys only
+// build the number; Go, or a nudge, hands the target to `onTarget` instead.
+import type { ComponentChildren } from 'preact'
 import type { Hint } from '@hydra-ipad/core'
 import { useRef, useState } from 'preact/hooks'
 import { fmt, roundTo, wrapInto } from './conv'
@@ -11,6 +13,12 @@ export interface KeypadProps {
   hint: Hint
   onChange: (v: number) => void
   onClose: () => void
+  /** target mode: typed numbers and nudges become targets (Glide) */
+  onTarget?: (v: number) => void
+  /** the value now, for nudges in target mode (it moves while a glide runs) */
+  current?: () => number
+  /** under the keys (the Glide controls) */
+  children?: ComponentChildren
 }
 
 export function Keypad(p: KeypadProps) {
@@ -24,7 +32,13 @@ export function Keypad(p: KeypadProps) {
     if (!isFinite(v)) return
     latest.current = v
     setCur(v)
-    p.onChange(v)
+    if (p.onTarget) p.onTarget(v)
+    else p.onChange(v)
+  }
+  const typed = (b: string): number | undefined => {
+    if (b === '' || b === '-') return undefined
+    const n = Number(b.endsWith('.') ? b + '0' : b)
+    return isFinite(n) ? n : undefined
   }
   const press = (k: string) => {
     let b = fresh ? '' : buf
@@ -35,12 +49,14 @@ export function Keypad(p: KeypadProps) {
     } else b += k
     setFresh(false)
     setBuf(b)
+    if (p.onTarget) return
     const n = Number(b)
     if (b !== '' && b !== '-' && !b.endsWith('.') && isFinite(n)) apply(n)
     else if (b.endsWith('.') && isFinite(Number(b + '0'))) apply(Number(b + '0'))
   }
   const nudge = (f: (v: number) => number) => {
-    const v = f(latest.current)
+    const from = p.onTarget ? (fresh ? (p.current?.() ?? latest.current) : (typed(buf) ?? latest.current)) : latest.current
+    const v = f(from)
     const r = Math.abs(v) < 1e-9 ? 0 : +v.toPrecision(10)
     setFresh(true)
     setBuf('')
@@ -86,10 +102,28 @@ export function Keypad(p: KeypadProps) {
         {nk(`+${fmt(step)}`, (v) => v + step, 'nudge-step')}
         {key('0', '0', 'wide')}
         {key('.')}
-        <button type="button" class="key ok" data-testid="kp-ok" onClick={p.onClose}>
-          OK
-        </button>
+        {p.onTarget ? (
+          <button
+            type="button"
+            class="key ok go"
+            data-testid="kp-go"
+            onClick={() => {
+              const n = typed(buf)
+              if (fresh || n === undefined) return p.onClose()
+              setFresh(true)
+              setBuf('')
+              apply(p.hint.integer ? Math.round(n) : n)
+            }}
+          >
+            Go
+          </button>
+        ) : (
+          <button type="button" class="key ok" data-testid="kp-ok" onClick={p.onClose}>
+            OK
+          </button>
+        )}
       </div>
+      {p.children}
       {p.def !== undefined && (
         <button
           type="button"

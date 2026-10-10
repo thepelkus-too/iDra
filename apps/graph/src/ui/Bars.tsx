@@ -10,7 +10,7 @@ import { NumSlider, toast } from '@hydra-ipad/kit'
 import { nodeById } from '../model'
 import { bake, deleteNodes, disconnect, duplicateNodes, freeOutputs, toggleBypass } from '../ops'
 import type { XY } from '../view'
-import { setCallNum } from './Nodes'
+import { liveFor, setCallNum } from './Nodes'
 import { togglePreview } from './Preview'
 
 export function TopBar() {
@@ -280,7 +280,7 @@ function PerformControls() {
           const a = n.call!.args[p.port]
           const d = typeof inp.default === 'number' ? inp.default : 0
           const v = a?.k === 'num' ? a.v : d
-          return <NumSlider key={`${p.node}:${p.port}`} label={`${n.call!.fn} ${inp.name}`} value={v} def={d} hint={ctx.catalog.hint(n.call!.fn, inp.name)} testid={`pin-${n.call!.fn}-${p.port}`} onChange={(x, ph) => setCallNum(p.node, p.port, x, ph)} />
+          return <NumSlider key={`${p.node}:${p.port}`} label={`${n.call!.fn} ${inp.name}`} value={v} def={d} hint={ctx.catalog.hint(n.call!.fn, inp.name)} testid={`pin-${n.call!.fn}-${p.port}`} onChange={(x, ph) => setCallNum(p.node, p.port, x, ph)} id={`graph:${p.node}:${p.port}`} live={liveFor(p.node, p.port)} arg={{ callId: p.node, index: p.port, fn: n.call!.fn, input: inp.name }} />
         })}
       </div>
     </div>

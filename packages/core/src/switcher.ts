@@ -65,6 +65,8 @@ export interface SwitcherOptions {
    * and reloads the page on close if the plugin list changed (so the editor picks it up).
    */
   sketchAccess?: { get(): Sketch | Promise<Sketch>; set(sketch: Sketch): void | Promise<void> }
+  /** more tools for the menu, after Plugins and MIDI (the kit's "Pads"); shown even with `tools: false` */
+  extraTools?: Array<{ label: string; small?: string; key: string; run: () => void }>
 }
 
 export interface SwitcherHandle {
@@ -137,6 +139,10 @@ export function mountSwitcher(el: HTMLElement, opts: SwitcherOptions): SwitcherH
         const { openMidiSheet } = await import('./midi-panel')
         openMidiSheet()
       }))
+    }
+    if (opts.extraTools?.length) {
+      if (opts.tools === false) menu.appendChild(h('hr'))
+      for (const t of opts.extraTools) menu.appendChild(tool(t.label, t.small ?? '', t.key, async () => t.run()))
     }
   }
   const tool = (label: string, small: string, key: string, run: () => Promise<void>) => {

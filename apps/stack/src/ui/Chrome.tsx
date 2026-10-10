@@ -14,7 +14,7 @@ import {
 } from '../actions'
 import { ctx, edit, useBackdrop, useRunner, useStore } from '../ctx'
 import { setOut, updateStmt } from '../model'
-import { closeSheet, Keypad, openPopover, openSheet, toast, usePress } from '@hydra-ipad/kit'
+import { closeSheet, Keypad, openPopover, openSheet, padsTool, toast, usePress } from '@hydra-ipad/kit'
 import { appPrefs } from '../prefs'
 import { autoView, metaOf, stripOf } from '../view'
 import { focusNode } from '../nav'
@@ -35,7 +35,7 @@ export function TopBar({ mode, setMode, onToggleAudio }: { mode: 'blocks' | 'cod
   const handle = useRef<ReturnType<typeof mountSwitcher>>()
   useEffect(() => {
     if (!sw.current) return
-    handle.current = mountSwitcher(sw.current, { current: 'stack', sketchId: ctx.store.sketch.id })
+    handle.current = mountSwitcher(sw.current, { current: 'stack', sketchId: ctx.store.sketch.id, extraTools: [padsTool()] })
     return () => handle.current?.destroy()
   }, [])
   useEffect(() => handle.current?.refresh(sk.id), [sk.id])
