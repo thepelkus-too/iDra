@@ -9,6 +9,20 @@ export interface InitMsg {
   width: number
   height: number
   precision?: 'lowp' | 'mediump' | 'highp'
+  /**
+   * A preview runtime (docs/previews-runtime.md): Hydra's own animation loop is off and the frame ticks only when told to
+   * (`loop`), sending each frame back as ImageBitmaps. It also gets extra sources (s4…s7) for approximated outputs.
+   */
+  preview?: { numSources: number }
+}
+
+/** What a preview frame sends back: one bitmap per captured output, in the order asked for. Transferred, not copied. */
+export interface FrameMsg {
+  t: 'frame'
+  seq: number
+  bitmaps: ImageBitmap[]
+  /** Hydra's `time` when the frame was drawn */
+  time: number
 }
 export interface RunMsg {
   t: 'run'
@@ -39,6 +53,19 @@ export type HostToFrame =
   | { t: 'midi'; input: string; data: number[] }
   /** call `<name>.<method>(...args)` on a hydra-motion knob of the running sketch (pads); never coalesced, never evaluated as text */
   | { t: 'invoke'; name: string; method: 'set' | 'to' | 'hold' | 'release' | 'press' | 'lift'; args: Array<number | string> }
+  /**
+   * Preview runtimes only: tick at `fps` while `running`, capturing outputs `outputs` (indices) after each tick. `frames`
+   * stops after that many frames (1 = a still). The frame keeps at most one frame in flight: it waits for `ack`.
+   */
+  | { t: 'loop'; running: boolean; fps: number; outputs: number[]; frames?: number }
+  /** the host has drawn frame `seq`; the next one may be sent */
+  | { t: 'ack'; seq: number }
+  /** set Hydra's clock (previews follow the main runtime's `time`) */
+  | { t: 'setTime'; time: number }
+  /** show `bitmap` in source `slot` (an approximated output or camera); `null` clears it */
+  | { t: 'image'; slot: string; bitmap: ImageBitmap | null }
+  /** a small copy of output `of` (`o0`…`o3`) or of a source's current picture (`s0`…), answered with an ImageBitmap */
+  | { t: 'snapshot'; id: number; of: string; width: number; height: number }
   | { t: 'dispose' }
 
 export interface MidiPortInfo {
@@ -57,9 +84,11 @@ export type FrameToHost =
   | { t: 'fetch'; id: number; url: string }
   | { t: 'audioSettings'; settings: HydraAudioSettings }
   | { t: 'fatal'; message: string }
+  | FrameMsg
 
 export type Transport = {
-  send(msg: HostToFrame): void
+  /** `transfer`: ImageBitmaps moved, not copied (iframe postMessage transfer list) */
+  send(msg: HostToFrame, transfer?: Transferable[]): void
   onMessage(cb: (msg: FrameToHost) => void): void
   dispose(): void
 }

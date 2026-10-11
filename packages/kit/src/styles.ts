@@ -1,4 +1,4 @@
-// The kit's base CSS: popovers, sheets, toasts, the scrub HUD, the keypad, the number editor, the ladder and the pads. Editors put it into their own stylesheet
+// The kit's base CSS: popovers, sheets, toasts, the scrub HUD, the keypad, the number editor, the ladder, the pads, switched-off chunks and chunk previews. Editors put it into their own stylesheet
 // (BASE_CSS) and may override it after; the number controls' own look (.numslider sizes, .tok.num) stays with each editor.
 export const KIT_CSS = `
 /* ---- overlays */
@@ -108,4 +108,25 @@ export const KIT_CSS = `
 .dockpad .grip{display:inline-flex;align-items:center;justify-content:center;min-width:44px;min-height:32px;color:var(--hi-dim);touch-action:none;cursor:grab;font-size:18px}
 .dockpad .icon.sm{min-height:32px;min-width:44px;width:44px;font-size:15px}
 .padstrip{display:flex;gap:8px;flex-wrap:wrap}
+/* ---- switched off (disabled) chunks: dimmed and striped, never hidden. Put .is-disabled on the node's own element. */
+.is-disabled{opacity:.48;background-image:repeating-linear-gradient(135deg,rgba(255,255,255,.07) 0 6px,transparent 6px 12px);filter:saturate(.35)}
+.is-disabled .is-disabled{opacity:1;background-image:none;filter:none}
+.disable-toggle{min-width:44px;min-height:32px;padding:0 8px;border:1px solid var(--hi-line);border-radius:8px;background:transparent;color:var(--hi-dim);font:600 14px var(--mono);touch-action:manipulation;-webkit-user-select:none;user-select:none}
+.disable-toggle.off{color:var(--hi-accent);border-color:var(--hi-accent);background:rgba(255,255,255,.04)}
+.disable-toggle.unavailable{opacity:.4;border-style:dashed}
+.is-disabled .disable-toggle{opacity:1;filter:none}
+
+/* ---- chunk previews */
+.preview-peek{display:inline-flex;flex-direction:column;gap:4px;vertical-align:top}
+.peek-pic{position:relative;display:block;padding:0;border:1px solid var(--hi-line);border-radius:6px;overflow:hidden;background:#000;width:128px;height:72px;line-height:0}
+.preview-peek.open .peek-pic{width:256px;height:144px}
+.peek-pic canvas{width:100%;height:100%;display:block}
+.preview-peek.empty canvas{visibility:hidden}
+.peek-msg{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:4px;font-size:11px;line-height:1.2;color:var(--hi-dim);text-align:center}
+.peek-badge{position:absolute;right:3px;top:3px;min-width:18px;padding:1px 4px;border-radius:6px;background:rgba(0,0,0,.65);color:#ffd27a;font:600 12px/1.2 var(--mono)}
+.peek-spin{position:absolute;left:4px;bottom:4px;width:8px;height:8px;border-radius:50%;background:var(--hi-accent);opacity:.7}
+.peek-ab{display:flex;gap:4px}
+.peek-ab button{flex:1;min-height:32px;font-size:12px;border:1px solid var(--hi-line);border-radius:8px;background:transparent;color:var(--hi-dim)}
+.peek-ab button[aria-pressed=true]{color:var(--hi-text);border-color:var(--hi-accent)}
+.peek-note{max-width:256px;font-size:11px;color:var(--hi-dim)}
 `

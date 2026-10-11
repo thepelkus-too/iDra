@@ -37,12 +37,23 @@ export interface CallSrc {
   /** original text of the call: `name(args)` for generators, `.name(args)` (with the dot) for modifiers */
   text: string
   hash: string
+  /**
+   * Revived disabled modifiers only: the exact comment opener the call followed on its line (`// `, `//`, `//   `), so an
+   * untouched import re-exports byte for byte. Absent for calls that were not imported as comments.
+   */
+  lead?: string
 }
 
 export interface Call {
   id: string
   fn: string
   args: Value[]
+  /**
+   * Switched off: written as an ordinary `// .name(args)` line inside its chain and left out of everything that runs.
+   * Only modifiers of a chain written one call per line (a chain statement or a `def` holding a chain) can be disabled;
+   * see `canDisable` (docs/IR.md, "Disabled nodes").
+   */
+  disabled?: boolean
   meta?: Record<string, unknown>
   src?: CallSrc
 }
@@ -77,6 +88,12 @@ export interface StmtSrc {
 
 interface StmtBase {
   id: string
+  /**
+   * Switched off: every line of the statement is written with a `// ` prefix (plain commented-out code that vanilla
+   * Hydra ignores) and the statement is left out of everything that runs. Chain, def, source, setting and render
+   * statements can be disabled; comments and raw code cannot (`canDisable`).
+   */
+  disabled?: boolean
   meta?: Record<string, unknown>
   src?: StmtSrc
 }

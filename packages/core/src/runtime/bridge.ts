@@ -11,7 +11,8 @@ import { MidiShim } from './midi-shim'
 export interface BridgeEnv {
   win: any
   container: HTMLElement
-  post: (msg: FrameToHost) => void
+  /** `transfer`: objects to move (ImageBitmaps), not copy */
+  post: (msg: FrameToHost, transfer?: Transferable[]) => void
   /** hydra-synth's default export (or a mock in tests) */
   Hydra: new (opts: any) => any
 }
@@ -94,8 +95,8 @@ export class Bridge {
 
   constructor(private env: BridgeEnv) {}
 
-  post(msg: FrameToHost) {
-    if (!this.disposed) this.env.post(msg)
+  post(msg: FrameToHost, transfer?: Transferable[]) {
+    if (!this.disposed) this.env.post(msg, transfer)
   }
 
   // ---------------------------------------------------------------- dispatch
@@ -104,7 +105,7 @@ export class Bridge {
     try {
       switch (msg.t) {
         case 'init':
-          return this.init(msg.width, msg.height, msg.precision)
+          return this.init(msg.width, msg.height, msg.precision, msg.preview)
         case 'run':
           return void this.run(msg)
         case 'live':
@@ -141,6 +142,16 @@ export class Bridge {
           return this.midi?.receive(msg.input, msg.data)
         case 'invoke':
           return this.invoke(msg.name, msg.method, msg.args)
+        case 'loop':
+          return this.setLoop(msg)
+        case 'ack':
+          return this.ackFrame(msg.seq)
+        case 'setTime':
+          return this.setTime(msg.time)
+        case 'image':
+          return this.setImage(msg.slot, msg.bitmap)
+        case 'snapshot':
+          return void this.snapshot(msg.id, msg.of, msg.width, msg.height)
         case 'dispose':
           return this.dispose()
       }
@@ -186,7 +197,8 @@ export class Bridge {
   }
 
   // ---------------------------------------------------------------- setup
-  private init(width: number, height: number, precision?: string) {
+  private init(width: number, height: number, precision?: string, preview?: { numSources: number }) {
+    this.preview = !!preview
     const { win, container } = this.env
     this.hookConsole()
     win.addEventListener?.('error', (ev: ErrorEvent) => this.error('runtime', ev.message || 'script error'))
@@ -210,6 +222,8 @@ export class Bridge {
         detectAudio: false,
         enableStreamCapture: false,
         ...(precision ? { precision } : {}),
+        // a preview ticks only when asked to (loop), and has spare sources for approximated outputs
+        ...(preview ? { autoLoop: false, numSources: Math.max(4, Math.min(8, preview.numSources)) } : {}),
       })
     } catch (e: any) {
       webgl = false
@@ -476,8 +490,189 @@ export class Bridge {
     })
   }
 
+  // ---------------------------------------------------------------- previews (docs/previews-runtime.md)
+  private preview = false
+  private loopTimer: ReturnType<typeof setTimeout> | undefined
+  private loopState: { running: boolean; fps: number; outputs: number[]; left: number } = { running: false, fps: 15, outputs: [0], left: Infinity }
+  private lastTick = 0
+  private frameSeq = 0
+  private inFlight = 0
+  private grab?: { canvas: any; ctx: CanvasRenderingContext2D | null }
+  private slotCanvas = new Map<string, any>()
+
+  private setLoop(m: { running: boolean; fps: number; outputs: number[]; frames?: number }) {
+    if (!this.preview) return this.error('warning', 'loop is for preview runtimes')
+    const fps = Math.max(0.5, Math.min(30, m.fps || 15))
+    const outputs = (m.outputs ?? [0]).filter((i) => Number.isInteger(i) && i >= 0 && i < 4).slice(0, 2)
+    this.loopState = { running: m.running, fps, outputs: outputs.length ? outputs : [0], left: m.frames && m.frames > 0 ? m.frames : Infinity }
+    clearTimeout(this.loopTimer)
+    this.loopTimer = undefined
+    if (m.running) {
+      // a fresh start does not jump the clock by the time spent paused
+      this.lastTick = 0
+      this.inFlight = 0
+      this.scheduleTick(0)
+    }
+  }
+
+  private ackFrame(seq: number) {
+    if (seq === this.frameSeq) this.inFlight = 0
+  }
+
+  private scheduleTick(delay: number) {
+    if (this.loopTimer !== undefined || this.disposed) return
+    this.loopTimer = setTimeout(() => {
+      this.loopTimer = undefined
+      this.previewTick()
+    }, delay)
+  }
+
+  private previewTick() {
+    const st = this.loopState
+    const h = this.hydra
+    if (!st.running || !h || this.disposed) return
+    const interval = 1000 / st.fps
+    const now = performance.now()
+    // the host has not drawn the last frame yet: skip this beat rather than pile frames up
+    if (this.inFlight && now - this.inFlight < 2000) return this.scheduleTick(interval / 2)
+    const dt = this.lastTick ? Math.min(250, now - this.lastTick) : interval
+    this.lastTick = now
+    try {
+      const first = h.o?.[st.outputs[0]]
+      if (first) {
+        h.output = first
+        h.isRenderingAll = false
+      }
+      h.tick(dt)
+      const bitmaps: ImageBitmap[] = []
+      const a = this.captureCanvas()
+      if (a) bitmaps.push(a)
+      for (const i of st.outputs.slice(1)) {
+        // the other output, drawn to the canvas at the same Hydra time
+        h.renderFbo?.({ tex0: h.o[i].getCurrent(), resolution: [h.canvas.width, h.canvas.height] })
+        const b = this.captureCanvas()
+        if (b) bitmaps.push(b)
+      }
+      if (bitmaps.length) {
+        this.frameSeq++
+        this.inFlight = now
+        this.post({ t: 'frame', seq: this.frameSeq, bitmaps, time: h.synth?.time ?? 0 }, bitmaps)
+      }
+    } catch (e: any) {
+      this.error('runtime', `preview: ${e?.message ?? e}`)
+    }
+    st.left--
+    if (st.left <= 0) {
+      st.running = false
+      return
+    }
+    this.scheduleTick(Math.max(0, interval - (performance.now() - now)))
+  }
+
+  /** The canvas as an ImageBitmap, read in the same task as the draw (a WebGL canvas is cleared once presented). */
+  private captureCanvas(): ImageBitmap | undefined {
+    const canvas = this.canvas
+    const win = this.env.win
+    if (!canvas) return undefined
+    const w = canvas.width
+    const h = canvas.height
+    if (typeof win.OffscreenCanvas === 'function') {
+      if (!this.grab || this.grab.canvas.width !== w || this.grab.canvas.height !== h) {
+        const c = new win.OffscreenCanvas(w, h)
+        this.grab = { canvas: c, ctx: c.getContext('2d') }
+      }
+      const g = this.grab
+      if (!g.ctx) return undefined
+      g.ctx.drawImage(canvas, 0, 0)
+      return g.canvas.transferToImageBitmap()
+    }
+    return undefined
+  }
+
+  private setTime(t: number) {
+    const h = this.hydra
+    if (!h?.synth || !Number.isFinite(t)) return
+    h.synth.time = t
+    h.sandbox?.set?.('time', t)
+  }
+
+  private setImage(slot: string, bitmap: ImageBitmap | null) {
+    const h = this.hydra
+    const src = /^s\d$/.test(slot) ? h?.synth?.[slot] : undefined
+    if (!src) {
+      bitmap?.close?.()
+      return
+    }
+    if (!bitmap) {
+      src.clear?.()
+      this.slotCanvas.delete(slot)
+      return
+    }
+    const doc: Document = this.env.win.document
+    let c = this.slotCanvas.get(slot)
+    if (!c || c.width !== bitmap.width || c.height !== bitmap.height) {
+      c = doc.createElement('canvas')
+      c.width = bitmap.width
+      c.height = bitmap.height
+      this.slotCanvas.set(slot, c)
+    }
+    c.getContext('2d')?.drawImage(bitmap, 0, 0)
+    bitmap.close?.()
+    if (src.src !== c) src.init({ src: c, dynamic: true })
+  }
+
+  /** A w×h copy of output `of` (pixels read back from its framebuffer) or of source `of`'s current picture. */
+  private async snapshot(id: number, of: string, width: number, height: number) {
+    const win = this.env.win
+    const fail = (error: string) => this.post({ t: 'result', id, ok: false, error })
+    try {
+      const h = this.hydra
+      if (!h) return fail('not ready')
+      const w = Math.max(1, Math.min(512, Math.round(width)))
+      const ht = Math.max(1, Math.min(512, Math.round(height)))
+      let bmp: ImageBitmap
+      const m = /^([os])(\d)$/.exec(of)
+      if (!m) return fail(`cannot snapshot "${of}"`)
+      if (m[1] === 's') {
+        const el = h.synth?.[of]?.src
+        if (!el) return fail(`${of} has no picture`)
+        bmp = await win.createImageBitmap(el, { resizeWidth: w, resizeHeight: ht })
+      } else {
+        const out = h.o?.[Number(m[2])]
+        const regl = h.regl
+        if (!out || !regl) return fail(`no output ${of}`)
+        // colour only: a depth/stencil renderbuffer is not needed for a copy, and some contexts refuse its format
+        // ("(regl) invalid render buffer format"); a new size is a new framebuffer rather than a resize for the same reason
+        if (this.snapFbo && (this.snapFbo.width !== w || this.snapFbo.height !== ht)) {
+          this.snapFbo.destroy()
+          this.snapFbo = undefined
+        }
+        const fbo = (this.snapFbo ??= regl.framebuffer({ color: regl.texture({ width: w, height: ht }), depth: false, stencil: false }))
+        this.copyCmd ??= regl({
+          frag: 'precision mediump float; varying vec2 uv; uniform sampler2D tex; void main () { gl_FragColor = texture2D(tex, uv); }',
+          vert: 'precision mediump float; attribute vec2 position; varying vec2 uv; void main () { uv = position; gl_Position = vec4(2.0 * position - 1.0, 0, 1); }',
+          attributes: { position: [[0, 0], [2, 0], [0, 2]] },
+          uniforms: { tex: regl.prop('tex') },
+          framebuffer: regl.prop('fbo'),
+          count: 3,
+          depth: { enable: false },
+        })
+        this.copyCmd({ tex: out.getCurrent(), fbo })
+        const px: Uint8Array = regl.read({ framebuffer: fbo })
+        const data = new win.ImageData(new Uint8ClampedArray(px.buffer, px.byteOffset, px.byteLength), w, ht)
+        bmp = await win.createImageBitmap(data)
+      }
+      this.post({ t: 'result', id, ok: true, value: bmp }, [bmp])
+    } catch (e: any) {
+      fail(String(e?.message ?? e))
+    }
+  }
+  private snapFbo: any
+  private copyCmd: any
+
   dispose() {
     this.disposed = true
+    clearTimeout(this.loopTimer)
     this.midi?.dispose()
     this.restoreConsole?.()
     try {

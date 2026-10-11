@@ -50,6 +50,25 @@ Every editor must show an **editable** representation of:
 | `source`, `setting`, `render` | their own controls |
 | unknown calls | a generic call with editable name and arguments (`catalog.get(fn) === undefined`) |
 | `js` / `fn` values | the source text (and for audio chips, knobs: `parseAudioChip`) |
+| disabled (`disabled: true`) statements and modifiers | in place, dimmed and striped (the kit's `.is-disabled`), never hidden; see 4a |
+
+### 4a. Switched-off (disabled) chunks
+
+A modifier or a statement can be switched off and on again without deleting it (docs/IR.md, "Disabled nodes"). In the
+code it is ordinary `//` commented-out code, so the export runs in vanilla Hydra; the importer revives it.
+
+* **Show it where it is, dimmed and striped, never hidden.** Put the kit's `.is-disabled` class on the node's element.
+  A disabled statement keeps its controls (its numbers can still be edited; they take effect when it is switched on).
+* **Switch it with the kit:** `<DisableToggle id what>` (a `//` button; tap switches, long-press or hover explains a
+  refusal) or, for an editor's own control (a menu entry, a swipe), `disableAction(sketch, id)` / core's
+  `canDisable` + `setDisabled`. Never set the flag by hand: `canDisable` refuses generators, calls inside texture
+  arguments, calls with multi-line code, comments and raw code (each with a `reason` and, where it helps, `instead`), and
+  a `def` that enabled code still uses switches together with its users (`cascade`). A refusal is shown, not silent.
+* **Switching is an ordinary undoable edit** that changes the compiled output, never the IR order. Run as after any edit.
+* **Counts.** `describe(sketch)` describes what runs, so disabled nodes are not in its `chains`, `defs`, … but in
+  `describe(sketch).disabled`. Test 2 of section 9 counts against `describe(enableAll(sketch))`.
+* `validate` reports `uses-disabled` (an error) when enabled code uses a switched-off def; `autoLayout` keeps disabled
+  nodes in place with `disabled: true` on the node and its edges (draw the edges as carrying no signal).
 
 ## 5. Statement order
 
@@ -184,12 +203,36 @@ everywhere:
   (`withKitMeta`, `withPads`, `updatePad`, `unbindKnob`). This is the one exception to "write only `meta[<app>]`"
   (section 2). An editor never writes `meta.kit` itself and preserves it like any other key.
 
+### 8b. Chunk previews
+
+A chunk preview is a small picture of part of a chain: *prefix* ("everything up to here": the generator and the enabled
+modifiers up to a call, `{ kind: 'prefix', chainId, upToCallId }`) or *diff* (before/after one modifier,
+`{ kind: 'diff', callId }`). They come from core's preview pool (docs/previews-runtime.md); editors show them with the
+kit's `<PreviewPeek spec>` and register the main runtime with `setKitHost({ …, runtime: () => ctx.runner?.rt })`.
+
+* **The main output is never touched.** Previews run in their own small runtimes (at most the pool's size, default 2;
+  256×144 at most; about 15 fps), only *read* the main runtime (its time, live numbers and, for approximations, copies of
+  its pictures) and never run anything in it.
+* **Trust.** A preview runs only what the main runtime would run trusted: until the sketch is trusted (section 6, trust
+  gate) every preview stays `untrusted` and nothing of it runs anywhere. Pass the same answer the editor uses for its own
+  runs (`trusted: !ctx.runner.trust.pending`, which the kit host's `trusted()` already returns).
+* **Approximate previews.** A chunk that reads `o0`…`o3`, `prev()` or a camera can't be rebuilt in isolation; it is shown
+  from a copy of the main runtime's picture, refreshed about once a second, marked "≈" with the reason in `notes`. Without
+  a main runtime it is refused politely (`refused` + `reason`). A preview never opens a camera or screen of its own.
+* **Preference** (`previewMode()` / `setPreviewMode()`, stored per browser under `idra.previews`): `off`; `demand` (default:
+  a still picture, refreshed when the chunk or its numbers change, animated while opened); `live` (every visible
+  thumbnail animates: costs GPU and battery). Offscreen previews and previews in a hidden page pause; idle runtimes are
+  disposed after 20 s.
+* **Errors stay in the preview** (`error` + `reason`); they never reach the editor's problem list or the main output.
+* Raw code is not run in previews, apart from `loadScript(…)` / `setFunction(…)` lines (plugins the chunk may call).
+  Settings, defs and non-camera sources are kept.
+
 ## 9. Tests every editor must pass
 
-Using `import { corpus } from '@hydra-ipad/core/corpus'` (33 sketches, one deliberately broken):
+Using `import { corpus } from '@hydra-ipad/core/corpus'` (35 sketches, one deliberately broken):
 
 1. open every corpus sketch (`importText(entry.code).sketch`) without throwing,
-2. show every chain, def, raw block and comment (count them against `describe(sketch)`),
+2. show every chain, def, raw block and comment, switched on or off (count them against `describe(enableAll(sketch))`),
 3. preserve raw code byte-for-byte,
 4. for an untouched sketch, `toCode(sketch) === entry.code`,
 5. one numeric edit changes exactly one line of the export,

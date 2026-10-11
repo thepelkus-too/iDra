@@ -3,7 +3,7 @@
 import { describe as suite, expect, test, beforeEach } from 'vitest'
 import { render } from 'preact'
 import { act } from 'preact/test-utils'
-import { describe, importText, toCode, type Sketch } from '@hydra-ipad/core'
+import { describe, enableAll, importText, toCode, type Sketch } from '@hydra-ipad/core'
 import { corpus } from '@hydra-ipad/core/corpus'
 import { ctx } from '../src/ctx'
 import { Store } from '../src/store'
@@ -25,7 +25,8 @@ suite('the stack shows every statement of every corpus sketch', () => {
   for (const entry of corpus) {
     test(entry.name, () => {
       const sketch = importText(entry.code).sketch
-      const d = describe(sketch)
+      // the stack shows every statement, switched on or off (describe() leaves disabled ones out)
+      const d = describe(enableAll(sketch))
       const el = mount(sketch)
       const stmts = [...el.querySelectorAll(':scope > .stack-list > .stmt')]
       expect(stmts.length).toBe(sketch.stmts.length)

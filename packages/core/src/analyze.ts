@@ -1,5 +1,6 @@
 import { compat, type Compat } from './compat'
 import { SOURCE_NAMES, type Chain, type OutName, type RefName, type Sketch, type SourceName, type Value } from './ir'
+import { activeSketch, disabledNodes, enableAll } from './disable'
 
 export interface ChainFacts {
   stmtId: string
@@ -42,6 +43,22 @@ export interface Description {
   settings: Record<string, number>
   /** will the exported text run in vanilla Hydra? (`compat(sketch)`; pass the audio source to `compat` yourself for the full answer) */
   compat: Compat
+  /**
+   * Switched-off nodes. Every other fact in this description is about what runs: disabled statements and modifiers are
+   * left out (they are comments in the exported text).
+   */
+  disabled: { stmts: string[]; calls: string[]; count: number }
+  /** facts that would be different with everything switched back on */
+  disabledEffects: DisabledEffects
+}
+
+export interface DisabledEffects {
+  /** chains that are what an output shows only because a later chain writing that output is disabled */
+  unshadowed: string[]
+  /** outputs whose visible chain would change: `now` is the chain shown, `ifEnabled` the one that would be */
+  winners: Partial<Record<OutName, { now?: string; ifEnabled?: string }>>
+  /** feedback (a chain reading its own output) that only exists with the disabled parts on */
+  feedbackOff: Array<{ chainId: string; output: OutName }>
 }
 
 function scanValue(v: Value, f: { outs: Set<OutName>; srcs: Set<SourceName>; vars: Set<string>; depth: number; audio: boolean; prev: boolean }, d: number) {
@@ -70,8 +87,24 @@ function scanChain(c: Chain, f: any, d: number) {
   }
 }
 
-/** Structure facts front-ends use to choose sensible default views. */
+/** Structure facts front-ends use to choose sensible default views. Disabled nodes are left out (see `disabled`). */
 export function describe(sketch: Sketch): Description {
+  const active = activeSketch(sketch)
+  const d = facts(active)
+  const off = disabledNodes(sketch)
+  const effects: DisabledEffects = { unshadowed: [], winners: {}, feedbackOff: [] }
+  if (active !== sketch) {
+    const all = facts(enableAll(sketch))
+    effects.unshadowed = d.chains.filter((c) => !c.shadowed && all.shadowed.includes(c.chainId)).map((c) => c.chainId)
+    for (const o of Object.keys(d.outputs) as OutName[]) {
+      if (d.outputs[o].winner !== all.outputs[o].winner) effects.winners[o] = { now: d.outputs[o].winner, ifEnabled: all.outputs[o].winner }
+    }
+    effects.feedbackOff = all.feedbackEdges.filter((e) => !d.feedbackEdges.some((x) => x.chainId === e.chainId && x.output === e.output))
+  }
+  return { ...d, compat: compat(sketch), disabled: { ...off, count: off.stmts.length + off.calls.length }, disabledEffects: effects }
+}
+
+function facts(sketch: Sketch): Omit<Description, 'compat' | 'disabled' | 'disabledEffects'> {
   const chains: ChainFacts[] = []
   const outputs: Description['outputs'] = {
     o0: { writers: [], shadowed: [] },
@@ -188,7 +221,6 @@ export function describe(sketch: Sketch): Description {
     usesCamera,
     usesPrev,
     settings,
-    compat: compat(sketch),
   }
 }
 

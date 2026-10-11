@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { canonicalSketch, describe as describeSketch, importText, toCode } from '@hydra-ipad/core'
+import { canonicalSketch, describe as describeSketch, enableAll, importText, toCode } from '@hydra-ipad/core'
 import { corpus } from '@hydra-ipad/core/corpus'
 import { graphToIR, irToGraph } from '../src/model'
 
@@ -15,8 +15,8 @@ describe('graph ↔ IR round trip over the corpus', () => {
       const g2 = irToGraph(r.sketch, r.meta)
       expect(g2.nodes.map((n) => n.id)).toEqual(g.nodes.map((n) => n.id))
       expect(g2.edges).toEqual(g.edges)
-      // every statement is a node or a chain of nodes
-      const d = describeSketch(sketch)
+      // every statement is a node or a chain of nodes (switched-off ones too; describe() leaves them out)
+      const d = describeSketch(enableAll(sketch))
       expect(g.nodes.filter((n) => n.kind === 'def').length).toBe(d.defs.length)
       expect(g.nodes.filter((n) => n.kind === 'raw').length).toBe(d.raws)
       expect(g.nodes.filter((n) => n.kind === 'comment').length).toBe(d.comments)

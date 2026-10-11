@@ -37,6 +37,7 @@ import { corpus } from '@hydra-ipad/core/corpus'
 import { CSS } from './styles'
 import { mountAudioLab, mountDiagnostics } from './diagnostics'
 import { mountMotionLab } from './motion-lab'
+import { mountPreviewsLab } from './previews-lab'
 
 applyAppBase()
 injectStyles('harness', CSS)
@@ -83,6 +84,7 @@ const audioTab = h('div', { class: 'tab', id: 'tab-audio' })
 const pluginsTab = h('div', { class: 'tab', id: 'tab-plugins' })
 const midiTab = h('div', { class: 'tab', id: 'tab-midi' })
 const motionTab = h('div', { class: 'tab', id: 'tab-motion' })
+const previewsTab = h('div', { class: 'tab', id: 'tab-previews' })
 const tabs = [
   ['code', 'Code', codeTab],
   ['knobs', 'Numbers', knobsTab],
@@ -91,6 +93,7 @@ const tabs = [
   ['plugins', 'Plugins', pluginsTab],
   ['midi', 'MIDI', midiTab],
   ['motion', 'Motion lab', motionTab],
+  ['previews', 'Previews', previewsTab],
 ] as const
 const tabBar = h('div', { class: 'tabs', role: 'tablist' })
 for (const [id, label, el] of tabs) {
@@ -102,13 +105,14 @@ for (const [id, label, el] of tabs) {
     }
     prefs.set('tab', id)
     if (id === 'knobs') renderKnobs()
+    previewsLab.setShown(id === 'previews')
   })
   tabBar.append(b)
 }
 const stage = h('div', { class: 'stage', id: 'stage' })
 const errorsEl = h('div', { class: 'errors', id: 'errors', 'aria-live': 'polite' })
 const main = h('div', { class: 'main' },
-  h('div', { class: 'panel' }, tabBar, h('div', { style: 'min-height:0;overflow:hidden;display:grid' }, codeTab, knobsTab, diagTab, audioTab, pluginsTab, midiTab, motionTab)),
+  h('div', { class: 'panel' }, tabBar, h('div', { style: 'min-height:0;overflow:hidden;display:grid' }, codeTab, knobsTab, diagTab, audioTab, pluginsTab, midiTab, motionTab, previewsTab)),
   h('div', { class: 'stage-wrap' }, stage, errorsEl),
 )
 const foot = h('div', { class: 'foot' })
@@ -129,6 +133,12 @@ mountMotionLab(motionTab, {
     renderKnobs()
   },
 })
+const previewsLab = mountPreviewsLab(previewsTab, {
+  runtime: () => rt,
+  sketch: () => sketch,
+  trusted: async () => trusted || !(await lib.needsTrust(sketch)),
+})
+let previewTimer: ReturnType<typeof setTimeout> | undefined
 midiTab.append(h('p', { class: 'status' }, 'Every preview on this page receives these messages through its Web MIDI stand-in, so hydra-midi sketches respond even where the browser has no Web MIDI (iPadOS Safari). Load the hydra-midi plugin (Plugins tab), then for example: await midi.start({ input: "*", channel: "*" }); osc(cc(1).range(1, 60)).out()'))
 
 // ------------------------------------------------------------------ plugins tab: manager + the functions each plugin added
@@ -174,8 +184,13 @@ function showError(e: RuntimeError) {
 let saveTimer: ReturnType<typeof setTimeout> | undefined
 let thumbTimer: ReturnType<typeof setTimeout> | undefined
 function persist(s: Sketch) {
+  const changed = s !== sketch
   sketch = s
   lib.autosave(s)
+  if (changed) {
+    clearTimeout(previewTimer)
+    previewTimer = setTimeout(() => previewsLab.refresh(), 400)
+  }
   clearTimeout(thumbTimer)
   thumbTimer = setTimeout(async () => {
     try {
@@ -317,7 +332,7 @@ async function startRuntime() {
   rt = createRuntime(stage, { isolation, audio, catalog, width: 960, height: 540 })
   rt.onError(showError)
   rt.onError((e) => e.kind === 'camera' && updateCameraBanner())
-  ;(window as any).__harness = { get rt() { return rt }, get sketch() { return sketch }, lib, audio, runNow, core }
+  ;(window as any).__harness = { get rt() { return rt }, get sketch() { return sketch }, lib, audio, runNow, core, previews: previewsLab }
   await rt.ready.catch((e) => showError({ kind: 'runtime', message: String(e.message ?? e), at: Date.now() }))
 }
 

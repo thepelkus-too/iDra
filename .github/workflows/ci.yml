@@ -33,6 +33,8 @@ jobs:
         run: node scripts/e2e-motion.mjs --skip-build
       - name: e2e number editor (tap, long-press ladder, glide, pads; every editor at 1180×820 and 820×1180)
         run: node scripts/e2e-numbers.mjs --skip-build
+      - name: e2e chunk previews and disabling (Previews lab, pool size, main output untouched, trust gate)
+        run: node scripts/e2e-previews.mjs --skip-build
       - name: iPad-viewport screenshots and metrics
         if: always()
         uses: actions/upload-artifact@v4

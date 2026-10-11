@@ -1,5 +1,6 @@
 import { catalog as defaultCatalog, type Catalog } from './catalog'
 import { walkChains, type Call, type Sketch, type Value } from './ir'
+import { activeSketch } from './disable'
 
 export type Severity = 'error' | 'warning' | 'info'
 export type ProblemCode =
@@ -13,6 +14,8 @@ export type ProblemCode =
   | 'bad-arg'
   | 'not-rendered'
   | 'empty-name'
+  /** enabled code uses a `def` that is switched off */
+  | 'uses-disabled'
 
 export interface Problem {
   severity: Severity
@@ -33,12 +36,14 @@ function checkValue(
   defined: Set<string>,
   allDefs: Set<string>,
   out: Problem[],
+  off: Set<string> = new Set(),
 ) {
   const push = (code: ProblemCode, message: string, severity: Severity = 'error') =>
     out.push({ severity, code, nodeId: call.id, message, arg: index })
   if (v.k === 'var') {
     if (!defined.has(v.name)) {
-      if (allDefs.has(v.name)) push('var-before-def', `"${v.name}" is used before it is defined`)
+      if (off.has(v.name) && !allDefs.has(v.name)) push('uses-disabled', `"${v.name}" is switched off`)
+      else if (allDefs.has(v.name)) push('var-before-def', `"${v.name}" is used before it is defined`)
       else push('unknown-var', `"${v.name}" is not defined in this sketch`)
     }
     return
@@ -75,8 +80,15 @@ function checkValue(
   }
 }
 
-/** Structural checks. Never throws. Unknown calls are warnings so a sketch that uses a not-yet-loaded plugin stays openable. */
-export function validate(sketch: Sketch, cat: Catalog = defaultCatalog): Problem[] {
+/**
+ * Structural checks. Never throws. Unknown calls are warnings so a sketch that uses a not-yet-loaded plugin stays openable.
+ * Disabled statements and modifiers are comments: they are not checked, and enabled code that uses a disabled `def` gets
+ * `uses-disabled`.
+ */
+export function validate(input: Sketch, cat: Catalog = defaultCatalog): Problem[] {
+  const sketch = activeSketch(input)
+  const off = new Set<string>()
+  if (sketch !== input) for (const s of input.stmts) if (s.k === 'def' && s.disabled) off.add(s.name)
   const out: Problem[] = []
   const allDefs = new Set<string>()
   for (const s of sketch.stmts) if (s.k === 'def') allDefs.add(s.name)
@@ -92,7 +104,7 @@ export function validate(sketch: Sketch, cat: Catalog = defaultCatalog): Problem
           const def = cat.get(call.fn)
           if (!def) {
             out.push({ severity: 'warning', code: 'unknown-function', nodeId: call.id, message: `unknown function "${call.fn}" (a plugin that is not loaded, or a typo)` })
-            call.args.forEach((a, i) => checkValue(a, call, i, undefined, cat, defined, allDefs, out))
+            call.args.forEach((a, i) => checkValue(a, call, i, undefined, cat, defined, allDefs, out, off))
             continue
           }
           const isGen = def.type === 'src'
@@ -105,7 +117,7 @@ export function validate(sketch: Sketch, cat: Catalog = defaultCatalog): Problem
               out.push({ severity: 'error', code: 'texture-missing', nodeId: call.id, message: `${call.fn}() needs a texture for "${inp.name}"`, arg: i })
             }
           })
-          call.args.forEach((a, i) => checkValue(a, call, i, def.inputs[i]?.type, cat, defined, allDefs, out))
+          call.args.forEach((a, i) => checkValue(a, call, i, def.inputs[i]?.type, cat, defined, allDefs, out, off))
         }
         if (!nested && s.k === 'chain' && chain.out === null) {
           out.push({ severity: 'info', code: 'not-rendered', nodeId: chain.id, message: 'this chain has no .out() so it is not rendered' })

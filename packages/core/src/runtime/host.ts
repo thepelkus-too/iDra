@@ -4,7 +4,7 @@ import { toRunnable } from '../codegen'
 import { importText } from '../parse'
 import { contentHash, type PluginRef, type Sketch, type Stmt } from '../ir'
 import type { AudioEngine } from '../audio'
-import type { ErrorKind, FrameToHost, HostToFrame, Transport } from './protocol'
+import type { ErrorKind, FrameMsg, FrameToHost, HostToFrame, Transport } from './protocol'
 import { Bridge } from './bridge'
 import { getScriptCache, ScriptCache, verifyIntegrity } from './script-cache'
 import { emitPluginLoaded } from '../plugins'
@@ -44,6 +44,21 @@ export interface RuntimeOptions {
    * `getMidiHub()`, so the on-screen controller and forwarded devices reach every preview. `null` turns forwarding off.
    */
   midi?: MidiHub | null
+  /**
+   * A preview runtime (see `PreviewPool`, docs/previews-runtime.md): Hydra does not animate by itself; `loop()` ticks it at
+   * a low frame rate and frames come back through `onFrame`. `numSources` (default 8) adds s4… for approximated outputs.
+   */
+  preview?: { numSources?: number }
+}
+
+export interface PreviewLoop {
+  running: boolean
+  /** frames per second (0.5–30) */
+  fps: number
+  /** output indices captured after each tick: [0] for one picture, [0, 1] for a before/after pair */
+  outputs: number[]
+  /** stop after this many frames (1 = one still picture) */
+  frames?: number
 }
 
 export interface RunOptions {
@@ -116,6 +131,23 @@ export interface Runtime {
   /** throw the frame away and start fresh (clears plugin-registered functions) */
   reset(): Promise<void>
   dispose(): void
+  /** current values of the live-parameter table (what `setLive` last sent, merged over the last run's) */
+  liveTable(): Record<string, number>
+  /** called with each batch of live values as it is sent to the frame (previews mirror the main runtime's numbers) */
+  onLive(cb: (table: Record<string, number>) => void): () => void
+  /**
+   * A small picture of output `of` (`o0`…`o3`) or of a source's current picture (`s0`…), as an ImageBitmap the caller
+   * owns (close it). Reads pixels back from the GPU: call it rarely (previews: about once a second).
+   */
+  snapshot(of: string, width: number, height: number): Promise<ImageBitmap>
+  /** preview runtimes: start, change or stop the frame loop */
+  loop(opts: PreviewLoop): void
+  /** set Hydra's `time` */
+  setTime(time: number): void
+  /** preview runtimes: show this picture in source `slot` (the bitmap is transferred); null clears it */
+  setImage(slot: string, bitmap: ImageBitmap | null): void
+  /** preview runtimes: each frame the loop captured (bitmaps in `outputs` order; listeners must not keep them after closing) */
+  onFrame(cb: (frame: FrameMsg) => void): () => void
 }
 
 const raf = (cb: () => void) => {
@@ -154,7 +186,7 @@ function iframeTransport(container: HTMLElement, html: string, allowCamera: bool
   return {
     element: iframe,
     transport: {
-      send: (m) => iframe.contentWindow?.postMessage(m, '*'),
+      send: (m, transfer) => iframe.contentWindow?.postMessage(m, '*', transfer ?? []),
       onMessage: (f) => (cb = f),
       dispose() {
         window.removeEventListener('message', onMsg)
@@ -169,14 +201,20 @@ function inlineTransport(container: HTMLElement, loadHydra: () => Promise<new (o
   let bridge: Bridge | undefined
   const defer = (f: () => void) => (typeof queueMicrotask === 'function' ? queueMicrotask(f) : void Promise.resolve().then(f))
   // structuredClone both ways: inline mode has exactly the same value semantics as the iframe
-  const clone = <T,>(x: T): T => structuredClone(x)
+  const clone = <T,>(x: T, transfer?: Transferable[]): T => (transfer?.length ? structuredClone(x, { transfer }) : structuredClone(x))
   const start = loadHydra().then((Hydra) => {
-    bridge = new Bridge({ win: window, container, post: (m) => defer(() => cb(clone(m))), Hydra })
+    bridge = new Bridge({ win: window, container, post: (m, transfer) => {
+      const c = clone(m, transfer)
+      defer(() => cb(c))
+    }, Hydra })
     defer(() => cb({ t: 'hello' }))
   })
   start.catch((e) => defer(() => cb({ t: 'fatal', message: `could not load hydra-synth: ${e?.message ?? e}` })))
   return {
-    send: (m) => void start.then(() => defer(() => bridge?.handle(clone(m)))),
+    send: (m, transfer) => {
+      const c = clone(m, transfer)
+      void start.then(() => defer(() => bridge?.handle(c)))
+    },
     onMessage: (f) => (cb = f),
     dispose: () => bridge?.dispose(),
   }
@@ -236,6 +274,8 @@ export function createRuntime(container: HTMLElement, opts: RuntimeOptions = {})
   let liveScheduled = false
 
   const unsubs: Array<() => void> = []
+  const liveListeners = new Set<(t: Record<string, number>) => void>()
+  const frameListeners = new Set<(f: FrameMsg) => void>()
 
   const emitError = (kind: ErrorKind, message: string) => {
     const e: RuntimeError = { kind, message, at: Date.now() }
@@ -250,7 +290,7 @@ export function createRuntime(container: HTMLElement, opts: RuntimeOptions = {})
     }
   }
 
-  const send = (m: HostToFrame) => transport?.send(m)
+  const send = (m: HostToFrame, transfer?: Transferable[]) => transport?.send(m, transfer)
   function request<T = unknown>(build: (id: number) => HostToFrame): Promise<T> {
     return new Promise<T>((resolve, reject) => {
       const id = nextId++
@@ -267,7 +307,18 @@ export function createRuntime(container: HTMLElement, opts: RuntimeOptions = {})
     switch (m.t) {
       case 'hello':
         helloSeen = true
-        send({ t: 'init', width, height, precision: opts.precision })
+        send(initMsg())
+        break
+      case 'frame':
+        for (const cb of [...frameListeners]) {
+          try {
+            cb(m)
+          } catch {
+            /* a listener's error never stops the loop */
+          }
+        }
+        for (const b of m.bitmaps) b.close?.()
+        send({ t: 'ack', seq: m.seq })
         break
       case 'ready':
         if (opts.audio) send({ t: 'audioSettings', settings: opts.audio.settings })
@@ -359,7 +410,10 @@ export function createRuntime(container: HTMLElement, opts: RuntimeOptions = {})
     }
     transport = t
     t.onMessage(onFrameMessage)
-    if (opts.transport) send({ t: 'init', width, height, precision: opts.precision })
+    if (opts.transport) send(initMsg())
+  }
+  function initMsg(): HostToFrame {
+    return { t: 'init', width, height, precision: opts.precision, ...(opts.preview ? { preview: { numSources: opts.preview.numSources ?? 8 } } : {}) }
   }
 
   function wireAudio() {
@@ -405,6 +459,13 @@ export function createRuntime(container: HTMLElement, opts: RuntimeOptions = {})
     if (Object.keys(table).length === 0) return
     stats.liveMessages++
     send({ t: 'live', table })
+    for (const cb of [...liveListeners]) {
+      try {
+        cb(table)
+      } catch {
+        /* ignore */
+      }
+    }
   }
   const queueLive = (table: Record<string, number>) => {
     let any = false
@@ -442,7 +503,7 @@ export function createRuntime(container: HTMLElement, opts: RuntimeOptions = {})
       if (!safe) rawText = input
       else sketch = importText(input).sketch
     } else sketch = input
-    knownDefs = new Set((sketch ?? importText(rawText!).sketch).stmts.flatMap((s) => (s.k === 'def' ? [s.name] : [])))
+    knownDefs = new Set((sketch ?? importText(rawText!).sketch).stmts.flatMap((s) => (s.k === 'def' && !s.disabled ? [s.name] : [])))
 
     let code: string
     let live: Record<string, number> = {}
@@ -654,6 +715,33 @@ export function createRuntime(container: HTMLElement, opts: RuntimeOptions = {})
     setMouse(x, y) {
       send({ t: 'mouse', x, y })
     },
+    liveTable() {
+      return { ...lastLive }
+    },
+    onLive(cb) {
+      liveListeners.add(cb)
+      return () => liveListeners.delete(cb)
+    },
+    async snapshot(of, w, h) {
+      await ready
+      return request<ImageBitmap>((id) => ({ t: 'snapshot', id, of, width: w, height: h }))
+    },
+    loop(o) {
+      void ready.then(() => send({ t: 'loop', running: o.running, fps: o.fps, outputs: o.outputs, frames: o.frames }))
+    },
+    setTime(t) {
+      void ready.then(() => send({ t: 'setTime', time: t }))
+    },
+    setImage(slot, bitmap) {
+      void ready.then(
+        () => send({ t: 'image', slot, bitmap }, bitmap ? [bitmap] : undefined),
+        () => bitmap?.close?.(),
+      )
+    },
+    onFrame(cb) {
+      frameListeners.add(cb)
+      return () => frameListeners.delete(cb)
+    },
     forwardPointer,
     reset,
     dispose() {
@@ -664,6 +752,8 @@ export function createRuntime(container: HTMLElement, opts: RuntimeOptions = {})
       pending.forEach((p) => clearTimeout(p.timer))
       pending.clear()
       errorListeners.clear()
+      liveListeners.clear()
+      frameListeners.clear()
     },
   }
   void helloSeen

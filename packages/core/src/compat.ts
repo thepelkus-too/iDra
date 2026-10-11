@@ -6,6 +6,7 @@
 import type { PluginRef, Sketch, Value } from './ir'
 import { activePrelude, findMotionPlugin, MOTION_PLUGIN_ID, motionRegistryEntry } from './motion-core'
 import { loadScriptUrls } from './plugin-id'
+import { activeSketch } from './disable'
 
 export interface Compat {
   vanilla: 'yes' | 'with-plugin' | 'no'
@@ -26,7 +27,9 @@ export interface CompatOptions {
 const AUDIO_RE = /\ba\.(fft|vol|show|setBins|setCutoff|setScale|setSmooth|hide)\b|\ba\d+\s*\(/
 const MOTION_USE_RE = /(^|[^\w.$])(knob|gate)\s*\(|\bhydraMotion\b/
 
-function codeOf(sketch: Sketch): string[] {
+function codeOf(input: Sketch): string[] {
+  // disabled code is a comment in the exported text: it needs nothing
+  const sketch = activeSketch(input)
   const out: string[] = []
   const val = (v: Value) => {
     if (v.k === 'fn' || v.k === 'js') out.push(v.src)

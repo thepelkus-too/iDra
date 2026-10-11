@@ -1,5 +1,6 @@
 import dagre from '@dagrejs/dagre'
 import type { Call, Chain, OutName, Sketch, Value } from './ir'
+import { activeSketch } from './disable'
 
 // Generic layered left-to-right layout for node-style UIs.
 //   nodes: one per Call, one per `def`, one per output (o0..o3) that is written or read, one per source (s0..s3) read,
@@ -15,6 +16,8 @@ export interface GraphNode {
   /** the stmt this node belongs to */
   stmtId?: string
   chainId?: string
+  /** switched off (the call, or its whole statement): drawn dimmed in place, never hidden (unless `disabled: 'skip'`) */
+  disabled?: boolean
   w: number
   h: number
 }
@@ -23,6 +26,8 @@ export interface GraphEdge {
   to: string
   /** which input of `to` (argument index) or -1 for the main signal flow */
   port: number
+  /** touches a disabled node: no signal flows along it */
+  disabled?: boolean
 }
 export interface Graph {
   nodes: GraphNode[]
@@ -36,6 +41,11 @@ export interface LayoutOptions {
   gapY?: number
   /** place sketch-level notes (raw/comment/setting/render) at the bottom */
   includeNotes?: boolean
+  /**
+   * Disabled statements and modifiers: `'show'` (default) keeps them in place, flagged `disabled` with their edges, so an
+   * editor can draw them dimmed where they were; `'skip'` lays out only what runs (the active sketch).
+   */
+  disabled?: 'show' | 'skip'
 }
 
 export interface Box {
@@ -59,7 +69,8 @@ export function srcNodeId(s: string) {
   return `src:${s}`
 }
 
-export function buildGraph(sketch: Sketch, opts: LayoutOptions = {}): Graph {
+export function buildGraph(input: Sketch, opts: LayoutOptions = {}): Graph {
+  const sketch = opts.disabled === 'skip' ? activeSketch(input) : input
   const W = opts.nodeWidth ?? 168
   const H = opts.nodeHeight ?? 64
   const nodes = new Map<string, GraphNode>()
@@ -73,23 +84,27 @@ export function buildGraph(sketch: Sketch, opts: LayoutOptions = {}): Graph {
     if (!nodes.has(srcNodeId(s))) addNode({ id: srcNodeId(s), kind: 'source', label: s, w: W * 0.6, h: H * 0.7 })
     return srcNodeId(s)
   }
-  const valueEdges = (call: Call, stmtId: string) => {
+  const valueEdges = (call: Call, stmtId: string, dis = false) => {
     call.args.forEach((a, i) => {
       if (a.k === 'ref') edges.push({ from: a.name.startsWith('o') ? ensureOut(a.name) : ensureSrc(a.name), to: call.id, port: i })
       else if (a.k === 'var') edges.push({ from: `def:${a.name}`, to: call.id, port: i })
       else if (a.k === 'tex') {
-        const last = addChain(a.chain, stmtId)
+        // a texture argument is switched off with the call that takes it
+        const last = addChain(a.chain, stmtId, dis)
         edges.push({ from: last, to: call.id, port: i })
       }
     })
   }
-  const addChain = (chain: Chain, stmtId: string): string => {
+  const off = new Set<string>()
+  const addChain = (chain: Chain, stmtId: string, stmtOff = false): string => {
     const calls = [chain.gen, ...chain.mods]
     let prev: string | undefined
     for (const c of calls) {
-      addNode({ id: c.id, kind: 'call', label: c.fn, stmtId, chainId: chain.id, w: W, h: H })
+      const dis = stmtOff || (c !== chain.gen && !!c.disabled)
+      if (dis) off.add(c.id)
+      addNode({ id: c.id, kind: 'call', label: c.fn, stmtId, chainId: chain.id, w: W, h: H, ...(dis ? { disabled: true } : {}) })
       if (prev) edges.push({ from: prev, to: c.id, port: -1 })
-      valueEdges(c, stmtId)
+      valueEdges(c, stmtId, dis)
       prev = c.id
     }
     return prev!
@@ -98,15 +113,16 @@ export function buildGraph(sketch: Sketch, opts: LayoutOptions = {}): Graph {
   for (const s of sketch.stmts) {
     switch (s.k) {
       case 'def': {
-        addNode({ id: `def:${s.name}`, kind: 'def', label: s.name, stmtId: s.id, w: W, h: H })
+        addNode({ id: `def:${s.name}`, kind: 'def', label: s.name, stmtId: s.id, w: W, h: H, ...(s.disabled ? { disabled: true } : {}) })
+        if (s.disabled) off.add(`def:${s.name}`)
         if (s.value.k === 'tex') {
-          const last = addChain(s.value.chain, s.id)
+          const last = addChain(s.value.chain, s.id, !!s.disabled)
           edges.push({ from: last, to: `def:${s.name}`, port: -1 })
         } else if (s.value.k === 'var') edges.push({ from: `def:${s.value.name}`, to: `def:${s.name}`, port: -1 })
         break
       }
       case 'chain': {
-        const last = addChain(s.chain, s.id)
+        const last = addChain(s.chain, s.id, !!s.disabled)
         const out = s.chain.out
         if (out !== null && out !== undefined) edges.push({ from: last, to: ensureOut(out), port: -1 })
         else if (out === undefined) edges.push({ from: last, to: ensureOut('o0'), port: -1 })
@@ -119,20 +135,24 @@ export function buildGraph(sketch: Sketch, opts: LayoutOptions = {}): Graph {
         if (opts.includeNotes !== false) addNode({ id: `comment:${s.id}`, kind: 'comment', label: s.text.split('\n')[0].slice(0, 28), stmtId: s.id, w: W, h: H * 0.8 })
         break
       case 'setting':
-        if (opts.includeNotes !== false) addNode({ id: `setting:${s.id}`, kind: 'setting', label: `${s.name} = ${s.v}`, stmtId: s.id, w: W, h: H * 0.6 })
+        if (opts.includeNotes !== false) addNode({ id: `setting:${s.id}`, kind: 'setting', label: `${s.name} = ${s.v}`, stmtId: s.id, w: W, h: H * 0.6, ...(s.disabled ? { disabled: true } : {}) })
         break
       case 'render':
-        if (opts.includeNotes !== false) addNode({ id: `render:${s.id}`, kind: 'render', label: `render(${s.target === 'all' ? '' : s.target})`, stmtId: s.id, w: W, h: H * 0.6 })
+        if (opts.includeNotes !== false) addNode({ id: `render:${s.id}`, kind: 'render', label: `render(${s.target === 'all' ? '' : s.target})`, stmtId: s.id, w: W, h: H * 0.6, ...(s.disabled ? { disabled: true } : {}) })
         break
       case 'source':
-        addNode({ id: srcNodeId(s.slot), kind: 'source', label: `${s.slot}.${s.init.kind}`, stmtId: s.id, w: W * 0.8, h: H * 0.7 })
+        // a disabled source statement does not replace an enabled one for the same slot
+        if (s.disabled && nodes.has(srcNodeId(s.slot))) break
+        addNode({ id: srcNodeId(s.slot), kind: 'source', label: `${s.slot}.${s.init.kind}`, stmtId: s.id, w: W * 0.8, h: H * 0.7, ...(s.disabled ? { disabled: true } : {}) })
         break
     }
   }
   // drop edges whose endpoints do not exist (var used but never defined)
   const list = [...nodes.values()]
   const ids = new Set(list.map((n) => n.id))
-  return { nodes: list, edges: edges.filter((e) => ids.has(e.from) && ids.has(e.to)) }
+  // an edge into or out of a disabled call carries nothing
+  const flagged = edges.map((e) => (off.has(e.to) || off.has(e.from) ? { ...e, disabled: true } : e))
+  return { nodes: list, edges: flagged.filter((e) => ids.has(e.from) && ids.has(e.to)) }
 }
 
 /** Layered left-to-right layout (dagre). Notes without edges are stacked below the graph. */

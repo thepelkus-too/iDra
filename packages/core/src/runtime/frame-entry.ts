@@ -8,7 +8,7 @@ const parentWin = window.parent
 const bridge = new Bridge({
   win: window,
   container: document.body,
-  post: (msg) => parentWin.postMessage(msg, '*'),
+  post: (msg, transfer) => parentWin.postMessage(msg, '*', transfer ?? []),
   Hydra: Hydra as any,
 })
 window.addEventListener('message', (ev: MessageEvent) => {

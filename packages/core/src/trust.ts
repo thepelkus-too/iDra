@@ -1,6 +1,7 @@
 import { contentHash, type Sketch } from './ir'
 import { parseKnob } from './motion-core'
 import { isSafeExpression } from './safe-expr'
+import { activeSketch } from './disable'
 import type { Value } from './ir'
 
 // "This sketch runs code. Run it?" — decides when the owner must say yes before a full run.
@@ -22,7 +23,9 @@ function unsafeValues(v: Value, out: Array<{ src: string }>) {
   }
 }
 
-export function riskyParts(sketch: Sketch): RiskyPart[] {
+/** The code that would run and needs approval. Disabled statements and modifiers never run, so they are not listed. */
+export function riskyParts(input: Sketch): RiskyPart[] {
+  const sketch = activeSketch(input)
   const parts: RiskyPart[] = []
   const mk = (nodeId: string | undefined, kind: RiskyPart['kind'], full: string, shown = full): RiskyPart => ({
     nodeId,
