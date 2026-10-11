@@ -82,10 +82,12 @@ the last `'drag'`) followed by `'end'`. Cancelling (Esc, `pointercancel`) puts t
   Enter (commit), Esc (cancel); − / + buttons for one step each.
 * *Pad*: "Bind to a pad", then the pad's mode and values (below).
 
-**The ladder.** Long-press a number (350 ms, 8 px slop) and it opens under the finger: rungs are powers of ten from about
-the hint's range down to its step (1 for integers; a step like 0.05 is the last rung itself), at most eight, starting on
-about a tenth of the range. Moving up or down picks a rung (40 px per rung, the highlighted one pulses on each change),
-moving left or right steps by it (24 px per step). The first step lands on the rung's grid (0.83 → 0.9), the value is
+**The ladder.** Long-press a number (350 ms, 8 px slop) and it opens under the finger: rungs are powers of ten from one
+decade above the hint's range down to one decade below its step (integers stop at 1; a step like 0.05 is a rung of its
+own), at most ten, starting on about a tenth of the range. Moving up or down picks a rung (40 px per rung, the highlighted
+one pulses on each change), moving left or right steps by it (24 px per step). Once the value has moved on a rung, that
+rung is locked: sliding up or down does nothing until the finger brings the value back to where the rung started, and
+then the rung follows the finger again. The keyboard (↑ ↓) is not locked. The first step lands on the rung's grid (0.83 → 0.9), the value is
 untouched until a full step, angles wrap, everything else clamps to the hint range widened to keep an out-of-range value
 reachable. Release commits one undo step; release without moving is the control's own long-press (Chain Stack's kind menu,
 the rack's knob menu) or, where there is none, the editor's Ladder tab. A move past the slop before 350 ms is the

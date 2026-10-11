@@ -13,27 +13,29 @@ export const LADDER_ROW_PX = 40
 export const LADDER_LONG_MS = 350
 export const LADDER_SLOP_PX = 8
 /** At most this many rungs. */
-const MAX_RUNGS = 8
+const MAX_RUNGS = 10
 
 const pow10 = (e: number) => +Math.pow(10, e).toPrecision(1)
 
 /**
- * The rungs for an input, largest first: powers of ten from about the hint's range down to its step (1 for integers).
- * A step that is not a power of ten (0.05) is the last rung itself. A value far outside the range adds rungs above it.
+ * The rungs for an input, largest first: powers of ten from one decade above the hint's range down to one decade below
+ * its step (integers stop at 1). A step that is not a power of ten (0.05) is a rung of its own. A value far outside the
+ * range adds rungs above it.
  */
 export function magnitudes(hint: Hint, value = 0): number[] {
   const step = hint.integer ? 1 : hint.step && hint.step > 0 ? hint.step : 0.01
+  const finest = hint.integer ? 1 : step / 10
   const range = Math.max(Math.abs(hint.max - hint.min), Math.abs(value) || 0, step)
-  const top = Math.floor(Math.log10(range) + 1e-9)
-  const bottom = Math.floor(Math.log10(step) + 1e-9)
+  const top = Math.floor(Math.log10(range) + 1e-9) + 1
   const out: number[] = []
-  for (let e = top; e >= bottom; e--) {
+  for (let e = top; ; e--) {
     const m = pow10(e)
-    if (m < step - 1e-12) break
+    if (m < finest * (1 - 1e-9)) break
     out.push(m)
   }
-  if (!out.length || Math.abs(out[out.length - 1] - step) > 1e-12 * Math.max(1, step)) {
-    if (!out.length || out[out.length - 1] > step) out.push(step)
+  if (!out.some((m) => Math.abs(m - step) <= 1e-12 * Math.max(1, step))) {
+    out.push(step)
+    out.sort((x, y) => y - x)
   }
   // keep the finest rungs when there are too many (very wide ranges)
   return out.length > MAX_RUNGS ? out.slice(out.length - MAX_RUNGS) : out
@@ -110,9 +112,15 @@ export function setRung(s: LadderState, rung: number, x: number): LadderState {
   return { ...s, rung: r, start: s.value, steps: 0, x0: x }
 }
 
-/** Feed a pointer position. Up = larger rungs (the list is drawn largest at the top). */
+/**
+ * Feed a pointer position. Up = larger rungs (the list is drawn largest at the top). Once the value has moved on a rung,
+ * the rung is locked: sliding up or down does nothing until the finger brings the value back to where that rung started.
+ */
 export function moveLadder(s: LadderState, x: number, y: number, hint: Hint, stepPx = LADDER_STEP_PX, rowPx = LADDER_ROW_PX): LadderState {
-  const rung = s.rung0 + Math.round((y - s.y0) / rowPx)
+  const locked = Math.trunc((x - s.x0) / stepPx) !== 0
+  // back where the rung started: the value is its start again before any rung change
+  if (!locked && s.steps !== 0) s = { ...s, steps: 0, value: s.start }
+  const rung = locked ? s.rung : s.rung0 + Math.round((y - s.y0) / rowPx)
   let n = setRung(s, rung, x)
   const steps = Math.trunc((x - n.x0) / stepPx)
   if (steps === n.steps) return n

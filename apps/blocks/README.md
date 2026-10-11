@@ -44,7 +44,7 @@ and `sum` are marked `TODO review`); plugin functions get a generic line naming 
 | **Reporters** | drag a reporter out of the palette into a slot or socket; drag it out of the slot to take it away (a wave leaves behind the number it was centred on) |
 | **Palette** | left flyout in landscape, bottom drawer in portrait; category tabs and search. Tap a block to add it where it makes sense (a hat as a new script, a stack block under the selected block, a cap on the selected script); hold for a "what does this do?" card |
 | **Numbers** | drag a round slot sideways to scrub (finer the further your finger is above or below); tap for the number editor (tabs **Keypad** with Glide, **Ladder**, **Pad**; the last tab is remembered); double-tap for the default |
-| **Ladder** | long-press a number (hold still ⅓ s), then without lifting: slide up or down to pick the step, left or right to change the value by it; let go to keep it (one undo step), Esc to cancel. Hold still and let go: the Ladder tab |
+| **Ladder** | long-press a number (hold still ⅓ s), then without lifting: slide up or down to pick the step, left or right to change the value by it (the step then stays put until you slide back to where you started); let go to keep it (one undo step), Esc to cancel. Hold still and let go: the Ladder tab |
 | **Pads** | in a number's Pad tab, **Bind to a pad**: the number becomes a hydra-motion knob played from a floating pad (hold, latch or trigger). ⇄ → **Pads** shows or hides them |
 | **Undo / redo** | two-finger tap / three-finger tap, the ↶ ↷ buttons, ⌘Z / ⇧⌘Z |
 | **Keyboard** | ⌘D duplicate, ⌫ delete, ⌘K palette, ⌘Enter run, Esc clear |

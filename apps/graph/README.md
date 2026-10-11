@@ -24,7 +24,7 @@ the other way round.
 | **Add a node** | ＋ Node opens the palette (grouped, searchable, recent and favourites; hold an item to make it a favourite). Tap an item to add it (after the selected node for modifiers), or drag it onto the canvas, onto a node (appended after it), onto a cable (spliced in) or onto an input |
 | **Add at a spot** | hold on empty canvas |
 | **Numbers** | drag sideways; the further your finger is above or below the slider, the finer the steps (Pencil is always fine); tap for the number editor (tabs **Keypad** with Glide, **Ladder**, **Pad**; the last tab is remembered); double-tap for the default |
-| **Ladder** | long-press a number (hold still ⅓ s), then without lifting: slide up or down to pick the step (100 … 0.1), left or right to change the value by it; let go to keep it (one undo step), Esc to cancel. Hold still and let go: the Ladder tab |
+| **Ladder** | long-press a number (hold still ⅓ s), then without lifting: slide up or down to pick the step (1000 … 0.01), left or right to change the value by it (the step then stays put until you slide back to where you started); let go to keep it (one undo step), Esc to cancel. Hold still and let go: the Ladder tab |
 | **Pads** | in a number's Pad tab, **Bind to a pad**: the number becomes a hydra-motion knob played from a floating pad (hold, latch or trigger). ⇄ → **Pads** shows or hides them |
 | **Undo / redo** | two-finger tap / three-finger tap, the ↶ ↷ buttons, ⌘Z / ⇧⌘Z |
 | **Keyboard** | ⌘D duplicate, ⌫ delete, ⌘K palette, ⌘A select all, ⌘Enter run, Esc clear |

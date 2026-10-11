@@ -7,23 +7,23 @@ const angle = { min: 0, max: 6.28, step: 0.01, wrap: true }
 const sides = { min: 3, max: 12, step: 1, integer: true }
 
 describe('magnitudes', () => {
-  it('go from about the range down to the step', () => {
-    expect(magnitudes(unit)).toEqual([1, 0.1, 0.01])
-    expect(magnitudes(freq)).toEqual([100, 10, 1, 0.1])
-    expect(magnitudes(angle)).toEqual([1, 0.1, 0.01])
+  it('go from a decade above the range down to a decade below the step', () => {
+    expect(magnitudes(unit)).toEqual([10, 1, 0.1, 0.01, 0.001])
+    expect(magnitudes(freq)).toEqual([1000, 100, 10, 1, 0.1, 0.01])
+    expect(magnitudes(angle)).toEqual([10, 1, 0.1, 0.01, 0.001])
   })
   it('stop at 1 for integers', () => {
-    expect(magnitudes(sides)).toEqual([1])
-    expect(magnitudes({ min: 0, max: 1000, step: 1, integer: true })).toEqual([1000, 100, 10, 1])
+    expect(magnitudes(sides)).toEqual([10, 1])
+    expect(magnitudes({ min: 0, max: 1000, step: 1, integer: true })).toEqual([10000, 1000, 100, 10, 1])
   })
-  it('end on a step that is not a power of ten', () => {
-    expect(magnitudes({ min: 0, max: 10, step: 0.05 })).toEqual([10, 1, 0.1, 0.05])
+  it('keep a step that is not a power of ten as a rung of its own', () => {
+    expect(magnitudes({ min: 0, max: 10, step: 0.05 })).toEqual([100, 10, 1, 0.1, 0.05, 0.01])
   })
-  it('grow for a value far outside the range, and keep at most eight rungs (the finest)', () => {
-    expect(magnitudes(unit, 2500)[0]).toBe(1000)
+  it('grow for a value far outside the range, and keep at most ten rungs (the finest)', () => {
+    expect(magnitudes(unit, 2500)[0]).toBe(10000)
     const m = magnitudes({ min: 0, max: 1e9, step: 0.001 })
-    expect(m.length).toBe(8)
-    expect(m[m.length - 1]).toBe(0.001)
+    expect(m.length).toBe(10)
+    expect(m[m.length - 1]).toBe(0.0001)
   })
   it('start about a tenth of the range', () => {
     expect(magnitudes(unit)[defaultRung(magnitudes(unit), unit)]).toBe(0.1)
@@ -82,21 +82,32 @@ describe('the gesture model', () => {
     s = moveLadder(s, 100 + LADDER_STEP_PX * 3, 300, unit)
     expect(s.value).toBe(1)
   })
-  it('sliding up picks a larger rung and re-bases the steps there', () => {
+  it('sliding up or down picks a rung before the value moves, and re-bases the steps there', () => {
     let s = openLadder(freq, 37.3, 100, 300) // starts on 10
     expect(s.mags[s.rung]).toBe(10)
-    s = moveLadder(s, 100 + LADDER_STEP_PX, 300, freq) // +10 → 40
-    expect(s.value).toBe(40)
-    s = moveLadder(s, 100 + LADDER_STEP_PX, 300 + LADDER_ROW_PX * 2, freq) // two rungs down: 0.1
+    s = moveLadder(s, 100, 300 + LADDER_ROW_PX * 2, freq) // two rungs down: 0.1
     expect(s.mags[s.rung]).toBe(0.1)
-    expect(s.value).toBe(40)
-    s = moveLadder(s, 100 + LADDER_STEP_PX * 3, 300 + LADDER_ROW_PX * 2, freq) // +2 × 0.1
-    expect(s.value).toBe(40.2)
-    s = moveLadder(s, 100 + LADDER_STEP_PX * 3, 300 - LADDER_ROW_PX, freq) // up to 100
-    expect(s.mags[s.rung]).toBe(100)
-    s = moveLadder(s, 100 + LADDER_STEP_PX * 2, 300 - LADDER_ROW_PX, freq) // one step left: down to the grid
-    expect(s.value).toBe(0)
+    expect(s.value).toBe(37.3)
+    s = moveLadder(s, 100 + LADDER_STEP_PX * 2, 300 + LADDER_ROW_PX * 2, freq) // +2 × 0.1
+    expect(s.value).toBe(37.5)
+    s = moveLadder(s, 100 + LADDER_STEP_PX * 2, 300 - LADDER_ROW_PX, freq) // locked: still 0.1
+    expect(s.mags[s.rung]).toBe(0.1)
+    expect(s.value).toBe(37.5)
+    s = moveLadder(s, 100 + LADDER_STEP_PX * 3, 300 - LADDER_ROW_PX, freq) // and still stepping by it
+    expect(s.value).toBe(37.6)
     expect(s.origin).toBe(37.3)
+  })
+  it('the rung unlocks when the value is back where the rung started', () => {
+    let s = openLadder(freq, 37.3, 100, 300)
+    s = moveLadder(s, 100 + LADDER_STEP_PX * 2, 300, freq) // 10s: 40, 50
+    expect(s.value).toBe(50)
+    s = moveLadder(s, 100 + LADDER_STEP_PX * 2, 300 - LADDER_ROW_PX, freq) // locked on 10
+    expect(s.mags[s.rung]).toBe(10)
+    s = moveLadder(s, 100 + 5, 300 - LADDER_ROW_PX, freq) // back to the start: 37.3, and the finger is a row up: 100
+    expect(s.value).toBe(37.3)
+    expect(s.mags[s.rung]).toBe(100)
+    s = moveLadder(s, 100 + 5 + LADDER_STEP_PX, 300 - LADDER_ROW_PX, freq) // one step of 100, onto its grid
+    expect(s.value).toBe(100)
   })
   it('keyboard: left/right step, up/down change the rung', () => {
     let s = openLadder(unit, 0.5, 0, 0)
@@ -111,6 +122,7 @@ describe('the gesture model', () => {
     s = keyLadder(s, 'up', unit)
     expect(s.mags[s.rung]).toBe(1)
     s = keyLadder(s, 'up', unit)
-    expect(s.mags[s.rung]).toBe(1)
+    s = keyLadder(s, 'up', unit)
+    expect(s.mags[s.rung]).toBe(10)
   })
 })

@@ -3,7 +3,8 @@
 //   node scripts/e2e-numbers.mjs [--skip-build] [--only stack,graph] [--shots <dir>]
 // Per editor and orientation:
 //   1. tap a number: the tabbed editor opens (Keypad / Ladder / Pad); the last tab is remembered
-//   2. long-press a number, then slide: the ladder steps by its rung, a slide down changes the rung, release = one undo step
+//   2. long-press a number, then slide: the ladder steps by its rung, a slide down changes the rung, the rung stays locked
+//      while the value has moved, release = one undo step
 //   3. the Ladder tab with a keyboard: arrows step, Enter commits one undo step, Esc cancels
 //   4. Glide: a typed target glides there frame by frame and lands as one undo step; Return glides back
 //   5. Pad: "Bind to a pad" writes a knob def and a reference; holding the pad changes the picture, letting go restores it
@@ -267,7 +268,7 @@ for (const vp of VIEWPORTS) {
         assert.equal(remembered, 'ladder')
       })
 
-      await step(`${tag}: long-press opens the ladder under the finger; steps of 0.1, then of 10; release is one undo step`, async () => {
+      await step(`${tag}: long-press opens the ladder under the finger; steps of 0.1, the rung locks until the value is back, then steps of 10; release is one undo step`, async () => {
         const sel = await mark(S, 'osc', 0)
         const p = await reach(S, sel)
         const v0 = await numArg(S, 'osc', 0)
@@ -298,15 +299,24 @@ for (const vp of VIEWPORTS) {
           await sleep(30)
         }
         const v1 = Number(await S.page.textContent('[data-testid=ladder-value]'))
-        // back up to the 10 rung, then one step right
+        // slide up while the value has moved: the rung stays locked on 0.1
         for (let y = yFine - 10; y > yCoarse; y -= 10) {
           await S.send('touchMove', [{ x: p.x + 54, y }])
           await sleep(30)
         }
         await S.send('touchMove', [{ x: p.x + 54, y: yCoarse }])
         await sleep(30)
+        const locked = await S.page.getAttribute('.ladder .rung.on', 'data-rung')
+        const vLocked = Number(await S.page.textContent('[data-testid=ladder-value]'))
+        // slide back to the start: the value returns, the rung unlocks and follows the finger up to 10
+        for (const dx of [46, 38, 30, 22, 14, 6]) {
+          await S.send('touchMove', [{ x: p.x + dx, y: yCoarse }])
+          await sleep(30)
+        }
+        const vBack = Number(await S.page.textContent('[data-testid=ladder-value]'))
         const onCoarse = await S.page.getAttribute('.ladder .rung.on', 'data-rung')
-        for (const dx of [62, 70, 78, 84]) {
+        // one step right on 10
+        for (const dx of [20, 30, 40, 52]) {
           await S.send('touchMove', [{ x: p.x + dx, y: yCoarse }])
           await sleep(30)
         }
@@ -316,15 +326,18 @@ for (const vp of VIEWPORTS) {
         await sleep(400)
         assert.equal(await S.page.locator('[data-testid=ladder]').count(), 0, 'ladder closes on release')
         assert.equal(onFine, '0.1', 'a slide down picks the finer rung')
-        assert.equal(onCoarse, '10', 'a slide up picks the coarser rung')
         assert.ok(Math.abs(v1 - (v0 + 2 * m1)) < 1e-9, `two steps of ${m1} from ${v0}: ${v1}`)
-        assert.ok(Math.abs(v2 - (Math.floor(v1 / m2 + 1e-9) + 1) * m2) < 1e-9, `then one step of ${m2}, onto its grid: ${v2}`)
+        assert.equal(locked, '0.1', 'the rung stays locked once the value has moved')
+        assert.equal(vLocked, v1, 'and the value with it')
+        assert.equal(vBack, v0, 'sliding back to the start returns the value')
+        assert.equal(onCoarse, '10', 'back at the start, a slide up picks the coarser rung')
+        assert.ok(Math.abs(v2 - (Math.floor(v0 / m2 + 1e-9) + 1) * m2) < 1e-9, `then one step of ${m2}, onto its grid: ${v2}`)
         assert.equal(await numArg(S, 'osc', 0), v2, 'the release commits')
         assert.equal(await history(S), h0 + 1, 'one undo step')
         assert.equal(await S.page.locator('[data-testid=number-editor]').count(), 0, 'a ladder gesture is not a tap')
         await undo(S)
         assert.equal(await numArg(S, 'osc', 0), v0, 'undo restores')
-        return `${v0} → ${v1} (±${m1}) → ${v2} (±${m2}), one undo step`
+        return `${v0} → ${v1} (±${m1}, rung locked) → back to ${vBack} → ${v2} (±${m2}), one undo step`
       })
 
       await step(`${tag}: Ladder tab with a keyboard: arrows step, Esc cancels, Enter commits one undo step`, async () => {
