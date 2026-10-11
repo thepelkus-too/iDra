@@ -13,13 +13,15 @@ and Vitest compile it with the editor's own `jsx: automatic, jsxImportSource: pr
 | `gestures.ts` | `TAP_SLOP`, `LONG_MS`, `usePress`, `isTextTarget`, `useTapGestures`, `useShortcuts`, `useLayout`, `useNarrow`, `History` | pointer-event helpers, two/three-finger undo/redo, ⌘Z/⌘Y/⌘Enter |
 | `Keypad.tsx` | `Keypad` | digits, `.`, `±`, ⌫, `×2 ÷2 −1 +1 +step`, OK, reset to default |
 | `NumSlider.tsx` | `NumSlider` | the horizontal number control of Patch Graph, Blocks and Rack |
-| `styles.ts` | `KIT_CSS` | popovers, sheets, toasts, HUD, keypad, number editor, ladder, pads |
+| `styles.ts` | `KIT_CSS` | popovers, sheets, toasts, HUD, keypad, number editor, ladder, pads, switched-off chunks, previews |
 | `host.ts` | `KitHost`, `setKitHost`, `kitHost`, `kitPrefs`, `useHost` | what the kit needs from the editor (see below) |
 | `field.ts` | `NumberField`, `Session`, `simpleField`, `hasLiveSlot`, `glideField`, `glideBack`, `returnValue` | a number as the editor describes it; one gesture = one undo step |
 | `ladder.ts`, `Ladder.tsx` | `magnitudes`, `ladderValue`, `moveLadder`, `keyLadder`, `LadderGesture`, `LadderLayer`, `LadderPanel` | the long-press ladder: pure math, the gesture, the floating column, the tab |
 | `glide.ts`, `easing.ts` | `parseDuration`, `startGlide`, `cancelGlide`, `EASINGS`, `EASE_PRESETS`, `ease`, `easePath` | frame-by-frame glides on an injectable clock; curve names from hydra-motion |
 | `NumberEditor.tsx` | `NumberEditor`, `openNumberEditor`, `loopValue`, `sketchBpm` | the tabbed popover every number opens |
 | `pads.ts`, `PadDock.tsx` | `bindToPad`, `unbindKnob`, `addPad`, `removePad`, `padsOf`, `livePads`, `withPads`, `padPress`, `padRelease`, `PadDock`, `PadStrip`, `PadEditor`, `padsTool`, `showPadDock` | knob binding, `meta.kit.pads`, the floating pads |
+| `DisableToggle.tsx` | `DisableToggle`, `disableAction` | switch a modifier or statement off and on (`//` comments in the code) |
+| `PreviewPeek.tsx` | `PreviewPeek`, `kitPreviewPool`, `disposeKitPreviewPool`, `peekMessage` | chunk previews: a thumbnail that expands, ≈ for approximate, A/B for before/after |
 
 ## How an editor adopts it
 
@@ -46,6 +48,7 @@ and Vitest compile it with the editor's own `jsx: automatic, jsxImportSource: pr
      invoke: (name, method, args) => ctx.runner?.rt?.invoke(name, method, args) ?? false,
      trusted: () => !!ctx.runner && !ctx.runner.trust.pending,
      approveOnce: () => (ctx.runner?.track(ctx.store.sketch), ctx.runner?.approveOnce()),
+     runtime: () => ctx.runner?.rt, // optional: chunk previews follow it (PreviewPeek)
    })
    ```
    and add `padsTool()` to the switcher's `extraTools` so "Pads" is in the ⇄ menu.
@@ -120,6 +123,29 @@ and `updatePad`. It holds view state only: `{ layout?: { [padId]: { x, y } }, do
 the dock and whether the dock is open. Sketches saved while pads lived in `meta.kit.pads` are still read and are
 written back as code on the next pad edit.
 
+## Switched-off chunks and chunk previews
+
+**Switching off.** `<DisableToggle id what? sketch? onChange?>` is a small `//` button for one modifier or statement
+(defaults: the kit host's sketch and `commit`). Tap switches it (an ordinary undoable edit); `aria-pressed` is true while
+it is off. When core's `canDisable` refuses (a generator, a call inside a texture argument, multi-line code, a comment, raw
+code) the button stays, dashed and `aria-disabled`: hover shows the reason (`title`), and a tap or a long-press shows it
+as a toast, with "Switch the whole thing off" when there is an enclosing statement or call to switch instead (iPad has
+no hover). Switching a `def` that other statements use switches them too, and a toast says so with Undo; switching a
+statement on switches on the defs it needs. Editors that draw their own control (a menu entry, a swipe) use
+`disableAction(sketch, id, what)` for the same rules without the button.
+
+**The look.** Put `.is-disabled` on the element of a switched-off node: dimmed (opacity .48, desaturated) and striped,
+never hidden; nested `.is-disabled` elements are not dimmed twice. `.disable-toggle` stays fully visible inside it.
+
+**Previews.** `<PreviewPeek spec pool? sketch? trusted? label?>` shows one chunk (core's `PreviewSpec`: `{ kind: 'prefix',
+chainId, upToCallId }` or `{ kind: 'diff', callId }`) as a 128×72 thumbnail. Tap expands it to 256×144 and animates it,
+even when previews are on demand; a diff shows "after" and, expanded, an A/B toggle. "≈" marks an approximate preview
+(the expanded peek lists why: it reads another output, `prev()` or a camera, seen through a copy of the main picture
+about once a second). Instead of a picture it says why there is none (untrusted, refused, failed). It pauses offscreen,
+follows the sketch and trust on every store change without restarting, and renders nothing while previews are off. All
+peeks share one pool, `kitPreviewPool()` (two runtimes; it follows `KitHost.runtime()`), unless given their own.
+docs/previews-runtime.md has what the pool does and costs.
+
 ## Reconciled when the copies were merged
 
 `Keypad`, `NumSlider`, `overlay` and `gestures` were byte-identical in Graph, Blocks and Rack; Chain Stack had its own copies.
@@ -162,6 +188,10 @@ and the history cap; make Rack's `keepOnUndo` an option), then the code drawer a
   one undo step on the live path and on the drag path, retargeting, cancel on another edit, return), the curves against the
   built hydra-motion's own `ease`, and the pad helpers (binding, names, nested calls, round trip, unbind, `livePads` after
   undo, press and release per mode, `loopValue`).
+* Unit, jsdom (`test/disable-preview.test.tsx`): `disableAction` (the `//` line and back, a refused generator with what
+  to switch instead, a def cascading both ways), `DisableToggle` (state, keyboard, the refusal's title) and `PreviewPeek`
+  on a fake pool (one preview per spec, expand = active, ≈ and its note, refusals, edits passed on, nothing while off,
+  closed on unmount). The real pool runs in `node scripts/e2e-previews.mjs` (docs/previews-runtime.md).
 * End to end (`node scripts/e2e-numbers.mjs`, in CI): each editor at 1180×820 and 820×1180 with real timed touches through
   the DevTools protocol: tap opens the tabbed editor and the tab is remembered; a 450 ms hold then a slide steps by 0.1,
   then by 10, and the release is one undo step; the Ladder tab from a keyboard; a glide to a typed target moves the picture

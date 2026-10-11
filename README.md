@@ -23,7 +23,7 @@ packages/core/            @hydra-ipad/core — no UI framework
   src/midi.ts midi-panel.ts runtime/midi-shim.ts  MIDI hub, on-screen controller, frame-side Web MIDI stand-in
   plugins/registry.json     curated plugin list (URLs checked against each project's README)
   src/switcher.ts about.ts update-toast.ts capabilities.ts storage.ts ui.ts
-  corpus/                   33 text-only sketches · src/corpus.ts   (import { corpus } from '@hydra-ipad/core/corpus')
+  corpus/                   35 text-only sketches · src/corpus.ts   (import { corpus } from '@hydra-ipad/core/corpus')
   vite-plugin.mjs           hydraApp() — shared vite config for every app
 apps/shell/               the ONLY PWA: launcher + library UI, manifest, root-scope service worker
 apps/harness/             canvas + textarea + randomize + numbers + Diagnostics + Audio lab + Plugins + MIDI + isolation toggle
