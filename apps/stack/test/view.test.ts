@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { describe as describeSketch, importText, toCode, withMeta, walkCalls, type Sketch } from '@hydra-ipad/core'
+import { describe as describeSketch, enableAll, importText, toCode, withMeta, walkCalls, type Sketch } from '@hydra-ipad/core'
 import { corpus } from '@hydra-ipad/core/corpus'
 import { APP, autoView, defaultActive, metaOf, reconcile, rowKind, stripOf } from '../src/view'
 
@@ -11,6 +11,8 @@ describe('autoView over the corpus', () => {
       const d = describeSketch(sketch)
 
       test('every statement is a row, in source order', () => {
+        // switched-off statements are rows too (describe() leaves them out)
+        const d = describeSketch(enableAll(sketch))
         expect(view.rows.map((r) => r.id)).toEqual(sketch.stmts.map((s) => s.id))
         expect(view.rows.map((r) => r.kind)).toEqual(sketch.stmts.map(rowKind))
         expect(view.rows.filter((r) => r.kind === 'chain').length).toBe(d.chains.length)

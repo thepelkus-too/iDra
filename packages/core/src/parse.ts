@@ -41,6 +41,8 @@ export interface ImportReport {
   totalChars: number
   unknownCalls: string[]
   parseFailed: boolean
+  /** commented-out code read back as disabled nodes: statements (`// osc().out()`) plus modifiers (`  // .rotate(1)`) */
+  revived: number
 }
 
 export interface ImportResult {
@@ -61,6 +63,16 @@ interface Ctx {
   defs: Set<string>
   unknown: Set<string>
   warnings: string[]
+  /** every comment of the text being parsed (positions in `code`) */
+  comments: acorn.Comment[]
+  revived: number
+  /**
+   * Set while converting a top-level statement that is directly followed by own-line comments holding only `.call(...)`
+   * fragments: a chain without `.out()` (or a def holding a chain) takes them as its trailing disabled modifiers, up to
+   * here. The converter that does so sets `absorbed` to the new end of the statement.
+   */
+  extendTo?: number
+  absorbed?: number
 }
 
 const slice = (c: Ctx, n: { start: number; end: number }) => c.code.slice(n.start, n.end)
@@ -207,7 +219,218 @@ function convertArg(n: Node, c: Ctx, expect: Expect, known = true): Value {
 }
 
 function convertDefValue(n: Node, c: Ctx): Value {
-  return convertArg(n, c, 'any')
+  const v = convertArg(n, c, 'any')
+  if (v.k !== 'tex') return v
+  // a def holding a chain is written one call per line too: its commented-out modifiers are disabled calls
+  const flat = flatten(n, c)
+  if (!flat || flat.mods.length !== v.chain.mods.length) return v
+  const mods: Call[] = []
+  let prevEnd = flat.gen.end
+  // def chains keep no per-call text: the def's own text is kept whole
+  const revive = (to: number) => {
+    for (const r of reviveCalls(c, prevEnd, to)) {
+      mods.push({ id: r.call.id, fn: r.call.fn, args: r.call.args, disabled: true })
+      prevEnd = r.end
+    }
+  }
+  flat.mods.forEach((m, i) => {
+    revive(m.dot!)
+    mods.push(v.chain.mods[i])
+    prevEnd = m.node.end
+  })
+  if (c.extendTo) {
+    revive(c.extendTo)
+    c.absorbed = prevEnd
+  }
+  return mods.length === v.chain.mods.length ? v : { ...v, chain: { ...v.chain, mods } }
+}
+
+// ---------------------------------------------------------------- revivable comments (disabled nodes)
+
+/** Shift every node position of a sub-parse by `by` so slices of the whole text keep working. */
+function shiftNodes(n: any, by: number): void {
+  if (!n || typeof n !== 'object') return
+  if (Array.isArray(n)) return n.forEach((x) => shiftNodes(x, by))
+  if (typeof n.start === 'number') n.start += by
+  if (typeof n.end === 'number') n.end += by
+  for (const k of Object.keys(n)) if (k !== 'start' && k !== 'end' && n[k] && typeof n[k] === 'object') shiftNodes(n[k], by)
+}
+
+interface RevivedCall {
+  call: Call
+  /** where the segment's text starts: the `//` for the first call of a comment line, else the call's dot */
+  start: number
+  dot: number
+  end: number
+}
+
+/**
+ * Commented-out modifiers in the gap [from, to) between two segments of a chain written one call per line: a `//` comment
+ * on a line of its own whose text parses in full as one or more `.call(...)` fragments (and nothing else) becomes
+ * disabled calls. Anything else (prose, a partial line, a trailing comment, an `.out(...)`) stays a comment in the gap.
+ */
+function reviveCalls(c: Ctx, from: number, to: number): RevivedCall[] {
+  const out: RevivedCall[] = []
+  for (const cm of c.comments) {
+    if (cm.type !== 'Line' || cm.start < from || cm.end > to) continue
+    const nl = c.code.lastIndexOf('\n', cm.start - 1)
+    if (nl < from || !/^[ \t]*$/.test(c.code.slice(nl + 1, cm.start))) continue
+    const lead = /^\s*/.exec(cm.value)![0].length
+    const dot = cm.start + 2 + lead
+    if (c.code[dot] !== '.') continue
+    const calls = parseFragments(c, dot, cm.end)
+    if (!calls) continue
+    c.revived += calls.length
+    // the first call of a line keeps its exact `//` lead; the others continue that comment line (lead '')
+    calls.forEach((r, i) => out.push({ ...r, start: i === 0 ? cm.start : r.start, call: { ...r.call, src: { text: '', hash: '', lead: i === 0 ? c.code.slice(cm.start, dot) : '' } } }))
+  }
+  return out
+}
+
+/** `.a(1).b(2)` at [dot, end) in full, as disabled calls, or undefined. */
+function parseFragments(c: Ctx, dot: number, end: number): RevivedCall[] | undefined {
+  let ast: Node
+  try {
+    ast = acorn.parse('_' + c.code.slice(dot, end), { ecmaVersion: 'latest', sourceType: 'script', preserveParens: true }) as unknown as Node
+  } catch {
+    return undefined
+  }
+  if (ast.body.length !== 1 || ast.body[0].type !== 'ExpressionStatement') return undefined
+  const st = ast.body[0]
+  if (st.expression.end !== st.end) return undefined // `;` would end the chain mid-way
+  shiftNodes(st, dot - 1)
+  const frags: Node[] = []
+  let e = st.expression
+  while (e.type === 'CallExpression' && !e.optional && e.callee.type === 'MemberExpression' && !e.callee.computed && !e.callee.optional && e.callee.property.type === 'Identifier') {
+    frags.unshift(e)
+    e = e.callee.object
+  }
+  if (e.type !== 'Identifier' || e.name !== '_' || e.start !== dot - 1 || !frags.length) return undefined
+  const res: RevivedCall[] = []
+  for (const f of frags) {
+    const name = f.callee.property.name as string
+    if (name === 'out' || c.cat.get(name)?.type === 'src') return undefined
+    const region = c.code.slice(f.callee.object.end, f.callee.property.start)
+    const d = f.callee.object.end + region.lastIndexOf('.')
+    const call = { ...convertCall(name, f, c), disabled: true }
+    res.push({ call, start: d, dot: d, end: f.end })
+  }
+  return res
+}
+
+const REVIVABLE: ReadonlyArray<Stmt['k']> = ['chain', 'def', 'source', 'setting', 'render']
+/** longest comment run tried line by line; longer runs are revived only as a whole */
+const MAX_SPLIT_LINES = 40
+
+/**
+ * A run of own-line `//` comments (consecutive lines) → the statements it stands for. Each maximal stretch of lines whose
+ * uncommented text parses in full as complete, recognised statements (chain, def, source, setting, render; each starting
+ * its line, one per line, optionally followed by a one-line trailing comment) becomes disabled statements; everything
+ * else stays comment statements. Raw code, prose and lines that only partly parse are never revived.
+ */
+function reviveRun(code: string, run: acorn.Comment[], before: string, c: Ctx): Stmt[] {
+  const texts = run.map((cm) => commentText(cm))
+  const contentStart = run.map((cm) => cm.start + 2 + (cm.value.startsWith(' ') ? 1 : 0))
+  const out: Stmt[] = []
+  let endT = -1 // end (in code) of the last stmt pushed
+  const beforeOf = (startT: number) => (endT < 0 ? before : code.slice(endT, startT))
+  const pushProse = (i: number, j: number) => {
+    if (j <= i) return
+    out.push(commentStmt(texts.slice(i, j).join('\n'), false, false, code.slice(run[i].start, run[j - 1].end), beforeOf(run[i].start)))
+    endT = run[j - 1].end
+  }
+  const tryRange = (i: number, j: number): Stmt[] | undefined => {
+    const lines = texts.slice(i, j)
+    const U = lines.join('\n')
+    if (!/^[ \t]*[A-Za-z_$]/.test(U)) return undefined
+    const uStart: number[] = []
+    let acc = 0
+    for (const l of lines) {
+      uStart.push(acc)
+      acc += l.length + 1
+    }
+    const lineOf = (u: number) => {
+      let k = 0
+      while (k + 1 < uStart.length && uStart[k + 1] <= u) k++
+      return k
+    }
+    const toT = (u: number) => {
+      const k = lineOf(u)
+      return contentStart[i + k] + (u - uStart[k])
+    }
+    const sub: Ctx = { code: U, cat: c.cat, defs: new Set(c.defs), unknown: new Set(), warnings: [], comments: [], revived: 0 }
+    let r: { stmts: Stmt[]; tail: string }
+    try {
+      r = importProgram(U, sub)
+    } catch {
+      return undefined
+    }
+    if (!r.stmts.length || !/^[ \t]*$/.test(r.tail)) return undefined
+    const res: Stmt[] = []
+    let u = 0
+    let prevT = -1
+    let prevKind: 'stmt' | 'trailing' | undefined
+    for (const st of r.stmts) {
+      const b = st.src!.before
+      const a = u + b.length
+      const e = a + st.src!.text.length
+      u = e
+      const isTrailing = st.k === 'comment' && !!st.trailing
+      if (isTrailing) {
+        if (prevKind !== 'stmt' || !/^[ \t]*$/.test(b) || st.src!.text.includes('\n')) return undefined
+        const startT = toT(a)
+        res.push({ ...st, src: { ...st.src!, text: code.slice(startT, toT(e)), before: code.slice(prevT, startT) } })
+        prevT = toT(e)
+        prevKind = 'trailing'
+        continue
+      }
+      if (!REVIVABLE.includes(st.k) || st.disabled) return undefined
+      // each statement starts its own line: the first one at the top of the stretch, the next ones one line apart
+      if (prevKind === undefined ? !/^[ \t]*$/.test(b) : !/^[ \t]*\n[ \t]*$/.test(b)) return undefined
+      const la = lineOf(a)
+      const startT = run[i + la].start
+      const endTpos = toT(e)
+      const text = code.slice(startT, endTpos)
+      // hash of the statement switched on (the `disabled` flag is not part of a statement's text hash)
+      const on = { ...st, src: undefined }
+      delete (on as { src?: unknown }).src
+      res.push({ ...st, disabled: true, src: { text, hash: contentHash(on), before: prevT < 0 ? '' : code.slice(prevT, startT) } })
+      prevT = endTpos
+      prevKind = 'stmt'
+    }
+    // the stretch ends with its last line (no blank comment lines after the last statement)
+    if (!/^[ \t]*$/.test(code.slice(prevT, run[j - 1].end))) return undefined
+    for (const d of sub.defs) c.defs.add(d)
+    for (const x of sub.unknown) c.unknown.add(x)
+    c.revived += sub.revived + res.filter((x) => x.k !== 'comment').length
+    return res
+  }
+  let p = 0
+  let i = 0
+  const n = run.length
+  while (i < n) {
+    let got: Stmt[] | undefined
+    let jj = 0
+    const tops = n > MAX_SPLIT_LINES ? (i === 0 ? [n] : []) : Array.from({ length: n - i }, (_, k) => n - k)
+    for (const j of tops) {
+      got = tryRange(i, j)
+      if (got) {
+        jj = j
+        break
+      }
+    }
+    if (!got) {
+      i++
+      continue
+    }
+    pushProse(p, i)
+    got[0] = { ...got[0], src: { ...got[0].src!, before: beforeOf(run[i].start) } }
+    out.push(...got)
+    endT = run[jj - 1].end
+    i = p = jj
+  }
+  pushProse(p, n)
+  return out
 }
 
 // ---------------------------------------------------------------- statements
@@ -294,18 +517,32 @@ function convertExpressionStatement(node: Node, c: Ctx): { stmt?: Stmt; chainSrc
     else return { why: 'out(expression)' }
   }
   const gen = convertCall(genName, flat.gen, c)
-  const mods = modCalls.map((m) => convertCall(m.name, m.node, c))
   // per-call source records so an edit to one call only rewrites that call
   gen.src = { text: slice(c, flat.gen), hash: contentHash({ fn: gen.fn, args: gen.args }) }
   const gaps: string[] = []
+  const mods: Call[] = []
+  // `start` is where the segment's text begins (the `//` of a revived modifier's comment line), `end` where it ends
   let prevEnd = flat.gen.end
-  modCalls.forEach((m, i) => {
-    mods[i].src = { text: c.code.slice(m.dot!, m.node.end), hash: contentHash({ fn: mods[i].fn, args: mods[i].args }) }
-    gaps.push(c.code.slice(prevEnd, m.dot!))
-    prevEnd = m.node.end
-  })
+  const take = (call: Call, start: number, dot: number, end: number) => {
+    call.src = { ...call.src, text: c.code.slice(dot, end), hash: contentHash({ fn: call.fn, args: call.args }) }
+    gaps.push(c.code.slice(prevEnd, start))
+    mods.push(call)
+    prevEnd = end
+  }
+  const reviveUpTo = (next: number) => {
+    for (const r of reviveCalls(c, prevEnd, next)) take(r.call, r.start, r.dot, r.end)
+  }
+  for (const m of modCalls) {
+    reviveUpTo(m.dot!)
+    take(convertCall(m.name, m.node, c), m.dot!, m.dot!, m.node.end)
+  }
+  if (!outCall && c.extendTo) {
+    reviveUpTo(c.extendTo)
+    c.absorbed = prevEnd
+  }
   const chainSrc: Chain['src'] = { gaps }
   if (outCall) {
+    reviveUpTo(outCall.dot!)
     gaps.push(c.code.slice(prevEnd, outCall.dot!))
     chainSrc.outText = c.code.slice(outCall.dot!, outCall.node.end)
     chainSrc.outHash = contentHash(out)
@@ -323,11 +560,22 @@ function convertDeclaration(node: Node, c: Ctx): Stmt | undefined {
   return { id: newId('s'), k: 'def', name: d.id.name, decl: node.kind, value }
 }
 
+/** An own-line comment that is nothing but `.call(...)` fragments (what a trailing disabled modifier looks like). */
+function fragmentLine(c: Ctx, cm: acorn.Comment): boolean {
+  if (cm.type !== 'Line') return false
+  const dot = cm.start + 2 + /^\s*/.exec(cm.value)![0].length
+  if (c.code[dot] !== '.') return false
+  const calls = parseFragments({ ...c, unknown: new Set() }, dot, cm.end)
+  return !!calls && /^\s*$/.test(c.code.slice(calls[calls.length - 1].end, cm.end))
+}
+
 function convertStatement(node: Node, c: Ctx, before: string): Stmt {
-  const text = slice(c, node)
+  c.absorbed = undefined
+  const nodeText = slice(c, node)
   const rawStmt = (why?: string): Stmt => {
-    if (why && why !== 'expression' && why !== 'call') c.warnings.push(`kept as raw code (${why}): ${text.slice(0, 60).replace(/\s+/g, ' ')}`)
-    return srcFor(c, { id: newId('s'), k: 'raw', code: text }, text, before)
+    c.absorbed = undefined
+    if (why && why !== 'expression' && why !== 'call') c.warnings.push(`kept as raw code (${why}): ${nodeText.slice(0, 60).replace(/\s+/g, ' ')}`)
+    return srcFor(c, { id: newId('s'), k: 'raw', code: nodeText }, nodeText, before)
   }
   let stmt: Stmt | undefined
   let why: string | undefined
@@ -344,7 +592,7 @@ function convertStatement(node: Node, c: Ctx, before: string): Stmt {
     why = 'internal: ' + (err as Error).message
   }
   if (!stmt) return rawStmt(why)
-  return srcFor(c, stmt, text, before)
+  return srcFor(c, stmt, c.code.slice(node.start, Math.max(node.end, c.absorbed ?? 0)), before)
 }
 
 function commentStmt(text: string, block: boolean, trailing: boolean, raw: string, before: string): Stmt {
@@ -370,7 +618,9 @@ function importProgram(code: string, c: Ctx, base = 0): { stmts: Stmt[]; tail: s
     onComment: comments,
   }) as unknown as Node
   const saved = c.code
+  const savedComments = c.comments
   c.code = code
+  c.comments = comments
   const stmtItems: Item[] = (ast.body as Node[]).map((n) => ({ start: n.start, end: n.end, node: n }))
   const inside = (cm: acorn.Comment) => stmtItems.some((s) => cm.start >= s.start && cm.end <= s.end)
   const items: Item[] = [...stmtItems, ...comments.filter((cm) => !inside(cm)).map((cm) => ({ start: cm.start, end: cm.end, comment: cm }))]
@@ -383,9 +633,24 @@ function importProgram(code: string, c: Ctx, base = 0): { stmts: Stmt[]; tail: s
     const it = items[i]
     const before = code.slice(pos, it.start)
     if (it.node) {
+      // own-line comments right after it that hold only `.call(...)` fragments may be its trailing disabled modifiers
+      let ext = it.end
+      let k = i + 1
+      if (!code.slice(it.start, it.end).trimEnd().endsWith(';')) {
+        while (k < items.length) {
+          const nx = items[k]
+          if (!nx.comment || !/^\r?\n[ \t]*$/.test(code.slice(ext, nx.start)) || !fragmentLine(c, nx.comment)) break
+          ext = nx.end
+          k++
+        }
+      }
+      c.extendTo = ext > it.end ? ext : undefined
       stmts.push(convertStatement(it.node, c, before))
-      pos = it.end
+      c.extendTo = undefined
+      pos = Math.max(it.end, c.absorbed ?? 0)
+      c.absorbed = undefined
       i++
+      while (i < items.length && items[i].start < pos) i++
       continue
     }
     const cm = it.comment!
@@ -399,23 +664,28 @@ function importProgram(code: string, c: Ctx, base = 0): { stmts: Stmt[]; tail: s
     // group consecutive own-line `//` comments (single newline apart)
     let lastEnd = it.end
     const lines = [commentText(cm)]
+    const run = [cm]
     let j = i + 1
     if (!trailing) {
       while (j < items.length) {
         const nx = items[j]
         if (!nx.comment || nx.comment.type !== 'Line') break
         const gap = code.slice(lastEnd, nx.start)
-        if (!/^\n[ \t]*$/.test(gap)) break
+        if (!/^\r?\n[ \t]*$/.test(gap)) break
         lines.push(commentText(nx.comment))
+        run.push(nx.comment)
         lastEnd = nx.end
         j++
       }
     }
-    stmts.push(commentStmt(lines.join('\n'), false, trailing, code.slice(it.start, lastEnd), before))
+    // commented-out code becomes disabled statements; prose stays a comment
+    if (!trailing) stmts.push(...reviveRun(code, run, before, c))
+    else stmts.push(commentStmt(lines.join('\n'), false, trailing, code.slice(it.start, lastEnd), before))
     pos = lastEnd
     i = j
   }
   c.code = saved
+  c.comments = savedComments
   void base
   return { stmts, tail: code.slice(pos) }
 }
@@ -432,7 +702,7 @@ function detectSemi(stmts: Stmt[]): boolean {
 }
 
 function emptyReport(): ImportReport {
-  return { statements: 0, chains: 0, notRendered: 0, defs: 0, settings: 0, sources: 0, renders: 0, comments: 0, raw: 0, rawChars: 0, totalChars: 0, unknownCalls: [], parseFailed: false }
+  return { statements: 0, chains: 0, notRendered: 0, defs: 0, settings: 0, sources: 0, renders: 0, comments: 0, raw: 0, rawChars: 0, totalChars: 0, unknownCalls: [], parseFailed: false, revived: 0 }
 }
 
 function rawFallback(code: string, ctxWarnings: string[], why: string): { stmts: Stmt[]; tail: string } {
@@ -450,7 +720,7 @@ export function importText(text: string, opts: ImportOptions = {}): ImportResult
   // text is kept so an untouched sketch exports byte for byte
   const prelude = splitPrelude(text)
   const code = prelude ? prelude.rest : text
-  const c: Ctx = { code, cat: opts.catalog ?? defaultCatalog, defs: new Set(), unknown: new Set(), warnings: [] }
+  const c: Ctx = { code, cat: opts.catalog ?? defaultCatalog, defs: new Set(), unknown: new Set(), warnings: [], comments: [], revived: 0 }
   const report = emptyReport()
   let result: { stmts: Stmt[]; tail: string }
   try {
@@ -487,7 +757,7 @@ export function importText(text: string, opts: ImportOptions = {}): ImportResult
     switch (s.k) {
       case 'chain':
         report.chains++
-        if (s.chain.out === null) report.notRendered++
+        if (s.chain.out === null && !s.disabled) report.notRendered++
         break
       case 'def': report.defs++; break
       case 'setting': report.settings++; break
@@ -498,6 +768,7 @@ export function importText(text: string, opts: ImportOptions = {}): ImportResult
     }
   }
   report.unknownCalls = [...c.unknown].sort()
+  report.revived = report.parseFailed ? 0 : c.revived
   if (report.notRendered) c.warnings.push(`${report.notRendered} chain(s) have no .out() and are not rendered`)
   if (report.unknownCalls.length) c.warnings.push(`unknown function(s): ${report.unknownCalls.join(', ')}`)
   return { sketch, warnings: c.warnings, report }

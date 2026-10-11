@@ -442,7 +442,7 @@ export function createRuntime(container: HTMLElement, opts: RuntimeOptions = {})
       if (!safe) rawText = input
       else sketch = importText(input).sketch
     } else sketch = input
-    knownDefs = new Set((sketch ?? importText(rawText!).sketch).stmts.flatMap((s) => (s.k === 'def' ? [s.name] : [])))
+    knownDefs = new Set((sketch ?? importText(rawText!).sketch).stmts.flatMap((s) => (s.k === 'def' && !s.disabled ? [s.name] : [])))
 
     let code: string
     let live: Record<string, number> = {}
