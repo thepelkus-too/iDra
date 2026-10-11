@@ -70,6 +70,35 @@ export function updatePad(sketch: Sketch, id: string, patch: Partial<PadConfig>)
   )
 }
 
+/**
+ * Another pad on the same knob (pads stack: each has its own hold id). It copies the last pad's mode, times and curve and
+ * goes to `value` (default: the knob's base, so a row of Trigger pads can always jump back).
+ */
+export function addPad(sketch: Sketch, knob: string, value?: number): { sketch: Sketch; pad?: PadConfig } {
+  const mine = padsOf(sketch).filter((p) => p.knob === knob)
+  const last = mine[mine.length - 1]
+  const base = knobBase(sketch, knob)
+  if (!last || base === undefined) return { sketch }
+  const pad: PadConfig = {
+    ...last,
+    id: `pad-${knob}-${Date.now().toString(36)}-${mine.length}`,
+    label: `${last.label.replace(/ \d+$/, '')} ${mine.length + 1}`,
+    value: value ?? base,
+    value2: undefined,
+    x: undefined,
+    y: undefined,
+  }
+  return { sketch: withPads(sketch, [...padsOf(sketch), pad]), pad }
+}
+
+/** Remove one pad (the knob and its other pads stay). */
+export function removePad(sketch: Sketch, id: string): Sketch {
+  return withPads(
+    sketch,
+    padsOf(sketch).filter((p) => p.id !== id),
+  )
+}
+
 // ---------------------------------------------------------------- binding
 
 /** Globals a knob must never shadow: a bare `speed = knob(1)` would replace Hydra's own `speed`. */

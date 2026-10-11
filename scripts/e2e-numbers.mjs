@@ -437,6 +437,47 @@ for (const vp of VIEWPORTS) {
         return `${knob}: Δ held ${diff(before, held).toFixed(1)}, Δ released ${diff(before, after).toFixed(1)}`
       })
 
+      await step(`${tag}: two Trigger pads on one knob are presets: one jumps away and stays, the other jumps back`, async () => {
+        await tap(S, `[data-testid="pad-edit-${knob}"]`)
+        await S.page.waitForSelector('[data-testid=pad-editor]')
+        await tap(S, '[data-testid=pad-add]')
+        await S.page.waitForFunction((n) => document.querySelectorAll('[data-testid=pad-editor] .pe-pad').length === n, 2, { timeout: 3000 })
+        // both pads Trigger: the first goes to its value, the new one (added at the knob's base) goes back
+        for (const i of [0, 1]) {
+          const sel = await S.page.locator('[data-testid=pad-editor] .pe-pad').nth(i).locator('[data-testid=pad-mode-trigger]').evaluate((el) => {
+            document.querySelectorAll('[data-e2e-t]').forEach((e) => e.removeAttribute('data-e2e-t'))
+            el.setAttribute('data-e2e-t', '')
+            return '[data-e2e-t]'
+          })
+          await tap(S, sel)
+        }
+        await S.page.locator('.overlays .scrim:not(.clear)').last().dispatchEvent('pointerdown')
+        await sleep(300)
+        const pads = await evalApp(S, (A) => A.store.sketch.meta.kit.pads.map((p) => [p.knob, p.mode, p.value]))
+        assert.equal(pads.length, 2)
+        assert.deepEqual(pads.map((p) => p[1]), ['trigger', 'trigger'])
+        const dock = S.page.locator(`.paddock [data-testid="pad-${knob}"]`)
+        assert.equal(await dock.count(), 2, 'two pads in the dock')
+        const at = async (i) => {
+          const b = await dock.nth(i).boundingBox()
+          return { x: b.x + b.width / 2, y: b.y + b.height / 2 }
+        }
+        const press = async (i) => {
+          await S.send('touchStart', [await at(i)])
+          await sleep(80)
+          await S.send('touchEnd', [])
+          await sleep(700)
+        }
+        const base = await grabRetry(S)
+        await press(0)
+        const away = await grabRetry(S)
+        await press(1)
+        const back = await grabRetry(S)
+        assert.ok(diff(base, away) > 4, `the first pad jumps and stays after release (${diff(base, away).toFixed(2)})`)
+        assert.ok(diff(base, back) < 2, `the second pad jumps back to the base (${diff(base, back).toFixed(2)})`)
+        return `${JSON.stringify(pads)}; Δ away ${diff(base, away).toFixed(1)}, Δ back ${diff(base, back).toFixed(1)}`
+      })
+
       if (vp.name === 'landscape') {
         await step(`${tag}: export self-contained runs in a plain hydra-synth page; the knob still plays`, async () => {
           exported = await evalApp(S, (A) => A.core.exportWithPrelude(A.store.sketch))

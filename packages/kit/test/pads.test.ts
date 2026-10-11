@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { findMotionPlugin, importText, knobDefs, toCode, walkCalls, withMeta, type Sketch } from '@hydra-ipad/core'
-import { bindToPad, knobBase, knobNameFor, livePads, padPress, padRelease, padsOf, setKnobBase, unbindKnob, updatePad, withKitMeta } from '../src/pads'
+import { addPad, bindToPad, removePad, knobBase, knobNameFor, livePads, padPress, padRelease, padsOf, setKnobBase, unbindKnob, updatePad, withKitMeta } from '../src/pads'
 import { loopValue } from '../src/NumberEditor'
 import { setArg } from '@hydra-ipad/core'
 
@@ -69,6 +69,22 @@ describe('unbind and base', () => {
     expect(livePads(undone)).toEqual([])
     expect(livePads(r.sketch).length).toBe(1)
     expect((r.sketch.meta as Record<string, unknown>).graph).toEqual({ x: 1 })
+  })
+  it('several pads per knob: add copies the last pad, goes to the base, and has its own id; remove keeps the others', () => {
+    const s0 = sk('osc(20, 0.1, 0.8).out()')
+    const r = bindToPad(s0, callId(s0, 'osc'), 2, 0.8, { label: 'osc offset' })!
+    const t = updatePad(r.sketch, r.pad.id, { mode: 'trigger', value: 3 })
+    const a = addPad(t, r.knob)
+    expect(a.pad).toEqual(expect.objectContaining({ knob: r.knob, mode: 'trigger', value: 0.8, label: 'osc offset 2' }))
+    expect(a.pad!.id).not.toBe(r.pad.id)
+    const b = addPad(a.sketch, r.knob, 1.5)
+    expect(padsOf(b.sketch).map((p) => [p.label, p.value])).toEqual([['osc offset', 3], ['osc offset 2', 0.8], ['osc offset 3', 1.5]])
+    const c = removePad(b.sketch, a.pad!.id)
+    expect(padsOf(c).map((p) => p.value)).toEqual([3, 1.5])
+    expect(knobDefs(c).map((k) => k.name)).toEqual([r.knob])
+    // unbinding drops every pad of the knob
+    expect(padsOf(unbindKnob(c, r.knob))).toEqual([])
+    expect(addPad(c, 'nope').pad).toBeUndefined()
   })
   it('updatePad and withKitMeta keep the rest of meta.kit', () => {
     const s0 = sk('osc().rotate(0.3).out()\n')

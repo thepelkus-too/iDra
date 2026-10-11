@@ -8,12 +8,12 @@ import type { NumberField } from './field'
 import { kitHost, useHost, type KitHost } from './host'
 import { NumSlider } from './NumSlider'
 import { closePopover, openSheet, toast } from './overlay'
-import { bindToPad, kitMeta, knobBase, livePads, padPress, padRelease, padsOf, setKnobBase, unbindKnob, updatePad, withKitMeta, type PadConfig, type PadMode } from './pads'
+import { addPad, bindToPad, kitMeta, knobBase, livePads, padPress, padRelease, padsOf, removePad, setKnobBase, unbindKnob, updatePad, withKitMeta, type PadConfig, type PadMode } from './pads'
 
 const MODES: Array<{ id: PadMode; label: string; hint: string }> = [
   { id: 'hold', label: 'Hold', hint: 'press goes to the value and stays; release glides back' },
   { id: 'latch', label: 'Latch', hint: 'each press toggles between two values' },
-  { id: 'trigger', label: 'Trigger', hint: 'each press glides to the value' },
+  { id: 'trigger', label: 'Trigger', hint: 'each press glides to the value and it stays there: add more pads for a row of presets' },
 ]
 const TIME_HINT = { min: 0, max: 4, step: 0.01 }
 
@@ -122,9 +122,17 @@ export function PadEditor({ knob }: { knob: string }) {
           </div>
           <div class="pe-try">
             <Pad pad={p} host={h} base={base} />
+            {pads.length > 1 && (
+              <button type="button" class="btn sm" data-testid="pad-remove" aria-label={`Remove the ${p.label} pad`} onClick={() => edit(h, (s) => removePad(s, p.id), true)}>
+                Remove pad
+              </button>
+            )}
           </div>
         </div>
       ))}
+      <button type="button" class="btn wide" data-testid="pad-add" onClick={() => edit(h, (s) => addPad(s, knob).sketch, true)}>
+        ＋ Add a pad for {knob}
+      </button>
       <div class="actions">
         <button type="button" class="btn" data-testid="pad-show" onClick={() => showPadDock(true)}>
           Show pads

@@ -83,7 +83,7 @@ export const KIT_CSS = `
 .pe-modes{display:flex}
 .pe-modes button{flex:1}
 .pe-hint{color:var(--hi-dim);font-size:12px}
-.pe-try{display:flex;justify-content:center}
+.pe-try{display:flex;justify-content:center;align-items:center;gap:12px}
 .pe-try .pad{width:140px;height:72px}
 .pad{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;width:100%;height:76px;border-radius:14px;border:2px solid var(--hi-line);background:#1b2028;color:var(--hi-text);touch-action:none;-webkit-user-select:none;user-select:none;padding:4px 6px}
 .pad b{font-size:14px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
