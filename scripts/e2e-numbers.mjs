@@ -441,16 +441,23 @@ for (const vp of VIEWPORTS) {
         await tap(S, `[data-testid="pad-edit-${knob}"]`)
         await S.page.waitForSelector('[data-testid=pad-editor]')
         await tap(S, '[data-testid=pad-add]')
-        await S.page.waitForFunction((n) => document.querySelectorAll('[data-testid=pad-editor] .pe-pad').length === n, 2, { timeout: 3000 })
-        // both pads Trigger: the first goes to its value, the new one (added at the knob's base) goes back
-        for (const i of [0, 1]) {
-          const sel = await S.page.locator('[data-testid=pad-editor] .pe-pad').nth(i).locator('[data-testid=pad-mode-trigger]').evaluate((el) => {
-            document.querySelectorAll('[data-e2e-t]').forEach((e) => e.removeAttribute('data-e2e-t'))
-            el.setAttribute('data-e2e-t', '')
-            return '[data-e2e-t]'
-          })
-          await tap(S, sel)
-        }
+        await S.page.waitForFunction((n) => document.querySelectorAll('[data-testid=pad-editor] .pe-slot').length === n, 2, { timeout: 3000 })
+        // one pad's settings at a time: the new pad (added at the knob's base) is the one shown; ✎ on the other switches to it
+        assert.equal(await S.page.locator('[data-testid=pad-editor] .pe-pad').count(), 1, 'one pad editor at a time')
+        const shown = () => S.page.locator('[data-testid=pad-editor] .pe-pad').getAttribute('data-pad')
+        const ids = await S.page.locator('[data-testid=pad-editor] .pe-slot').evaluateAll((els) => els.map((e) => e.dataset.pad))
+        assert.equal(await shown(), ids[1], 'the added pad is the one being edited')
+        await tap(S, '[data-testid=pad-editor] [data-testid=pad-mode-trigger]')
+        await tap(S, '[data-testid=pad-editor] [data-testid=pad-pick]')
+        await S.page.waitForFunction((id) => document.querySelector('[data-testid=pad-editor] .pe-pad')?.getAttribute('data-pad') === id, ids[0], { timeout: 3000 })
+        await tap(S, '[data-testid=pad-editor] [data-testid=pad-mode-trigger]')
+        // the × removes a pad at once and Undo in its toast puts it back
+        assert.equal(await S.page.locator('[data-testid=pad-editor] [data-testid=pad-remove]').count(), 2)
+        await tap(S, '[data-testid=pad-editor] .pe-slot:nth-child(2) [data-testid=pad-remove]')
+        await S.page.waitForFunction(() => document.querySelectorAll('[data-testid=pad-editor] .pe-slot').length === 1, null, { timeout: 3000 })
+        await S.page.getByRole('button', { name: 'Undo', exact: true }).last().click()
+        await S.page.waitForFunction(() => document.querySelectorAll('[data-testid=pad-editor] .pe-slot').length === 2, null, { timeout: 3000 })
+        await S.page.screenshot({ path: join(shots, `${appName}-${vp.name}-5-pad-editor.png`) })
         await S.page.locator('.overlays .scrim:not(.clear)').last().dispatchEvent('pointerdown')
         await sleep(300)
         const pads = await evalApp(S, (A) => A.store.sketch.meta.kit.pads.map((p) => [p.knob, p.mode, p.value]))

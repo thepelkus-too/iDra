@@ -97,8 +97,9 @@ control's own drag (scrub, knob turn); the ladder never fires then. While the la
 requires) before the first statement that uses the call, replaces the argument with a reference to it, adds the
 hydra-motion plugin (`withMotion`), and adds a Hold pad. Pad modes: **Hold** (press glides to the value over *attack*,
 release glides back over *release*), **Latch** (each press toggles between two values), **Trigger** (press glides to the
-value and stays). A knob can have several pads ("＋ Add a pad" in its pad editor; each new pad copies the last one's
-mode, times and curve and goes to the knob's base), so a few Trigger pads make a row of presets and two Hold pads can push
+value and stays). A knob can have several pads (the ＋ tile in its pad editor; each new pad copies the last one's
+mode, times and curve and goes to the knob's base). The editor shows the knob's pads in a row you can play, and the
+settings of one pad at a time: ✎ on a pad switches the settings to it, ✕ removes it (Undo in the toast puts it back), so a few Trigger pads make a row of presets and two Hold pads can push
 one knob in opposite directions. "Unbind" turns every reference back into the knob's base number and drops the def and its pads. Pads call
 `runtime.invoke` with their own hold id, so two fingers on two pads work. `PadDock` floats the pads over any editor (drag
 by the grip; positions saved as fractions of the viewport); `PadStrip` lays them out in a row for a host (the rack's
@@ -199,7 +200,8 @@ and the history cap; make Rack's `keepOnUndo` an option), then the code drawer a
    Tap ↩ to glide back. Try "Loop between …" and check the code.
 6. Pad tab → Bind to a pad: the pad appears bottom right; hold it with one finger, then a second pad with another finger;
    drag a pad by its grip; open ⇄ → Pads in each editor; in Rack performance mode, toggle Pads. Add a second pad from
-   the ✎ on a pad, set both to Trigger, and jump between them.
+   the ✎ on a pad (the ＋ tile), set both to Trigger (✎ on a pad in the row switches to its settings), and jump
+   between them. Remove one with its ✕, then Undo from the toast.
 7. Open a shared sketch with a pad: the pad is dimmed until you tap Run it.
 8. Export with "Make this sketch self-contained", paste into hydra.ojack.xyz, run `oscOffset.hold(3)` (your knob's name).
 9. Hardware keyboard: Ladder tab, arrows, Enter, Esc. Apple Pencil: hold and slide on a number.

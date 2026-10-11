@@ -8,7 +8,7 @@ import type { NumberField } from './field'
 import { kitHost, useHost, type KitHost } from './host'
 import { NumSlider } from './NumSlider'
 import { closePopover, openSheet, toast } from './overlay'
-import { addPad, bindToPad, kitMeta, knobBase, livePads, padPress, padRelease, padsOf, removePad, setKnobBase, unbindKnob, updatePad, withKitMeta, type PadConfig, type PadMode } from './pads'
+import { addPad, bindToPad, kitMeta, knobBase, livePads, padPress, padRelease, padsOf, removePad, setKnobBase, unbindKnob, updatePad, withKitMeta, withPads, type PadConfig, type PadMode } from './pads'
 
 const MODES: Array<{ id: PadMode; label: string; hint: string }> = [
   { id: 'hold', label: 'Hold', hint: 'press goes to the value and stays; release glides back' },
@@ -77,17 +77,37 @@ function suggestTarget(f: NumberField): number {
   return f.hint.integer ? Math.round(far) : +far.toPrecision(6)
 }
 
-/** A knob's pads: mode, values, times, curve; base value; unbind. */
-export function PadEditor({ knob }: { knob: string }) {
+/**
+ * A knob's pads: a row of them to try, each with a handle that switches the settings below to it and an × that removes it;
+ * then the chosen pad's mode, values, times and curve; the knob's base value; unbind.
+ */
+export function PadEditor({ knob, pad: first }: { knob: string; pad?: string }) {
   const h = useHost()
+  const [picked, pick] = useState<string | undefined>(first)
   if (!h) return null
   const sk = h.sketch()
   const base = knobBase(sk, knob)
   const pads = padsOf(sk).filter((p) => p.knob === knob)
   if (base === undefined) return <p class="empty">{knob} is no longer in the sketch.</p>
+  const p = pads.find((x) => x.id === picked) ?? pads[0]
   const set = (id: string, patch: Partial<PadConfig>) => edit(h, (s) => updatePad(s, id, patch), true)
   const range = Math.max(1, Math.abs(base) * 2, ...pads.map((p) => Math.abs(p.value)))
   const hint = { min: Math.min(0, -range * (base < 0 ? 1 : 0)), max: range, step: 0.01 }
+  const remove = (gone: PadConfig) => {
+    const before = padsOf(h.sketch())
+    const at = before.findIndex((x) => x.id === gone.id)
+    edit(h, (s) => removePad(s, gone.id), true)
+    if (gone.id === p?.id) pick(pads.find((x) => x.id !== gone.id)?.id)
+    toast(`Removed ${gone.label}`, {
+      label: 'Undo',
+      run: () => {
+        const now = padsOf(h.sketch())
+        if (now.some((x) => x.id === gone.id)) return
+        edit(h, (s) => withPads(s, [...now.slice(0, at), gone, ...now.slice(at)]), true)
+        pick(gone.id)
+      },
+    })
+  }
   return (
     <div class="padeditor" data-testid="pad-editor" data-knob={knob}>
       <div class="pe-head">
@@ -97,8 +117,39 @@ export function PadEditor({ knob }: { knob: string }) {
         {!h.trusted() && <small class="pad-inert">pads start working once the sketch runs its code</small>}
       </div>
       <NumSlider label="base" value={base} hint={hint} testid="pad-base" stack onChange={(v, ph) => (ph === 'end' ? h.endGroup?.() : edit(h, (s) => setKnobBase(s, knob, v)))} />
-      {pads.map((p) => (
+      <div class="pe-pads" role="group" aria-label={`Pads for ${knob}`}>
+        {pads.map((x) => (
+          <div class={`pe-slot ${x.id === p?.id ? 'on' : ''}`} key={x.id} data-pad={x.id}>
+            <Pad pad={x} host={h} base={base} />
+            {x.id !== p?.id && (
+              <button type="button" class="pe-handle pe-pick" data-testid="pad-pick" aria-label={`Edit the ${x.label} pad`} onClick={() => pick(x.id)}>
+                ✎
+              </button>
+            )}
+            {pads.length > 1 && (
+              <button type="button" class="pe-handle pe-x" data-testid="pad-remove" aria-label={`Remove the ${x.label} pad`} onClick={() => remove(x)}>
+                ✕
+              </button>
+            )}
+          </div>
+        ))}
+        <button
+          type="button"
+          class="pe-add"
+          data-testid="pad-add"
+          aria-label={`Add a pad for ${knob}`}
+          onClick={() => {
+            const r = addPad(h.sketch(), knob)
+            edit(h, () => r.sketch, true)
+            if (r.pad) pick(r.pad.id)
+          }}
+        >
+          ＋
+        </button>
+      </div>
+      {p && (
         <div class="pe-pad" key={p.id} data-pad={p.id}>
+          <div class="pe-name">{p.label}</div>
           <div class="seg pe-modes" role="radiogroup" aria-label="Pad mode">
             {MODES.map((m) => (
               <button type="button" role="radio" aria-checked={p.mode === m.id} key={m.id} class={p.mode === m.id ? 'on' : ''} data-testid={`pad-mode-${m.id}`} title={m.hint} onClick={() => set(p.id, { mode: m.id })}>
@@ -120,19 +171,8 @@ export function PadEditor({ knob }: { knob: string }) {
               </button>
             ))}
           </div>
-          <div class="pe-try">
-            <Pad pad={p} host={h} base={base} />
-            {pads.length > 1 && (
-              <button type="button" class="btn sm" data-testid="pad-remove" aria-label={`Remove the ${p.label} pad`} onClick={() => edit(h, (s) => removePad(s, p.id), true)}>
-                Remove pad
-              </button>
-            )}
-          </div>
         </div>
-      ))}
-      <button type="button" class="btn wide" data-testid="pad-add" onClick={() => edit(h, (s) => addPad(s, knob).sketch, true)}>
-        ＋ Add a pad for {knob}
-      </button>
+      )}
       <div class="actions">
         <button type="button" class="btn" data-testid="pad-show" onClick={() => showPadDock(true)}>
           Show pads
@@ -154,8 +194,8 @@ export function PadEditor({ knob }: { knob: string }) {
   )
 }
 
-export function openPadEditor(knob: string): void {
-  openSheet(`Pad · ${knob}`, () => <PadEditor knob={knob} />)
+export function openPadEditor(knob: string, pad?: string): void {
+  openSheet(`Pad · ${knob}`, () => <PadEditor knob={knob} pad={pad} />)
 }
 
 // ---------------------------------------------------------------- one pad
@@ -326,7 +366,7 @@ function DockPad({ pad, i, host, base }: { pad: PadConfig; i: number; host: KitH
         >
           ⠿
         </span>
-        <button type="button" class="icon sm" aria-label={`Edit the ${pad.label} pad`} data-testid={`pad-edit-${pad.knob}`} onClick={() => openPadEditor(pad.knob)}>
+        <button type="button" class="icon sm" aria-label={`Edit the ${pad.label} pad`} data-testid={`pad-edit-${pad.knob}`} onClick={() => openPadEditor(pad.knob, pad.id)}>
           ✎
         </button>
       </div>
