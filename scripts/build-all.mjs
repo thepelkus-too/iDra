@@ -5,6 +5,7 @@
 //   dist/sw.js           service worker with a precache list generated from the final dist/ contents,
 //                        versioned by commit (VERCEL_GIT_COMMIT_SHA / GITHUB_SHA) or else a content hash
 //   dist/version.json    build info shown by the shell
+//   dist/docs/           README.md and docs/*.md rendered to pages (scripts/build-docs.mjs), precached so they read offline
 //   dist/plugins/        hydra-motion (packages/motion, MIT): hydra-motion.js (stable URL) and hydra-motion@<v>/hydra-motion.js
 //                        (the pinned URL in packages/core/plugins/registry.json, whose SRI is refreshed here first)
 import { execFileSync } from 'node:child_process'
@@ -12,6 +13,7 @@ import { createHash } from 'node:crypto'
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { buildDocs } from './build-docs.mjs'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const dist = join(root, 'dist')
@@ -48,6 +50,9 @@ for (const a of editors) {
 
 // ---- bundled plugins (after the shell build, which empties dist/)
 sh('node', ['scripts/sync-motion.mjs', '--copy', dist])
+
+// ---- docs (before the precache list below, so they are available offline)
+console.log(`› docs → dist/docs/ (${buildDocs(dist).length} pages)`)
 
 // ---- apps.json (no timestamps, so the content hash below is reproducible)
 const commit = env.VERCEL_GIT_COMMIT_SHA || env.GITHUB_SHA || null

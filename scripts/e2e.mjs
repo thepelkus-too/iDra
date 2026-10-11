@@ -382,7 +382,7 @@ await step('audio: mic (fake device) → engine → frame; sketch-side `a` follo
   return `vol=${r.vol.toFixed(2)} bins=${r.bins} ctx=${r.ctx} (the fake mic is a periodic beep)`
 })
 
-await step('offline: reload the shell and the harness from the service-worker cache and still run Hydra', async () => {
+await step('offline: reload the shell and the harness from the service-worker cache and still run Hydra; the docs read offline', async () => {
   await page.goto(base)
   await page.waitForFunction(() => navigator.serviceWorker.controller)
   await context.setOffline(true)
@@ -392,6 +392,14 @@ await step('offline: reload the shell and the harness from the service-worker ca
   await page.waitForFunction(() => window.__harness && /ran/.test(document.querySelector('#status')?.textContent || ''), null, { timeout: 20000 })
   const lit = await page.evaluate(async () => (await window.__harness.rt.screenshot()).length > 1000)
   assert.ok(lit)
+  // the repository docs, reached from the shell's Docs button
+  await page.goto(base)
+  await page.click('[data-role=open-docs]')
+  await page.waitForSelector('.toc a[href="motion.html"]')
+  await page.click('.toc a[href="motion.html"]')
+  await page.waitForSelector('h1')
+  assert.match(await page.textContent('h1'), /hydra-motion/)
+  assert.ok((await page.$$('main table')).length > 0 && (await page.$$('main pre code')).length > 0, 'tables and code blocks render')
   await context.setOffline(false)
 })
 
