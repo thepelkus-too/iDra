@@ -23,7 +23,7 @@ import {
   type LibraryEntry,
 } from '@hydra-ipad/core'
 import { CSS } from './styles'
-import { firstFittingHydraUrl } from './vanilla-hydra'
+import { HYDRA_EDITOR, firstFittingHydraUrl } from './vanilla-hydra'
 
 applyAppBase()
 injectStyles('shell', CSS)
@@ -213,7 +213,8 @@ async function exportSelfContained(e: LibraryEntry) {
 /**
  * Point the ⋯ menu's "Open in Hydra" link at hydra.ojack.xyz with this sketch's code. Done when the menu opens, so the tap
  * is a plain link (Safari blocks window.open after an await). Prefers the self-contained code so knobs and pads run there
- * with no network; when that link is too long, the usual export, whose loadScript line fetches the plugin.
+ * with no network; when that link is too long, the usual export, whose loadScript line fetches the plugin; when even that
+ * is too long, the tap copies the self-contained code and opens Hydra to paste it.
  */
 async function prepareHydraLink(e: LibraryEntry, link: HTMLAnchorElement) {
   link.removeAttribute('href')
@@ -225,7 +226,16 @@ async function prepareHydraLink(e: LibraryEntry, link: HTMLAnchorElement) {
   codes.push(await lib.exportJS(e.id))
   const url = firstFittingHydraUrl(codes)
   if (url) link.href = url
-  else link.onclick = () => toast('This sketch is too long to open by link; use Export .js and paste it into Hydra')
+  else {
+    // too long for a link: copy the code (pasting has no length limit) and open Hydra empty to paste it over its sketch
+    link.href = HYDRA_EDITOR
+    link.onclick = () => {
+      navigator.clipboard.writeText(codes[0]).then(
+        () => toast('Too long for a link: the code is copied, paste it into Hydra over its sketch'),
+        () => toast('Too long for a link, and copying failed; use Export .js and paste it into Hydra'),
+      )
+    }
+  }
 }
 async function exportJSON(e: LibraryEntry) {
   download(`${safeName(e.name)}.hydra.json`, await lib.exportJSON(e.id), 'application/json')
