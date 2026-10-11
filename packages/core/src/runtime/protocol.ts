@@ -52,7 +52,7 @@ export type HostToFrame =
   /** one MIDI message from input `input` (raw bytes: status, data1, data2) */
   | { t: 'midi'; input: string; data: number[] }
   /** call `<name>.<method>(...args)` on a hydra-motion knob of the running sketch (pads); never coalesced, never evaluated as text */
-  | { t: 'invoke'; name: string; method: 'set' | 'to' | 'hold' | 'release'; args: Array<number | string> }
+  | { t: 'invoke'; name: string; method: 'set' | 'to' | 'hold' | 'release' | 'press' | 'lift'; args: Array<number | string> }
   /**
    * Preview runtimes only: tick at `fps` while `running`, capturing outputs `outputs` (indices) after each tick. `frames`
    * stops after that many frames (1 = a still). The frame keeps at most one frame in flight: it waits for `ack`.

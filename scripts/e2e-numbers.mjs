@@ -8,7 +8,7 @@
 //   3. the Ladder tab with a keyboard: arrows step, Enter commits one undo step, Esc cancels
 //   4. Glide: a typed target glides there frame by frame and lands as one undo step; Return glides back
 //   5. Pad: "Bind to a pad" writes a knob def and a reference; holding the pad changes the picture, letting go restores it
-//   6. (landscape) the export, self-contained, runs in a plain hydra-synth page and its knob still plays
+//   6. (landscape) the export, self-contained, runs in a plain hydra-synth page and its knob and its pads (k.press) still play
 //   7. (landscape) the next editor opens the same sketch with the binding and the pad config intact
 // Software WebGL: timings are not device performance.
 import assert from 'node:assert/strict'
@@ -508,11 +508,20 @@ for (const vp of VIEWPORTS) {
           await v.evaluate((k) => window[k].release(0), knob)
           await sleep(500)
           const c = await v.evaluate(() => window.grab())
+          // the pads in the code play there too, the way the pad buttons did (two Trigger presets by now)
+          await v.evaluate((k) => window[k].press(0), knob)
+          await sleep(700)
+          const d = await v.evaluate(() => window.grab())
+          await v.evaluate((k) => window[k].press(1), knob)
+          await sleep(700)
+          const e = await v.evaluate(() => window.grab())
           await v.close()
           assert.deepEqual(errs, [])
           assert.ok(diff(a, b) > 4, `hold changes the plain page's picture (${diff(a, b).toFixed(2)})`)
           assert.ok(diff(a, c) < 2, `release restores it (${diff(a, c).toFixed(2)})`)
-          return `${exported.length} chars; Δ ${diff(a, b).toFixed(1)} / ${diff(a, c).toFixed(1)}`
+          assert.ok(diff(a, d) > 4, `${knob}.press(0) plays the first pad (${diff(a, d).toFixed(2)})`)
+          assert.ok(diff(a, e) < 2, `${knob}.press(1) plays the second pad, back to the base (${diff(a, e).toFixed(2)})`)
+          return `${exported.length} chars; Δ ${diff(a, b).toFixed(1)} / ${diff(a, c).toFixed(1)}; press Δ ${diff(a, d).toFixed(1)} / ${diff(a, e).toFixed(1)}`
         })
 
         const nextApp = APPS[(APPS.indexOf(appName) + 1) % APPS.length]

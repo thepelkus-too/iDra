@@ -104,7 +104,9 @@ value and stays). A knob can have several pads (the ＋ tile in its pad editor; 
 mode, times and curve and goes to the knob's base). The editor shows the knob's pads in a row you can play, and the
 settings of one pad at a time: ✎ on a pad switches the settings to it, ✕ removes it (Undo in the toast puts it back), so a few Trigger pads make a row of presets and two Hold pads can push
 one knob in opposite directions. "Unbind" turns every reference back into the knob's base number and drops the def and its pads. Pads call
-`runtime.invoke` with their own hold id, so two fingers on two pads work. `PadDock` floats the pads over any editor (drag
+`runtime.invoke('<knob>', 'press', [i])` and `'lift'` (hydra-motion 0.2.0: the knob plays its own pads from the code, and
+each pad holds under its own id, so two fingers on two pads work); on a sketch pinned to hydra-motion 0.1.0 they send the
+equivalent `hold` / `to` / `release` calls instead (`motionPlaysPads`). `PadDock` floats the pads over any editor (drag
 by the grip; positions saved as fractions of the viewport); `PadStrip` lays them out in a row for a host (the rack's
 performance mode pins it). Pads stay inert, with a note, until the sketch is trusted. Binding on a sketch that was already
 trusted re-approves it once (the new code is the owner's own); otherwise the trust banner asks as usual.

@@ -70,6 +70,36 @@ export function createMotion(env) {
 
   let nextHold = 1
 
+  // ------------------------------------------------------------ pads
+  // What iDra's pad editor writes when a field is left out, so a pad typed by hand plays the way iDra shows it.
+  const PAD_DEFAULTS = { attack: 0, release: 0.15, ease: 'easeOutQuad' }
+  const MODES = ['hold', 'latch', 'trigger']
+  const padIndex = (i) => (i === undefined || i === null ? 0 : finite(+i) ? Math.floor(+i) : -1)
+  /** The pads option, cleaned: entries without a finite `to` are skipped (warned once); `off` defaults to the initial. */
+  function padsFrom(raw, initial) {
+    if (raw === undefined || raw === null) return []
+    if (!Array.isArray(raw)) {
+      warnOnce('pads', '`pads` must be an array of { mode, to, off, attack, release, ease }; ignored')
+      return []
+    }
+    return raw.map((p, i) => {
+      if (!p || typeof p !== 'object' || !finite(p.to)) {
+        warnOnce('pad:' + i, `pad ${i} has no number \`to\`, so pressing it does nothing`)
+        return null
+      }
+      const mode = MODES.indexOf(p.mode) >= 0 ? p.mode : 'hold'
+      if (p.mode !== undefined && mode !== p.mode) warnOnce('padmode:' + p.mode, `unknown pad mode "${p.mode}", using hold. Modes: ${MODES.join(', ')}`)
+      return {
+        mode,
+        to: p.to,
+        off: finite(p.off) ? p.off : initial,
+        attack: p.attack === undefined ? PAD_DEFAULTS.attack : p.attack,
+        release: p.release === undefined ? PAD_DEFAULTS.release : p.release,
+        ease: p.ease === undefined ? PAD_DEFAULTS.ease : p.ease,
+      }
+    })
+  }
+
   // ------------------------------------------------------------ knob
   function knob(initial, options) {
     const o = options && typeof options === 'object' ? options : {}
@@ -81,6 +111,9 @@ export function createMotion(env) {
     let holds = []
     // tr: a transition of the visible value from `from` towards the current target (attack / release / retargeting)
     let tr = null
+    // pads: plain data in the options (`{ pads: [{ mode, to, off, attack, release, ease }] }`), played by press(i) / lift(i)
+    const pads = padsFrom(o.pads, last)
+    const latched = pads.map(() => false)
     let destroyed = false
     let wasBusy = false
     const listeners = []
@@ -232,6 +265,24 @@ export function createMotion(env) {
       holds = [keep]
       return k.release(time, ease, keep.id)
     }
+    // a pad press, the same thing iDra's pad buttons do: Hold goes to `to` and stays until lift(i); Trigger glides to `to`
+    // and stays; Latch toggles between `to` and `off`. Each pad holds under its own id, so two pads held at once stack.
+    k.press = function press(i) {
+      const n = padIndex(i)
+      const p = pads[n]
+      if (destroyed || !p) return k
+      if (p.mode === 'hold') return k.hold(p.to, p.attack, p.ease, 'pad' + n)
+      if (p.mode === 'trigger') return k.to(p.to, p.attack, p.ease)
+      latched[n] = !latched[n]
+      return latched[n] ? k.to(p.to, p.attack, p.ease) : k.to(p.off, p.release, p.ease)
+    }
+    /** Letting go of a pad: only a Hold pad does anything (glides back over its `release`). */
+    k.lift = function lift(i) {
+      const n = padIndex(i)
+      const p = pads[n]
+      if (destroyed || !p || p.mode !== 'hold') return k
+      return k.release(p.release, p.ease, 'pad' + n)
+    }
     k.onDone = function onDone(fn) {
       if (typeof fn !== 'function') return () => {}
       listeners.push(fn)
@@ -252,6 +303,7 @@ export function createMotion(env) {
       base: { get: () => (destroyed ? last : baseAt(clock())), enumerable: true },
       busy: { get: () => (read(), !destroyed && busyAt()), enumerable: true },
       held: { get: () => holds.length, enumerable: true },
+      pads: { value: Object.freeze(pads.map((p) => p && Object.freeze({ ...p }))), enumerable: true },
       destroyed: { get: () => destroyed, enumerable: true },
       __hydraMotion: { value: 'knob' },
     })

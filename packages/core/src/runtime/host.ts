@@ -119,7 +119,7 @@ export interface Runtime {
   getCatalogDelta(): Promise<CatalogDelta[]>
   /**
    * Call a hydra-motion knob's method in the running sketch (a pad press: `invoke('k', 'hold', [0.9])`). `name` must be a
-   * `def` of the sketch last run, `method` one of set | to | hold | release, args numbers or short strings. Fire-and-forget,
+   * `def` of the sketch last run, `method` one of set | to | hold | release | press | lift, args numbers or short strings. Fire-and-forget,
    * delivered in order and never coalesced (unlike setLive); queued until the frame is ready. Returns false (and reports a
    * warning) when the call is refused.
    */

@@ -1,6 +1,6 @@
 {
   "name": "hydra-motion",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Glides, holds and pads for Hydra: callable values (knob, gate) that Hydra calls every frame. One small script, no dependencies.",
   "license": "MIT",
   "author": "hydra-motion contributors",
