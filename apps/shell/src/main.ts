@@ -23,6 +23,7 @@ import {
   type LibraryEntry,
 } from '@hydra-ipad/core'
 import { CSS } from './styles'
+import { HYDRA_EDITOR, firstFittingHydraUrl } from './vanilla-hydra'
 
 applyAppBase()
 injectStyles('shell', CSS)
@@ -209,6 +210,33 @@ async function exportSelfContained(e: LibraryEntry) {
     toast(`Could not inline hydra-motion: ${(err as Error).message}`)
   }
 }
+/**
+ * Point the ⋯ menu's "Open in Hydra" link at hydra.ojack.xyz with this sketch's code. Done when the menu opens, so the tap
+ * is a plain link (Safari blocks window.open after an await). Prefers the self-contained code so knobs and pads run there
+ * with no network; when that link is too long, the usual export, whose loadScript line fetches the plugin; when even that
+ * is too long, the tap copies the self-contained code and opens Hydra to paste it.
+ */
+async function prepareHydraLink(e: LibraryEntry, link: HTMLAnchorElement) {
+  link.removeAttribute('href')
+  link.onclick = null
+  const s = await lib.get(e.id)
+  if (!s) return
+  const codes: string[] = []
+  try { codes.push(await exportWithPrelude(s)) } catch { /* plugin source unavailable: the loadScript version below still works */ }
+  codes.push(await lib.exportJS(e.id))
+  const url = firstFittingHydraUrl(codes)
+  if (url) link.href = url
+  else {
+    // too long for a link: copy the code (pasting has no length limit) and open Hydra empty to paste it over its sketch
+    link.href = HYDRA_EDITOR
+    link.onclick = () => {
+      navigator.clipboard.writeText(codes[0]).then(
+        () => toast('Too long for a link: the code is copied, paste it into Hydra over its sketch'),
+        () => toast('Too long for a link, and copying failed; use Export .js and paste it into Hydra'),
+      )
+    }
+  }
+}
 async function exportJSON(e: LibraryEntry) {
   download(`${safeName(e.name)}.hydra.json`, await lib.exportJSON(e.id), 'application/json')
 }
@@ -272,11 +300,13 @@ function card(e: LibraryEntry): HTMLElement {
   }
   if (!apps.length) menu.append(h('div', { class: 'dim pad' }, 'No editors in this build'))
   const more = h('button', { type: 'button', 'aria-label': `More actions for ${e.name}`, 'aria-haspopup': 'menu' }, '⋯')
+  const hydraLink = h('a', { role: 'menuitem', target: '_blank', rel: 'noopener', title: 'Open this sketch in the plain Hydra editor (hydra.ojack.xyz) to check it runs there' }, 'Open in Hydra')
   const actions = h('div', { class: 'menu', hidden: true, role: 'menu' },
     h('button', { type: 'button', role: 'menuitem', onclick: () => renameDialog(e) }, 'Rename'),
     h('button', { type: 'button', role: 'menuitem', onclick: () => void duplicate(e) }, 'Duplicate'),
     h('button', { type: 'button', role: 'menuitem', onclick: () => void exportJS(e) }, 'Export .js'),
     h('button', { type: 'button', role: 'menuitem', title: 'Inline the hydra-motion plugin so the file runs in plain Hydra with no network', onclick: () => void exportSelfContained(e) }, 'Export .js, self-contained'),
+    hydraLink,
     h('button', { type: 'button', role: 'menuitem', onclick: () => void exportJSON(e) }, 'Export .json'),
     h('button', { type: 'button', role: 'menuitem', class: 'danger', onclick: () => deleteDialog(e) }, 'Delete'),
   )
@@ -286,7 +316,10 @@ function card(e: LibraryEntry): HTMLElement {
     m.hidden = !m.hidden
   }
   openIn.addEventListener('click', () => toggle(menu))
-  more.addEventListener('click', () => toggle(actions))
+  more.addEventListener('click', () => {
+    toggle(actions)
+    if (!actions.hidden) void prepareHydraLink(e, hydraLink)
+  })
   const primary = defaultApp()
   const open = primary ? h('a', { class: 'open', href: appHref(primary, e.id), 'aria-label': `Open ${e.name}` }, thumb) : thumb
   open.addEventListener?.('click', () => primary && prefs.set('lastApp', primary.name))
