@@ -88,8 +88,8 @@ own), at most ten, starting on about a tenth of the range. Moving up or down pic
 one pulses on each change), moving left or right steps by it (24 px per step). Once the value has moved on a rung, that
 rung is locked: sliding up or down does nothing until the finger brings the value back to where the rung started, and
 then the rung follows the finger again. The keyboard (↑ ↓) is not locked. The first step lands on the rung's grid (0.83 → 0.9), the value is
-untouched until a full step, angles wrap, everything else clamps to the hint range widened to keep an out-of-range value
-reachable. Release commits one undo step; release without moving is the control's own long-press (Chain Stack's kind menu,
+untouched until a full step, angles wrap, and everything else keeps changing for as long as you drag: the hint range only sizes the
+rungs, it does not stop the value. Release commits one undo step; release without moving is the control's own long-press (Chain Stack's kind menu,
 the rack's knob menu) or, where there is none, the editor's Ladder tab. A move past the slop before 350 ms is the
 control's own drag (scrub, knob turn); the ladder never fires then. While the ladder is open it holds off page scrolling.
 
@@ -148,7 +148,7 @@ and the history cap; make Rack's `keepOnUndo` an option), then the code drawer a
 ## Tests
 
 * Unit (`npm test -w @hydra-ipad/kit`): the conversions, the ladder math (rungs per hint, default rung, grid snapping, wrap,
-  widened clamp, the pointer and keyboard state machine), glides on a fake clock (duration parsing with beats, frame values,
+  no clamp past the range, the pointer and keyboard state machine), glides on a fake clock (duration parsing with beats, frame values,
   one undo step on the live path and on the drag path, retargeting, cancel on another edit, return), the curves against the
   built hydra-motion's own `ease`, and the pad helpers (binding, names, nested calls, round trip, unbind, `livePads` after
   undo, press and release per mode, `loopValue`).

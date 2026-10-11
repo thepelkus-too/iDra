@@ -62,8 +62,8 @@ function onGrid(v: number, mag: number): number {
 
 /**
  * The value `steps` whole steps of `mag` away from `start`. Zero steps leave `start` untouched; the first step lands on the
- * magnitude's grid (0.83 → 0.9 going up, → 0.8 going down), every further step moves by exactly `mag`. Angles wrap; other
- * inputs clamp to the hint's range, widened to keep a start value that already lies outside it reachable.
+ * magnitude's grid (0.83 → 0.9 going up, → 0.8 going down), every further step moves by exactly `mag`. Angles wrap; every
+ * other input keeps going past the hint's range for as long as the finger does (the range only sizes the rungs).
  */
 export function ladderValue(start: number, mag: number, steps: number, hint: Hint): number {
   if (!steps || !(mag > 0)) return start
@@ -74,7 +74,7 @@ export function ladderValue(start: number, mag: number, steps: number, hint: Hin
   if (hint.wrap) {
     v = wrapInto(v, hint.min, hint.max)
     if (v >= hint.max - eps * mag) v = hint.min
-  } else v = clamp(v, Math.min(hint.min, start), Math.max(hint.max, start))
+  }
   if (hint.integer) v = Math.round(v)
   return onGrid(v, Math.min(mag, hint.integer ? 1 : mag))
 }

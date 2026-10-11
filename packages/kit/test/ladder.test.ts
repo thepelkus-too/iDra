@@ -51,13 +51,14 @@ describe('ladderValue', () => {
     expect(ladderValue(0.1, 0.1, 2, unit)).toBe(0.3)
     expect(ladderValue(0.7, 0.01, 3, unit)).toBe(0.73)
   })
-  it('clamps to the range', () => {
-    expect(ladderValue(0.95, 0.1, 5, unit)).toBe(1)
-    expect(ladderValue(0.05, 0.1, -5, unit)).toBe(0)
+  it('keeps going past the range', () => {
+    expect(ladderValue(0.95, 0.1, 5, unit)).toBe(1.4)
+    expect(ladderValue(0.05, 0.1, -5, unit)).toBe(-0.4)
+    expect(ladderValue(190, 10, 3, freq)).toBe(220)
   })
-  it('keeps a value already outside the range reachable', () => {
+  it('moves a value already outside the range either way', () => {
     expect(ladderValue(1.5, 0.1, -1, unit)).toBe(1.4)
-    expect(ladderValue(1.5, 0.1, 3, unit)).toBe(1.5)
+    expect(ladderValue(1.5, 0.1, 3, unit)).toBe(1.8)
     expect(ladderValue(-2, 1, 1, unit)).toBe(-1)
   })
   it('wraps angles', () => {
@@ -68,7 +69,7 @@ describe('ladderValue', () => {
   })
   it('rounds integers', () => {
     expect(ladderValue(4, 1, 3, sides)).toBe(7)
-    expect(ladderValue(11, 1, 5, sides)).toBe(12)
+    expect(ladderValue(11, 1, 5, sides)).toBe(16)
   })
 })
 
@@ -80,7 +81,7 @@ describe('the gesture model', () => {
     s = moveLadder(s, 100 + LADDER_STEP_PX, 300, unit)
     expect(s.value).toBe(0.9)
     s = moveLadder(s, 100 + LADDER_STEP_PX * 3, 300, unit)
-    expect(s.value).toBe(1)
+    expect(s.value).toBe(1.1)
   })
   it('sliding up or down picks a rung before the value moves, and re-bases the steps there', () => {
     let s = openLadder(freq, 37.3, 100, 300) // starts on 10
