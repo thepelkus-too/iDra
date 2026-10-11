@@ -1,6 +1,6 @@
 // What the kit needs from the editor it runs in, registered once at boot (each editor's ctx.ts). The kit edits the sketch
 // only through `commit`, the same store every other edit goes through, so undo, autosave and the preview behave as usual.
-import { appStorage, type AppStorage, type MotionMethod, type Sketch } from '@hydra-ipad/core'
+import { appStorage, type AppStorage, type MotionMethod, type Runtime, type Sketch } from '@hydra-ipad/core'
 import { useEffect, useState } from 'preact/hooks'
 import { setOverlaySource } from './overlay'
 
@@ -20,6 +20,8 @@ export interface KitHost {
   trusted(): boolean
   /** run the current content as trusted once (after the owner's own bind on an already trusted sketch) */
   approveOnce?(): void
+  /** the main runtime: chunk previews follow its time and live numbers and copy its outputs (PreviewPeek) */
+  runtime?(): Runtime | undefined
 }
 
 let host: KitHost | undefined
