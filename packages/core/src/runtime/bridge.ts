@@ -641,8 +641,13 @@ export class Bridge {
         const out = h.o?.[Number(m[2])]
         const regl = h.regl
         if (!out || !regl) return fail(`no output ${of}`)
-        const fbo = (this.snapFbo ??= regl.framebuffer({ width: w, height: ht }))
-        if (fbo.width !== w || fbo.height !== ht) fbo.resize(w, ht)
+        // colour only: a depth/stencil renderbuffer is not needed for a copy, and some contexts refuse its format
+        // ("(regl) invalid render buffer format"); a new size is a new framebuffer rather than a resize for the same reason
+        if (this.snapFbo && (this.snapFbo.width !== w || this.snapFbo.height !== ht)) {
+          this.snapFbo.destroy()
+          this.snapFbo = undefined
+        }
+        const fbo = (this.snapFbo ??= regl.framebuffer({ color: regl.texture({ width: w, height: ht }), depth: false, stencil: false }))
         this.copyCmd ??= regl({
           frag: 'precision mediump float; varying vec2 uv; uniform sampler2D tex; void main () { gl_FragColor = texture2D(tex, uv); }',
           vert: 'precision mediump float; attribute vec2 position; varying vec2 uv; void main () { uv = position; gl_Position = vec4(2.0 * position - 1.0, 0, 1); }',

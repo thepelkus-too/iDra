@@ -1,12 +1,13 @@
 // Chunk previews and disabling end to end in the harness's Previews lab (real hydra-synth in sandboxed frames, software WebGL).
 //   node scripts/e2e-previews.mjs [--skip-build]
 // Checks:
-//   1. "everything up to here" thumbnails show the right picture per call, including a chain with a nested texture argument
-//   2. the pool never runs more than its size (2) of preview runtimes, counted from its stats and from the page's iframes
-//   3. previews leave the main output untouched: the main picture is pixel-identical before, during and after live previews
+//   1. prev() (on a fresh page): a feedback chain is approximated from copies of its own output, and no copy fails
+//   2. "everything up to here" thumbnails show the right picture per call, including a chain with a nested texture argument
+//   3. the pool never runs more than its size (2) of preview runtimes, counted from its stats and from the page's iframes
 //   4. a chunk reading another output is previewed approximately (≈) from a copied main picture, the right way up
 //   5. the before/after pair of a modifier shows two different pictures
-//   6. live mode animates every visible thumbnail; the frame rate here is measured and reported (not an iPad number)
+//   6. live mode animates every visible thumbnail, and the main output stays pixel-identical before, during and after;
+//      the frame rate here is measured and reported (not an iPad number)
 //   7. trust gate: a sketch that needs trust gets no preview runtime until it is trusted
 //   8. disabling a modifier changes the compiled output and the main picture, not the IR order; re-enabling restores both
 // Software WebGL: frame rates and copy times are not device performance.
@@ -110,6 +111,27 @@ async function settle(scroll = true) {
   }
   await page.waitForFunction(() => window.__harness.previews.handles().every((x) => !/^(waiting|starting|running)$/.test(x.handle.state)), null, { timeout: 30000 })
 }
+
+// first, on a fresh page: the first copy of an output is where creating the copy's framebuffer used to fail
+await step('prev(): a feedback chain previews from copies of its own output, without failed copies', async () => {
+  await setCode('osc(10, 0, 1).out()\nprev().out(o1)\n')
+  await page.click('#tabbtn-previews')
+  await settle()
+  const before = await poolStats()
+  const cells = await page.$$('.pv-cell')
+  await cells[cells.length - 1].click() // prev(): animate it and open its before/after
+  await sleep(3000)
+  const s = await poolStats()
+  const st = await states()
+  const diffState = await page.textContent('#pv-diff-state')
+  assert.equal(s.feedFailures, 0, 'copies of the main output failed: ' + JSON.stringify(s))
+  assert.ok(s.feeds > before.feeds, 'the prev() preview was fed: ' + JSON.stringify(s))
+  assert.ok(!st.includes('error') && !/error/.test(diffState), `${st.join(' ')} | ${diffState}`)
+  const app = await page.evaluate(() => window.__harness.previews.handles().at(-1).handle.approximate)
+  assert.equal(app, true, 'prev() is approximate')
+  await page.click('#tabbtn-code')
+  return `copied pictures ${s.feeds - before.feeds} in 3 s, none failed`
+})
 
 await setCode(SKETCH)
 const mainBefore = await mainShot()
