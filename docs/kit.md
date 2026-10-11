@@ -106,10 +106,19 @@ by the grip; positions saved as fractions of the viewport); `PadStrip` lays them
 performance mode pins it). Pads stay inert, with a note, until the sketch is trusted. Binding on a sketch that was already
 trusted re-approves it once (the new code is the owner's own); otherwise the trust banner asks as usual.
 
+**Pads are code.** Following the project's rule that everything stays vanilla Hydra where it can, a knob's pads are plain
+data in its own call: `oscOffset = knob(0.8, { pads: [{ mode: 'trigger', to: 3.94, ease: 'easeOutQuad' }, …] })`
+(core's `knobDef` / `parseKnobDef`; keys `mode`, `to`, `off`, `attack`, `release`, `ease`). hydra-motion ignores the
+option, so the sketch runs anywhere, a copy or an export carries its pads, and undo treats a pad edit like any other code
+edit. Changing a pad or a knob's base does not bring the trust banner back: core's trust fingerprint treats a knob call
+whose arguments are plain data as the same code. `padsOf` reads the pads from the code as `PadConfig`s
+(`{ id: '<knob>#<n>', knob, label, mode, value, value2?, attack, release, ease, x?, y? }`); `withPads` and `updatePad`
+write them back.
+
 **`sketch.meta.kit`** is the kit's own namespace, shared by every editor, written only through `withKitMeta`, `withPads`
-and `updatePad`: `{ pads: PadConfig[], dock?: boolean }`. A `PadConfig` is `{ id, knob, label, mode, value, value2?,
-attack, release, ease, x?, y? }`. Undo restores `stmts` and `meta[<app>]` only, so undoing a bind leaves the pad's config;
-`livePads` shows only pads whose knob def exists, and redo brings the binding back with its pad.
+and `updatePad`. It holds view state only: `{ layout?: { [padId]: { x, y } }, dock?: boolean }`, where each pad sits in
+the dock and whether the dock is open. Sketches saved while pads lived in `meta.kit.pads` are still read and are
+written back as code on the next pad edit.
 
 ## Reconciled when the copies were merged
 
@@ -177,9 +186,9 @@ and the history cap; make Rack's `keepOnUndo` an option), then the code drawer a
 * **Trust and pads.** Binding adds a plugin and a JS def, which makes the sketch "risky". Binding on an already trusted
   sketch re-approves it once (the code is the owner's own). That exposed a race in each editor's runner (an async library
   lookup could overwrite a fresh approval), fixed in all four copies, another reason to move the runner into the kit next.
-* **Undo and `meta.kit`.** Undo restores `meta[<app>]`, not `meta.kit`, so an undone bind leaves its pad config behind.
-  Pads whose knob is gone are hidden instead of extending every store's undo. A cleaner fix is for the stores to snapshot
-  `meta.kit` too, once the store is shared.
+* **Pads moved into the code.** They first lived in `meta.kit.pads`, which an export dropped and undo did not restore.
+  Kai's rule that everything stays vanilla Hydra where it can moved them into the knob call; only dock positions stay in
+  `meta.kit` (undo does not restore those, which is fine for view state).
 * **`const` vs bare.** The plan said `const name = knob(…)`; core's `knobDef` and the contract require a bare assignment so
   `runtime.invoke` can reach the knob. Followed core.
 * **Glide without a live slot.** Numbers that are not plain arguments of catalog float inputs (settings, array steps,
@@ -203,5 +212,5 @@ and the history cap; make Rack's `keepOnUndo` an option), then the code drawer a
    the ✎ on a pad (the ＋ tile), set both to Trigger (✎ on a pad in the row switches to its settings), and jump
    between them. Remove one with its ✕, then Undo from the toast.
 7. Open a shared sketch with a pad: the pad is dimmed until you tap Run it.
-8. Export with "Make this sketch self-contained", paste into hydra.ojack.xyz, run `oscOffset.hold(3)` (your knob's name).
+8. Export with "Make this sketch self-contained", paste into hydra.ojack.xyz, run `oscOffset.hold(3)` (your knob's name); the knob's line carries its pads as `{ pads: [...] }`.
 9. Hardware keyboard: Ladder tab, arrows, Enter, Esc. Apple Pencil: hold and slide on a number.

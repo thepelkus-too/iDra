@@ -18,6 +18,7 @@ import {
   MOTION_PLUGIN_ID, parseKnobDef, splitPrelude, withMotion,
 } from '../src/motion'
 import { sriSync } from '../src/sha256'
+import { trustFingerprint } from '../src/trust'
 import { MockHydra, resetMock } from './helpers/mock-hydra'
 import { loopbackTransport } from './helpers/loopback'
 
@@ -63,13 +64,13 @@ describe('knobs in the IR', () => {
   test('knobDef / parseKnobDef / knobArg, and codegen ↔ import round-trip', () => {
     const d = knobDef('k', 0.5)
     expect(d).toMatchObject({ k: 'def', name: 'k', decl: 'bare', value: { k: 'js', src: 'knob(0.5)' } })
-    expect(parseKnobDef(d)).toEqual({ name: 'k', initial: 0.5, decl: 'bare' })
+    expect(parseKnobDef(d)).toEqual({ name: 'k', initial: 0.5, decl: 'bare', pads: [] })
     expect(() => knobDef('not a name', 1)).toThrow()
     const s = knobSketch()
     const code = toCode(s)
     expect(code).toBe('k = knob(0.5)\n\nosc(10, 0.1, k).out()\n')
     const back = importText(code).sketch
-    expect(knobDefs(back)).toEqual([{ stmtId: back.stmts[0].id, name: 'k', initial: 0.5, decl: 'bare' }])
+    expect(knobDefs(back)).toEqual([{ stmtId: back.stmts[0].id, name: 'k', initial: 0.5, decl: 'bare', pads: [] }])
     const chain = back.stmts.find((x) => x.k === 'chain')!
     expect(chain.k === 'chain' && chain.chain.gen.args[2]).toEqual({ k: 'var', name: 'k' })
     expect(toCode(back)).toBe(code)
@@ -80,6 +81,18 @@ describe('knobs in the IR', () => {
       expect(toCode(sk)).toBe(t)
     }
     expect(knobDefs(importText('k = knob(0.5, { clock: "wall" })\n').sketch)).toEqual([]) // not the plain form: left as code
+  })
+  test('pads are plain data in the knob call: written, read back, and not new code for the trust prompt', () => {
+    const d = knobDef('k', 0.5, [{ mode: 'latch', to: 1, off: -0.5, attack: 0.2, release: 0.3, ease: 'easeInQuad' }, { to: 2 }])
+    expect(d.value).toEqual({ k: 'js', src: "knob(0.5, { pads: [{ mode: 'latch', to: 1, off: -0.5, attack: 0.2, release: 0.3, ease: 'easeInQuad' }, { to: 2 }] })" })
+    const back = importText(toCode(newSketch('p', [d]))).sketch
+    expect(knobDefs(back)[0]).toMatchObject({ name: 'k', initial: 0.5, pads: [{ mode: 'latch', to: 1, off: -0.5, attack: 0.2, release: 0.3, ease: 'easeInQuad' }, { to: 2 }] })
+    expect(knobDefs(importText("k = knob(1, { 'pads': [ { to: -3, mode: \"trigger\" } ] })\n").sketch)[0].pads).toEqual([{ to: -3, mode: 'trigger' }])
+    for (const t of ['k = knob(1, { pads: [{ to: 1, mode: "sideways" }] })', 'k = knob(1, { pads: [{ to: x }] })', 'k = knob(1, { pads: 3 })', 'k = knob(1, {}, 2)'])
+      expect(knobDefs(importText(t + '\n').sketch), t).toEqual([])
+    const fp = (s: ReturnType<typeof knobDef>) => trustFingerprint(withMotion(newSketch('t', [s])))
+    expect(fp(knobDef('k', 0.5))).toBe(fp(knobDef('k', 0.9, [{ mode: 'hold', to: 3 }])))
+    expect(fp(knobDef('k', 0.5))).not.toBe(fp(knobDef('j', 0.5)))
   })
   test('safe mode skips the plugin and runs knobs as their initial numbers', () => {
     const s = withMotion(knobSketch())

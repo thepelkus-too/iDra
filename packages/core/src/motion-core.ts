@@ -3,6 +3,7 @@
 // same way as any third-party plugin; nothing here imports the package's source.
 // Kept free of UI and runtime imports: the parser and codegen use it.
 
+import * as acorn from 'acorn'
 import type { DefStmt, PluginRef, Sketch, Stmt, Value } from './ir'
 import { newId } from './ir'
 import { pluginRegistry, type RegistryEntry } from './plugins'
@@ -44,36 +45,158 @@ export function withMotion(sketch: Sketch): Sketch {
 
 // ------------------------------------------------------------------ knobs in the IR
 
-const NUM = '-?(?:\\d+\\.?\\d*|\\.\\d+)(?:e[+-]?\\d+)?'
-const KNOB_RE = new RegExp(`^knob\\(\\s*(${NUM})\\s*\\)$`, 'i')
+/**
+ * A pad as the code writes it, the second argument of `knob(<initial>, { pads: [...] })`: plain data hydra-motion ignores,
+ * so the sketch runs anywhere, and iDra reads to draw the pads. `mode` defaults to 'hold'; `off` is a latch's "off" value
+ * (default: the knob's initial); `attack` / `release` are seconds; `ease` is a hydra-motion easing name.
+ */
+export interface KnobPad {
+  mode?: 'hold' | 'latch' | 'trigger'
+  to: number
+  off?: number
+  attack?: number
+  release?: number
+  ease?: string
+}
+
+export interface KnobInfo {
+  initial: number
+  pads: KnobPad[]
+}
+
+const PAD_KEYS = ['mode', 'to', 'off', 'attack', 'release', 'ease'] as const
+
+const fmtKnobNum = (n: number) => (Number.isFinite(n) && !Object.is(n, -0) ? String(n) : '0')
+
+/** `{ mode: 'hold', to: 1.6, release: 0.15, ease: 'easeOutQuad' }`: keys in a fixed order, absent ones left out. */
+function padLiteral(p: KnobPad): string {
+  const parts: string[] = []
+  for (const k of PAD_KEYS) {
+    const v = p[k]
+    if (v === undefined) continue
+    parts.push(`${k}: ${typeof v === 'string' ? `'${v.replace(/[\\']/g, '')}'` : fmtKnobNum(v)}`)
+  }
+  return `{ ${parts.join(', ')} }`
+}
+
+/** The source of a knob: `knob(0.5)`, or with pads `knob(0.5, { pads: [{ mode: 'hold', to: 1 }] })`. */
+export function knobSrc(initial: number, pads: KnobPad[] = []): string {
+  if (!pads.length) return `knob(${fmtKnobNum(initial)})`
+  return `knob(${fmtKnobNum(initial)}, { pads: [${pads.map(padLiteral).join(', ')}] })`
+}
 
 /**
- * A `def` holding a knob: `name = knob(<initial>)`. The value is the `js` expression the importer produces for that text,
- * so it round-trips. It is a bare assignment (not `const`) so the knob is a global of the sketch, the name
- * `runtime.invoke` (and a person typing `k.hold(1)`) reaches, also inside the async wrapper used for `await`.
+ * A `def` holding a knob: `name = knob(<initial>)`, or `name = knob(<initial>, { pads: [...] })`. The value is the `js`
+ * expression the importer produces for that text, so it round-trips. It is a bare assignment (not `const`) so the knob is
+ * a global of the sketch, the name `runtime.invoke` (and a person typing `k.hold(1)`) reaches, also inside the async
+ * wrapper used for `await`.
  */
-export function knobDef(name: string, initial: number): DefStmt {
+export function knobDef(name: string, initial: number, pads: KnobPad[] = []): DefStmt {
   if (!/^[A-Za-z_$][\w$]*$/.test(name)) throw new Error(`"${name}" is not a variable name`)
-  return { id: newId('s'), k: 'def', name, decl: 'bare', value: { k: 'js', src: `knob(${Number.isFinite(initial) && !Object.is(initial, -0) ? String(initial) : '0'})` } }
+  return { id: newId('s'), k: 'def', name, decl: 'bare', value: { k: 'js', src: knobSrc(initial, pads) } }
 }
 
-/** The initial number of a `knob(<n>)` value, or undefined. */
-export function knobInitial(v: Value): number | undefined {
+// a literal: numbers (with a leading minus), strings, arrays and objects of them; anything else is not data
+type Lit = number | string | boolean | Lit[] | { [k: string]: Lit }
+function literal(n: any): Lit | undefined {
+  if (!n) return undefined
+  if (n.type === 'Literal') return typeof n.value === 'number' || typeof n.value === 'string' || typeof n.value === 'boolean' ? n.value : undefined
+  if (n.type === 'UnaryExpression' && n.operator === '-' && n.argument.type === 'Literal' && typeof n.argument.value === 'number') return -n.argument.value
+  if (n.type === 'ArrayExpression') {
+    const out: Lit[] = []
+    for (const e of n.elements) {
+      const v = literal(e)
+      if (v === undefined) return undefined
+      out.push(v)
+    }
+    return out
+  }
+  if (n.type === 'ObjectExpression') {
+    const out: { [k: string]: Lit } = {}
+    for (const p of n.properties) {
+      if (p.type !== 'Property' || p.computed || p.kind !== 'init' || p.method) return undefined
+      const key = p.key.type === 'Identifier' ? p.key.name : p.key.type === 'Literal' ? String(p.key.value) : undefined
+      const v = literal(p.value)
+      if (key === undefined || v === undefined) return undefined
+      out[key] = v
+    }
+    return out
+  }
+  return undefined
+}
+
+function knobPad(x: Lit): KnobPad | undefined {
+  if (!x || typeof x !== 'object' || Array.isArray(x)) return undefined
+  if (Object.keys(x).some((k) => !(PAD_KEYS as readonly string[]).includes(k))) return undefined
+  const num = (v: Lit | undefined) => (v === undefined ? undefined : typeof v === 'number' && Number.isFinite(v) ? v : NaN)
+  const to = num(x.to)
+  if (to === undefined || Number.isNaN(to)) return undefined
+  const mode = x.mode
+  if (mode !== undefined && mode !== 'hold' && mode !== 'latch' && mode !== 'trigger') return undefined
+  const p: KnobPad = { to }
+  if (mode !== undefined) p.mode = mode
+  for (const k of ['off', 'attack', 'release'] as const) {
+    const v = num(x[k])
+    if (Number.isNaN(v)) return undefined
+    if (v !== undefined) p[k] = v
+  }
+  if (x.ease !== undefined) {
+    if (typeof x.ease !== 'string') return undefined
+    p.ease = x.ease
+  }
+  return p
+}
+
+const knobCache = new Map<string, KnobInfo | null>()
+
+/**
+ * The knob in a value: `knob(<number>)` or `knob(<number>, { pads: [...] })` where the pads are plain data with known keys.
+ * Any other form (another option, a computed value) is not a knob iDra edits: it stays code.
+ */
+export function parseKnob(v: Value): KnobInfo | undefined {
   if (v.k !== 'js' && v.k !== 'fn') return undefined
-  const m = KNOB_RE.exec(v.src.trim())
-  return m ? Number(m[1]) : undefined
+  const src = v.src.trim()
+  if (!/^knob\s*\(/.test(src)) return undefined
+  const hit = knobCache.get(src)
+  if (hit !== undefined) return hit ?? undefined
+  let out: KnobInfo | null = null
+  try {
+    const n: any = acorn.parseExpressionAt(src, 0, { ecmaVersion: 'latest' })
+    if (n.end === src.length && n.type === 'CallExpression' && n.callee.type === 'Identifier' && n.callee.name === 'knob' && (n.arguments.length === 1 || n.arguments.length === 2)) {
+      const initial = literal(n.arguments[0])
+      const opts = n.arguments.length === 2 ? literal(n.arguments[1]) : {}
+      if (typeof initial === 'number' && Number.isFinite(initial) && opts && typeof opts === 'object' && !Array.isArray(opts)) {
+        const keys = Object.keys(opts)
+        const raw = (opts as { pads?: Lit }).pads
+        if (keys.every((k) => k === 'pads') && (raw === undefined || Array.isArray(raw))) {
+          const pads = (raw ?? []).map(knobPad)
+          if (pads.every((p) => p)) out = { initial, pads: pads as KnobPad[] }
+        }
+      }
+    }
+  } catch {
+    out = null
+  }
+  if (knobCache.size > 500) knobCache.clear()
+  knobCache.set(src, out)
+  return out ?? undefined
 }
 
-/** Inverse of knobDef: `{ name, initial, decl }` for a def holding exactly `knob(<n>)`, else undefined. */
-export function parseKnobDef(s: Stmt): { name: string; initial: number; decl: DefStmt['decl'] } | undefined {
+/** The initial number of a knob value (see parseKnob), or undefined. */
+export function knobInitial(v: Value): number | undefined {
+  return parseKnob(v)?.initial
+}
+
+/** Inverse of knobDef: `{ name, initial, decl, pads }` for a def holding a knob iDra edits (see parseKnob), else undefined. */
+export function parseKnobDef(s: Stmt): { name: string; initial: number; decl: DefStmt['decl']; pads: KnobPad[] } | undefined {
   if (s.k !== 'def') return undefined
-  const initial = knobInitial(s.value)
-  return initial === undefined ? undefined : { name: s.name, initial, decl: s.decl }
+  const k = parseKnob(s.value)
+  return k ? { name: s.name, initial: k.initial, decl: s.decl, pads: k.pads } : undefined
 }
 
 /** Every knob def in a sketch. */
-export function knobDefs(sketch: Sketch): Array<{ stmtId: string; name: string; initial: number; decl: DefStmt['decl'] }> {
-  const out: Array<{ stmtId: string; name: string; initial: number; decl: DefStmt['decl'] }> = []
+export function knobDefs(sketch: Sketch): Array<{ stmtId: string; name: string; initial: number; decl: DefStmt['decl']; pads: KnobPad[] }> {
+  const out: Array<{ stmtId: string; name: string; initial: number; decl: DefStmt['decl']; pads: KnobPad[] }> = []
   for (const s of sketch.stmts) {
     const k = parseKnobDef(s)
     if (k) out.push({ stmtId: s.id, ...k })

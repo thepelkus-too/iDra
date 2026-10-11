@@ -1,15 +1,17 @@
 // Pads: a parameter bound to a hydra-motion knob, played from floating pad buttons. Pure IR and meta helpers.
 //
-// Binding writes ordinary Hydra: `<name> = knob(<current>)` (core's knobDef: a bare assignment, so the running sketch and
-// runtime.invoke can reach it) before the first statement that uses the parameter, and the argument becomes a reference to
-// it. The pads' configuration is shared by every editor and lives in `sketch.meta.kit.pads`, a namespace owned by this kit
-// and written only through the helpers here (the one exception to "an editor writes only meta[<app>]", see the contract).
-import { catalog, findCall, knobArg, knobDef, knobDefs, num, parseKnobDef, setArg, withMotion, type Call, type Chain, type MotionMethod, type Sketch, type Stmt, type Value } from '@hydra-ipad/core'
+// Binding writes ordinary Hydra: `<name> = knob(<current>, { pads: [...] })` (core's knobDef: a bare assignment, so the
+// running sketch and runtime.invoke can reach it) before the first statement that uses the parameter, and the argument
+// becomes a reference to it. The pads themselves are that plain data in the code (hydra-motion ignores it), so they travel
+// with a copy or an export and undo with the code. Only where each pad sits on screen, and whether the dock is open, live in
+// `sketch.meta.kit`, a namespace owned by this kit and written only through the helpers here (the one exception to "an
+// editor writes only meta[<app>]", see the contract).
+import { catalog, findCall, knobArg, knobDef, knobDefs, num, parseKnobDef, setArg, withMotion, type Call, type Chain, type KnobPad, type MotionMethod, type Sketch, type Stmt, type Value } from '@hydra-ipad/core'
 
 export type PadMode = 'hold' | 'latch' | 'trigger'
 
 export interface PadConfig {
-  /** stable id; also the hold id passed to the knob, so two fingers on two pads of one knob stack */
+  /** `<knob>#<n>` (its place among the knob's pads); also the hold id passed to the knob, so two fingers on two pads stack */
   id: string
   /** the knob def's name */
   knob: string
@@ -30,37 +32,96 @@ export interface PadConfig {
 }
 
 export interface KitMeta {
-  pads?: PadConfig[]
+  /** where each pad sits in the dock, by pad id (fractions of the viewport) */
+  layout?: Record<string, { x: number; y: number }>
   /** the dock is shown (per sketch, so a performance sketch opens with its pads) */
   dock?: boolean
+  /** before pads moved into the code: read once, written back as code on the next pad edit */
+  pads?: PadConfig[]
 }
 
 export const KIT_META = 'kit'
+export const PAD_DEFAULTS = { attack: 0, release: 0.15, ease: 'easeOutQuad' } as const
 
 export function kitMeta(sketch: Sketch): KitMeta {
   const m = sketch.meta?.[KIT_META]
   return m && typeof m === 'object' ? (m as KitMeta) : {}
 }
 
-/** Every pad of the sketch (including pads whose knob is gone: see livePads). */
-export function padsOf(sketch: Sketch): PadConfig[] {
-  const p = kitMeta(sketch).pads
-  return Array.isArray(p) ? p.filter((x) => x && typeof x.id === 'string' && typeof x.knob === 'string') : []
+const padId = (knob: string, i: number) => `${knob}#${i + 1}`
+
+function fromCode(knob: string, i: number, p: KnobPad, layout: KitMeta['layout']): PadConfig {
+  const id = padId(knob, i)
+  const at = layout?.[id]
+  return {
+    id,
+    knob,
+    label: i ? `${knob} ${i + 1}` : knob,
+    mode: p.mode ?? 'hold',
+    value: p.to,
+    value2: p.off,
+    attack: p.attack ?? PAD_DEFAULTS.attack,
+    release: p.release ?? PAD_DEFAULTS.release,
+    ease: p.ease ?? PAD_DEFAULTS.ease,
+    ...(at ? { x: at.x, y: at.y } : {}),
+  }
 }
 
-/** Pads whose knob def is in the sketch (an undone bind leaves its pad config; it comes back with redo). */
-export function livePads(sketch: Sketch): PadConfig[] {
-  const names = new Set(knobDefs(sketch).map((k) => k.name))
-  return padsOf(sketch).filter((p) => names.has(p.knob))
+/** What the code says for a pad: mode and value always, the rest when it matters. */
+export function toKnobPad(p: PadConfig): KnobPad {
+  const k: KnobPad = { mode: p.mode, to: p.value }
+  if (p.mode === 'latch' && p.value2 !== undefined) k.off = p.value2
+  if (p.attack) k.attack = p.attack
+  if (p.mode !== 'trigger') k.release = p.release
+  k.ease = p.ease
+  return k
 }
+
+/** Every pad of the sketch, read from its knob defs, in code order. */
+export function padsOf(sketch: Sketch): PadConfig[] {
+  const meta = kitMeta(sketch)
+  const legacy = Array.isArray(meta.pads) ? meta.pads.filter((x) => x && typeof x.id === 'string' && typeof x.knob === 'string') : []
+  const out: PadConfig[] = []
+  for (const k of knobDefs(sketch)) {
+    if (k.pads.length) k.pads.forEach((p, i) => out.push(fromCode(k.name, i, p, meta.layout)))
+    else legacy.filter((p) => p.knob === k.name).forEach((p, i) => out.push({ ...p, id: padId(k.name, i), label: i ? `${k.name} ${i + 1}` : k.name }))
+  }
+  return out
+}
+
+/** The pads (every pad has its knob now: the knob def holds them). */
+export const livePads = padsOf
 
 /** Write `meta.kit` (other keys of meta and of meta.kit are kept). */
 export function withKitMeta(sketch: Sketch, patch: Partial<KitMeta>): Sketch {
   return { ...sketch, meta: { ...(sketch.meta ?? {}), [KIT_META]: { ...kitMeta(sketch), ...patch } } }
 }
 
+/**
+ * Make the sketch's pads exactly `pads`: each knob def's `{ pads: [...] }` is rewritten (a def whose code comes out the
+ * same is kept as it is), and the dock positions go to `meta.kit.layout` under the pads' new ids.
+ */
 export function withPads(sketch: Sketch, pads: PadConfig[]): Sketch {
-  return withKitMeta(sketch, { pads })
+  const by = new Map<string, PadConfig[]>()
+  for (const p of pads) by.set(p.knob, [...(by.get(p.knob) ?? []), p])
+  const layout: Record<string, { x: number; y: number }> = {}
+  let changed = false
+  const stmts = sketch.stmts.map((s) => {
+    const k = parseKnobDef(s)
+    if (!k || s.k !== 'def') return s
+    const mine = by.get(k.name) ?? []
+    mine.forEach((p, i) => {
+      if (p.x !== undefined && p.y !== undefined) layout[padId(k.name, i)] = { x: p.x, y: p.y }
+    })
+    const value = knobDef(k.name, k.initial, mine.map(toKnobPad)).value
+    if (value.k === 'js' && s.value.k === 'js' && value.src === s.value.src) return s
+    changed = true
+    return { ...s, value }
+  })
+  const meta = kitMeta(sketch)
+  const { pads: _legacy, ...rest } = meta
+  const next = changed ? { ...sketch, stmts } : sketch
+  return { ...next, meta: { ...(sketch.meta ?? {}), [KIT_META]: { ...rest, layout } } }
 }
 
 export function updatePad(sketch: Sketch, id: string, patch: Partial<PadConfig>): Sketch {
@@ -75,20 +136,22 @@ export function updatePad(sketch: Sketch, id: string, patch: Partial<PadConfig>)
  * goes to `value` (default: the knob's base, so a row of Trigger pads can always jump back).
  */
 export function addPad(sketch: Sketch, knob: string, value?: number): { sketch: Sketch; pad?: PadConfig } {
-  const mine = padsOf(sketch).filter((p) => p.knob === knob)
+  const all = padsOf(sketch)
+  const mine = all.filter((p) => p.knob === knob)
   const last = mine[mine.length - 1]
   const base = knobBase(sketch, knob)
   if (!last || base === undefined) return { sketch }
   const pad: PadConfig = {
     ...last,
-    id: `pad-${knob}-${Date.now().toString(36)}-${mine.length}`,
-    label: `${last.label.replace(/ \d+$/, '')} ${mine.length + 1}`,
+    id: padId(knob, mine.length),
+    label: `${knob} ${mine.length + 1}`,
     value: value ?? base,
     value2: undefined,
     x: undefined,
     y: undefined,
   }
-  return { sketch: withPads(sketch, [...padsOf(sketch), pad]), pad }
+  const after = all.indexOf(last) + 1
+  return { sketch: withPads(sketch, [...all.slice(0, after), pad, ...all.slice(after)]), pad }
 }
 
 /** Remove one pad (the knob and its other pads stay). */
@@ -155,7 +218,17 @@ export function bindToPad(sketch: Sketch, callId: string, index: number, current
   if (at < 0) return undefined
   const input = opts.inputName ?? catalog.get(call.fn)?.inputs[index]?.name ?? `arg${index + 1}`
   const name = knobNameFor(sketch, call.fn, input)
-  const def = knobDef(name, current)
+  const pad: PadConfig = {
+    id: padId(name, 0),
+    knob: name,
+    label: name,
+    mode: 'hold',
+    value: opts.padValue ?? (current === 0 ? 1 : +(current * 2).toPrecision(6)),
+    attack: PAD_DEFAULTS.attack,
+    release: PAD_DEFAULTS.release,
+    ease: opts.ease ?? PAD_DEFAULTS.ease,
+  }
+  const def = knobDef(name, current, [toKnobPad(pad)])
   const stmts = sketch.stmts.slice()
   // the def has no source text, so the statement it goes before must start on a new line (a first statement's recorded
   // leading whitespace is empty, which would glue the two together)
@@ -165,18 +238,6 @@ export function bindToPad(sketch: Sketch, callId: string, index: number, current
   let next: Sketch = { ...sketch, stmts }
   next = setArg(next, callId, index, knobArg(name))
   next = withMotion(next)
-  const pads = padsOf(next)
-  const pad: PadConfig = {
-    id: `pad-${name}-${Date.now().toString(36)}`,
-    knob: name,
-    label: opts.label ?? `${call.fn} ${input}`,
-    mode: 'hold',
-    value: opts.padValue ?? (current === 0 ? 1 : +(current * 2).toPrecision(6)),
-    attack: 0,
-    release: 0.15,
-    ease: opts.ease ?? 'easeOutQuad',
-  }
-  next = withPads(next, [...pads, pad])
   return { sketch: next, knob: name, pad }
 }
 
@@ -196,7 +257,7 @@ export function setKnobBase(sketch: Sketch, knob: string, v: number): Sketch {
     stmts: sketch.stmts.map((s) => {
       const k = parseKnobDef(s)
       if (!k || k.name !== knob || s.k !== 'def') return s
-      return { ...s, value: knobDef(knob, v).value }
+      return { ...s, value: knobDef(knob, v, k.pads).value }
     }),
   }
 }
@@ -219,7 +280,8 @@ function replaceInChain(ch: Chain, knob: string, by: Value): Chain {
  */
 export function unbindKnob(sketch: Sketch, knob: string): Sketch {
   const base = knobBase(sketch, knob)
-  if (base === undefined) return withPads(sketch, padsOf(sketch).filter((p) => p.knob !== knob))
+  const layout = Object.fromEntries(Object.entries(kitMeta(sketch).layout ?? {}).filter(([id]) => !id.startsWith(knob + '#')))
+  if (base === undefined) return withKitMeta(sketch, { layout })
   const by = num(base)
   const stmts = sketch.stmts
     .filter((s) => !(parseKnobDef(s)?.name === knob))
@@ -228,7 +290,7 @@ export function unbindKnob(sketch: Sketch, knob: string): Sketch {
       if (s.k === 'def') return { ...s, value: replaceVar(s.value, knob, by) }
       return s
     })
-  return withPads({ ...sketch, stmts }, padsOf(sketch).filter((p) => p.knob !== knob))
+  return withKitMeta({ ...sketch, stmts }, { layout, pads: kitMeta(sketch).pads?.filter((p) => p.knob !== knob) })
 }
 
 // ---------------------------------------------------------------- playing

@@ -1,4 +1,5 @@
 import { contentHash, type Sketch } from './ir'
+import { parseKnob } from './motion-core'
 import { isSafeExpression } from './safe-expr'
 import type { Value } from './ir'
 
@@ -23,16 +24,18 @@ function unsafeValues(v: Value, out: Array<{ src: string }>) {
 
 export function riskyParts(sketch: Sketch): RiskyPart[] {
   const parts: RiskyPart[] = []
-  const mk = (nodeId: string | undefined, kind: RiskyPart['kind'], full: string): RiskyPart => ({
+  const mk = (nodeId: string | undefined, kind: RiskyPart['kind'], full: string, shown = full): RiskyPart => ({
     nodeId,
     kind,
     full,
-    excerpt: full.replace(/\s+/g, ' ').slice(0, 80),
+    excerpt: shown.replace(/\s+/g, ' ').slice(0, 80),
   })
   for (const s of sketch.stmts) {
     if (s.k === 'raw') parts.push(mk(s.id, 'raw', s.code))
     else if (s.k === 'def') {
-      if (s.value.k === 'js') parts.push(mk(s.id, 'js-def', `${s.name} = ${s.value.src}`))
+      // a knob's numbers and pads are plain data for the (separately approved) plugin: changing them is not new code
+      if (s.value.k === 'js' && parseKnob(s.value)) parts.push(mk(s.id, 'js-def', `${s.name} = knob(…)`, `${s.name} = ${s.value.src}`))
+      else if (s.value.k === 'js') parts.push(mk(s.id, 'js-def', `${s.name} = ${s.value.src}`))
       else {
         const bad: Array<{ src: string }> = []
         unsafeValues(s.value, bad)

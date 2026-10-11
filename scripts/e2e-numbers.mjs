@@ -115,6 +115,8 @@ async function waitRun(S, timeout = 30000) {
 }
 
 const code = (S) => evalApp(S, (A) => A.core.toCode(A.store.sketch))
+/** the pads as the code holds them: [knob, mode, to] */
+const codePads = (S) => evalApp(S, (A) => A.core.knobDefs(A.store.sketch).flatMap((k) => k.pads.map((p) => [k.name, p.mode ?? 'hold', p.to])))
 const history = (S) => evalApp(S, (A) => A.store.past.length)
 const undo = (S) => evalApp(S, (A) => A.store.undo())
 /** the arguments of the first `fn(…)` call in the exported code, as text */
@@ -415,9 +417,11 @@ for (const vp of VIEWPORTS) {
         await tap(S, '[data-testid=pad-bind]')
         await S.page.waitForSelector('[data-testid=pad-editor]')
         await closePopovers(S)
-        knob = await evalApp(S, (A) => A.store.sketch.meta.kit.pads[0].knob)
+        knob = await evalApp(S, (A) => A.core.knobDefs(A.store.sketch)[0].name)
         const c = await code(S)
-        assert.match(c, new RegExp(`^${knob} = knob\\(0\\.8\\)`, 'm'), c)
+        // the pad is plain data in the knob call: the code alone carries it
+        assert.match(c, new RegExp(`^${knob} = knob\\(0\\.8, \\{ pads: \\[\\{ mode: 'hold', to: [\\d.]+, release: 0\\.15, ease: '\\w+' \\}\\] \\}\\)$`, 'm'), c)
+        assert.equal(await evalApp(S, (A) => A.store.sketch.meta.kit?.pads), undefined, 'nothing about the pad in meta')
         assert.match(c, new RegExp(`osc\\(20, 0, ${knob}\\)`), c)
         await waitRun(S)
         await sleep(600)
@@ -460,7 +464,7 @@ for (const vp of VIEWPORTS) {
         await S.page.screenshot({ path: join(shots, `${appName}-${vp.name}-5-pad-editor.png`) })
         await S.page.locator('.overlays .scrim:not(.clear)').last().dispatchEvent('pointerdown')
         await sleep(300)
-        const pads = await evalApp(S, (A) => A.store.sketch.meta.kit.pads.map((p) => [p.knob, p.mode, p.value]))
+        const pads = await codePads(S)
         assert.equal(pads.length, 2)
         assert.deepEqual(pads.map((p) => p[1]), ['trigger', 'trigger'])
         const dock = S.page.locator(`.paddock [data-testid="pad-${knob}"]`)
@@ -488,6 +492,7 @@ for (const vp of VIEWPORTS) {
       if (vp.name === 'landscape') {
         await step(`${tag}: export self-contained runs in a plain hydra-synth page; the knob still plays`, async () => {
           exported = await evalApp(S, (A) => A.core.exportWithPrelude(A.store.sketch))
+          assert.match(exported, new RegExp(`^${knob} = knob\\(0\\.8, \\{ pads: \\[`, 'm'), 'the export carries the pads')
           assert.doesNotMatch(exported, /loadScript/)
           const v = await S.context.newPage()
           const errs = []
@@ -512,7 +517,7 @@ for (const vp of VIEWPORTS) {
 
         const nextApp = APPS[(APPS.indexOf(appName) + 1) % APPS.length]
         await step(`${tag}: ${nextApp} opens the same sketch with the binding and the pads`, async () => {
-          const before = await evalApp(S, (A) => ({ pads: A.store.sketch.meta.kit.pads, dock: A.store.sketch.meta.kit.dock }))
+          const before = { pads: await codePads(S), dock: await evalApp(S, (A) => A.store.sketch.meta.kit?.dock) }
           await evalApp(S, async (A) => A.lib.flush())
           await sleep(200)
           const prev = S.appName
@@ -523,7 +528,7 @@ for (const vp of VIEWPORTS) {
           await S.page.goto(base + nextApp + '/#/s/' + id)
           await S.page.reload()
           await S.page.waitForFunction(({ h, id }) => window[h]?.store?.sketch?.id === id, { h: S.h, id }, { timeout: 20000 })
-          const after = await evalApp(S, (A) => ({ pads: A.store.sketch.meta.kit?.pads, dock: A.store.sketch.meta.kit?.dock }))
+          const after = { pads: await codePads(S), dock: await evalApp(S, (A) => A.store.sketch.meta.kit?.dock) }
           const c = await code(S)
           await S.page.waitForSelector(`[data-testid="pad-${knob}"]`, { timeout: 8000 })
           await S.page.screenshot({ path: join(shots, `${prev}-to-${nextApp}.png`) })

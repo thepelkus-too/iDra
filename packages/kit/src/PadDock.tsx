@@ -20,10 +20,11 @@ const TIME_HINT = { min: 0, max: 4, step: 0.01 }
 const latched = new Map<string, boolean>()
 let warnedInert = 0
 
-function edit(h: KitHost, f: (s: ReturnType<KitHost['sketch']>) => ReturnType<KitHost['sketch']>, view = false): void {
+/** One edit through the host. Pad settings are code (undoable); `view` is for dock positions; `coalesce` for a drag. */
+function edit(h: KitHost, f: (s: ReturnType<KitHost['sketch']>) => ReturnType<KitHost['sketch']>, view = false, coalesce?: string): void {
   const s = h.sketch()
   const n = f(s)
-  if (n !== s) h.commit(n, view ? { view: true } : undefined)
+  if (n !== s) h.commit(n, view ? { view: true } : coalesce ? { coalesce } : undefined)
 }
 
 // ---------------------------------------------------------------- the Pad tab
@@ -45,7 +46,7 @@ export function PadTab({ field }: { field: NumberField }) {
     <div class="padtab" data-testid="pad-tab">
       <p class="pad-note">
         A pad plays <b>{field.label}</b> from a button: hold it to push the value somewhere else, let go and it glides back. It writes{' '}
-        <code>{'<name> = knob(' + fmt(field.get()) + ')'}</code> into the sketch, which runs in plain Hydra with the hydra-motion plugin.
+        <code>{'<name> = knob(' + fmt(field.get()) + ', { pads: [ … ] })'}</code> into the sketch: plain Hydra with the hydra-motion plugin, with the pads' settings in the code.
       </p>
       <button
         type="button"
@@ -83,28 +84,32 @@ function suggestTarget(f: NumberField): number {
  */
 export function PadEditor({ knob, pad: first }: { knob: string; pad?: string }) {
   const h = useHost()
-  const [picked, pick] = useState<string | undefined>(first)
+  // which of the knob's pads the settings show, by place (pad ids are places too: `<knob>#<n>`)
+  const [picked, pick] = useState<number>(() => {
+    const s = h?.sketch()
+    return s ? Math.max(0, padsOf(s).filter((p) => p.knob === knob).findIndex((p) => p.id === first)) : 0
+  })
   if (!h) return null
   const sk = h.sketch()
   const base = knobBase(sk, knob)
   const pads = padsOf(sk).filter((p) => p.knob === knob)
   if (base === undefined) return <p class="empty">{knob} is no longer in the sketch.</p>
-  const p = pads.find((x) => x.id === picked) ?? pads[0]
-  const set = (id: string, patch: Partial<PadConfig>) => edit(h, (s) => updatePad(s, id, patch), true)
+  const p = pads[Math.min(picked, pads.length - 1)]
+  const set = (id: string, patch: Partial<PadConfig>) => edit(h, (s) => updatePad(s, id, patch))
+  const slide = (id: string, key: keyof PadConfig) => (v: number, ph?: string) => (ph === 'end' ? h.endGroup?.() : edit(h, (s) => updatePad(s, id, { [key]: v }), false, `pad-${id}-${key}`))
   const range = Math.max(1, Math.abs(base) * 2, ...pads.map((p) => Math.abs(p.value)))
   const hint = { min: Math.min(0, -range * (base < 0 ? 1 : 0)), max: range, step: 0.01 }
   const remove = (gone: PadConfig) => {
-    const before = padsOf(h.sketch())
-    const at = before.findIndex((x) => x.id === gone.id)
-    edit(h, (s) => removePad(s, gone.id), true)
-    if (gone.id === p?.id) pick(pads.find((x) => x.id !== gone.id)?.id)
+    const at = padsOf(h.sketch()).findIndex((x) => x.id === gone.id)
+    const mine = pads.indexOf(gone)
+    edit(h, (s) => removePad(s, gone.id))
+    if (mine < picked || picked >= pads.length - 1) pick(Math.max(0, picked - 1))
     toast(`Removed ${gone.label}`, {
       label: 'Undo',
       run: () => {
         const now = padsOf(h.sketch())
-        if (now.some((x) => x.id === gone.id)) return
-        edit(h, (s) => withPads(s, [...now.slice(0, at), gone, ...now.slice(at)]), true)
-        pick(gone.id)
+        edit(h, (s) => withPads(s, [...now.slice(0, at), gone, ...now.slice(at)]))
+        pick(mine)
       },
     })
   }
@@ -116,13 +121,13 @@ export function PadEditor({ knob, pad: first }: { knob: string; pad?: string }) 
         </code>
         {!h.trusted() && <small class="pad-inert">pads start working once the sketch runs its code</small>}
       </div>
-      <NumSlider label="base" value={base} hint={hint} testid="pad-base" stack onChange={(v, ph) => (ph === 'end' ? h.endGroup?.() : edit(h, (s) => setKnobBase(s, knob, v)))} />
+      <NumSlider label="base" value={base} hint={hint} testid="pad-base" stack onChange={(v, ph) => (ph === 'end' ? h.endGroup?.() : edit(h, (s) => setKnobBase(s, knob, v), false, `knob-${knob}`))} />
       <div class="pe-pads" role="group" aria-label={`Pads for ${knob}`}>
-        {pads.map((x) => (
+        {pads.map((x, i) => (
           <div class={`pe-slot ${x.id === p?.id ? 'on' : ''}`} key={x.id} data-pad={x.id}>
             <Pad pad={x} host={h} base={base} />
             {x.id !== p?.id && (
-              <button type="button" class="pe-handle pe-pick" data-testid="pad-pick" aria-label={`Edit the ${x.label} pad`} onClick={() => pick(x.id)}>
+              <button type="button" class="pe-handle pe-pick" data-testid="pad-pick" aria-label={`Edit the ${x.label} pad`} onClick={() => pick(i)}>
                 ✎
               </button>
             )}
@@ -140,8 +145,8 @@ export function PadEditor({ knob, pad: first }: { knob: string; pad?: string }) 
           aria-label={`Add a pad for ${knob}`}
           onClick={() => {
             const r = addPad(h.sketch(), knob)
-            edit(h, () => r.sketch, true)
-            if (r.pad) pick(r.pad.id)
+            edit(h, () => r.sketch)
+            if (r.pad) pick(pads.length)
           }}
         >
           ＋
@@ -158,10 +163,10 @@ export function PadEditor({ knob, pad: first }: { knob: string; pad?: string }) 
             ))}
           </div>
           <small class="pe-hint">{MODES.find((m) => m.id === p.mode)?.hint}</small>
-          <NumSlider label={p.mode === 'latch' ? 'on' : 'to'} value={p.value} hint={hint} testid="pad-value" stack onChange={(v, ph) => ph !== 'end' && set(p.id, { value: v })} />
-          {p.mode === 'latch' && <NumSlider label="off" value={p.value2 ?? base} hint={hint} testid="pad-value2" stack onChange={(v, ph) => ph !== 'end' && set(p.id, { value2: v })} />}
-          <NumSlider label="attack s" value={p.attack} hint={TIME_HINT} testid="pad-attack" stack onChange={(v, ph) => ph !== 'end' && set(p.id, { attack: v })} />
-          {p.mode !== 'trigger' && <NumSlider label={p.mode === 'hold' ? 'release s' : 'off s'} value={p.release} hint={TIME_HINT} testid="pad-release" stack onChange={(v, ph) => ph !== 'end' && set(p.id, { release: v })} />}
+          <NumSlider label={p.mode === 'latch' ? 'on' : 'to'} value={p.value} hint={hint} testid="pad-value" stack onChange={slide(p.id, 'value')} />
+          {p.mode === 'latch' && <NumSlider label="off" value={p.value2 ?? base} hint={hint} testid="pad-value2" stack onChange={slide(p.id, 'value2')} />}
+          <NumSlider label="attack s" value={p.attack} hint={TIME_HINT} testid="pad-attack" stack onChange={slide(p.id, 'attack')} />
+          {p.mode !== 'trigger' && <NumSlider label={p.mode === 'hold' ? 'release s' : 'off s'} value={p.release} hint={TIME_HINT} testid="pad-release" stack onChange={slide(p.id, 'release')} />}
           <div class="curves" role="radiogroup" aria-label="Pad curve">
             {EASE_PRESETS.map((name) => (
               <button type="button" role="radio" aria-checked={p.ease === name} key={name} class={`curve ${p.ease === name ? 'on' : ''}`} data-ease={name} title={easeLabel(name)} aria-label={easeLabel(name)} onClick={() => set(p.id, { ease: name })}>

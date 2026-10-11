@@ -135,7 +135,8 @@ See docs/audio.md, docs/plugins.md and docs/midi.md.
 
 Additive again; an editor that ignores it keeps working. Details and the frozen plugin surface: docs/motion.md.
 
-* **Knobs.** A knob is a def `k = knob(0.5)`: make it with `knobDef(name, initial)`, read it with `parseKnobDef(stmt)` /
+* **Knobs.** A knob is a def `k = knob(0.5)`, or with pads `k = knob(0.5, { pads: [{ mode: 'hold', to: 1 }] })` (plain data
+  the plugin ignores): make it with `knobDef(name, initial, pads?)`, read it with `parseKnobDef(stmt)` /
   `knobDefs(sketch)`, and bind a numeric argument to it with `setArg(sketch, callId, i, knobArg(name))` (a `{ k: 'var', name }`
   value). Add the plugin with `withMotion(sketch)` (the registry's pinned ref). Show a knob def like any def; never turn it
   into a `const`, or pads cannot reach it.
@@ -172,11 +173,13 @@ everywhere:
 * **Pads.** "Bind to a pad" writes a knob def with `knobDef` (section 7b: a bare assignment, never `const`, although the
   original plan said `const`) before the first statement using the call, and the argument becomes a reference to it.
   Pads are inert until the sketch is trusted.
-* **The `meta.kit` exception.** Pad configuration is shared by every editor, so it lives in `sketch.meta.kit` (`pads`,
-  `dock`), a namespace owned by the kit and written **only** through its helpers (`withKitMeta`, `withPads`, `updatePad`,
-  `bindToPad`, `unbindKnob`). This is the one exception to "write only `meta[<app>]`" (section 2). An editor never writes
-  `meta.kit` itself and preserves it like any other key. Undo restores `meta[<app>]`, not `meta.kit`: a pad whose knob def
-  is gone is ignored (`livePads`) and comes back with redo.
+* **Pads are code.** A pad's settings are data in its knob's call (`knob(0.8, { pads: [...] })`), so they are vanilla Hydra,
+  travel with any copy or export, and undo with the code. Write them only through the kit's helpers (`withPads`,
+  `updatePad`, `addPad`, `removePad`, `bindToPad`, `unbindKnob`).
+* **The `meta.kit` exception.** View state shared by every editor (each pad's dock position, `layout`, and whether the
+  dock is open, `dock`) lives in `sketch.meta.kit`, a namespace owned by the kit and written **only** through its helpers
+  (`withKitMeta`, `withPads`, `updatePad`, `unbindKnob`). This is the one exception to "write only `meta[<app>]`"
+  (section 2). An editor never writes `meta.kit` itself and preserves it like any other key.
 
 ## 9. Tests every editor must pass
 
