@@ -44,4 +44,14 @@ input[type=text]{min-height:40px;border-radius:10px;border:1px solid var(--hi-li
 .lab-pad.on{background:var(--hi-accent);color:#04201f;border-color:transparent}
 .lab-pad span{font-size:12px;opacity:.75}
 .foot{padding:2px 10px;border-top:1px solid var(--hi-line);background:var(--hi-panel)}
+.pv-chain{margin:10px 0}
+.pv-label{font:12px var(--mono);color:var(--hi-dim);margin-bottom:4px}
+.pv-row{display:flex;gap:8px;overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:4px}
+.pv-cell{display:flex;flex-direction:column;gap:2px;padding:4px;min-width:136px;border-radius:10px;text-align:left}
+.pv-thumb{width:128px;height:72px;background:#000;border-radius:6px;display:block}
+.pv-thumb.big{width:256px;height:144px}
+.pv-cap{font:12px var(--mono)}
+.pv-state{font-size:11px;color:var(--hi-dim);white-space:normal}
+#pv-diff figure{margin:0}
+#pv-diff figcaption{font-size:11px;color:var(--hi-dim)}
 `
