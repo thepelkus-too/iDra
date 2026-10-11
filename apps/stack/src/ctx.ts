@@ -1,5 +1,6 @@
 // Process-wide handles the components share. Set once in main.tsx (tests set their own).
 import { catalog, getAudioEngine, getLibrary, type AudioEngine, type BackdropController, type BackdropState, type Catalog, type Library, type Sketch } from '@hydra-ipad/core'
+import { setKitHost, type History } from '@hydra-ipad/kit'
 import { useEffect, useState } from 'preact/hooks'
 import type { Runner } from './runner'
 import { Store, type CommitOpts } from './store'
@@ -21,6 +22,25 @@ export const ctx: Ctx = {
   audio: getAudioEngine(),
   catalog,
 }
+
+// the kit edits through the store like everything else; its popovers, sheets and pads follow the document
+setKitHost({
+  app: 'stack',
+  sketch: () => ctx.store.sketch,
+  commit: (next, opts) => ctx.store.commit(next, opts),
+  endGroup: () => ctx.store.endGroup(),
+  subscribe: (cb) => (ctx.store ? ctx.store.subscribe(cb) : () => {}),
+  invoke: (name, method, args) => ctx.runner?.rt?.invoke(name, method, args) ?? false,
+  trusted: () => !!ctx.runner && !ctx.runner.trust.pending,
+  // approve the content just committed (the runner may not have picked it up yet)
+  approveOnce: () => {
+    ctx.runner?.track(ctx.store.sketch)
+    ctx.runner?.approveOnce()
+  },
+})
+
+/** What the undo taps and ⌘Z / ⌘Enter act on. */
+export const history = (): History => ({ undo: () => ctx.store.undo(), redo: () => ctx.store.redo(), run: () => ctx.runner.run(true) })
 
 /** Apply a pure edit to the current sketch. */
 export function edit(f: (s: Sketch) => Sketch, opts?: CommitOpts): void {

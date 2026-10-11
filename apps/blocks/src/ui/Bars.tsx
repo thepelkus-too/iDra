@@ -7,7 +7,7 @@ import { BackdropButtons, Switcher, SketchName, UndoRedo, openMoreMenu } from '.
 import { codeBridge } from '../kit/CodeDrawer'
 import { newBlankSketch } from '../kit/actions'
 import { ctx, useRunner, useStore } from '../kit/ctx'
-import { closeSheet, openSheet } from '../kit/overlay'
+import { closeSheet, openSheet } from '@hydra-ipad/kit'
 import { deleteSel, dice, duplicateSel, foldSel, mutateSel, selectedStmtId } from '../ops'
 import { appPrefs } from '../prefs'
 import { STARTERS } from '../starters'

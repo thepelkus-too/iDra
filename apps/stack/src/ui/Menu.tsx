@@ -1,4 +1,4 @@
-import { closePopover, openPopover } from '../overlay'
+import { closePopover, openPopover } from '@hydra-ipad/kit'
 
 export interface MenuItem {
   label: string

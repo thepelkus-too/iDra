@@ -29,7 +29,7 @@ PWA and its root-scope worker covers every editor (this is what keeps an install
 ## 2. Persistence
 
 * The IR is the single source of truth. Every edit produces a new `Sketch` (immutable helpers: `setArg`, `mapCalls`, `withMeta`, spread) and goes to `getLibrary().autosave(sketch)` (debounced; `flush()` on `pagehide`, `visibilitychange→hidden`, and before navigating).
-* **Write only `sketch.meta[<app>]`** (use `withMeta(sketch, '<app>', patch)`). Preserve every other `meta` key and every unknown field on every node. Per-node view state goes in `node.meta[<app>]` (`withNodeMeta`).
+* **Write only `sketch.meta[<app>]`** (use `withMeta(sketch, '<app>', patch)`; the one exception is the shared kit's `meta.kit`, section 8a). Preserve every other `meta` key and every unknown field on every node. Per-node view state goes in `node.meta[<app>]` (`withNodeMeta`).
 * Private UI preferences (panel sizes, last tab) go through `appStorage('<app>')` → `hydra-<app>:` keys. Sketches never go to `localStorage`.
 * Thumbnails: after a run settles, `runtime.thumbnail()` → `library.setThumbnail(id, dataUrl)` (the shell shows them).
 
@@ -135,7 +135,8 @@ See docs/audio.md, docs/plugins.md and docs/midi.md.
 
 Additive again; an editor that ignores it keeps working. Details and the frozen plugin surface: docs/motion.md.
 
-* **Knobs.** A knob is a def `k = knob(0.5)`: make it with `knobDef(name, initial)`, read it with `parseKnobDef(stmt)` /
+* **Knobs.** A knob is a def `k = knob(0.5)`, or with pads `k = knob(0.5, { pads: [{ mode: 'hold', to: 1 }] })` (plain data
+  the plugin ignores): make it with `knobDef(name, initial, pads?)`, read it with `parseKnobDef(stmt)` /
   `knobDefs(sketch)`, and bind a numeric argument to it with `setArg(sketch, callId, i, knobArg(name))` (a `{ k: 'var', name }`
   value). Add the plugin with `withMotion(sketch)` (the registry's pinned ref). Show a knob def like any def; never turn it
   into a `const`, or pads cannot reach it.
@@ -151,6 +152,34 @@ Additive again; an editor that ignores it keeps working. Details and the frozen 
 ## 8. Fast numeric edits
 
 On a numeric drag call `rt.setLive(liveId(call.id, argIndex), value)` for instant feedback (no recompile, coalesced to one message per frame), update the IR with `setArg`, and `autosave`. `rt.run(sketch)` after any edit is always correct: when only numbers changed it detects identical code and just updates the live table (`RunResult.recompiled === false`). Only plain `num` args of catalog-known `float` inputs are live; everything else recompiles. See `docs/live-edit.md`.
+
+### 8a. Numbers (the shared number editor)
+
+Every numeric value in every editor is edited with `@hydra-ipad/kit` (docs/kit.md), so a number behaves the same
+everywhere:
+
+* **Tap** opens `openNumberEditor`: Keypad (with Glide and "Loop between values"), Ladder, Pad. The last tab is remembered
+  per editor (`appStorage('<app>')`, key `numberTab`), as are the glide's duration and curve.
+* **Long-press** (350 ms, 8 px slop) opens the ladder under the finger; up/down picks a magnitude, left/right steps by it
+  (24 px per step). A control that already has a long-press action keeps it for a long-press *without* movement (Chain
+  Stack's kind menu, the rack's knob menu); otherwise that opens the editor's Ladder tab. Drag-to-scrub and double-tap reset
+  are unchanged: a move past the slop before 350 ms is the control's own drag.
+* **One gesture, one undo step.** Ladder gestures and glides push intermediate values through `setLive` when the number has
+  a live slot (section 8) and commit once at the end; without a live slot they use the editor's coalesced drag commits.
+  Any other edit of a gliding number cancels the glide.
+* **Describe numbers as `NumberField`s** (`id`, `label`, `get`, `def`, `hint`, `onChange(v, phase)`, optional `live`, and
+  `arg: { callId, index }` when the number is a call's argument) and register the editor once with `setKitHost` (docs/kit.md).
+  Put `padsTool()` in the switcher's `extraTools` (an additive `mountSwitcher` option) so "Pads" is in the ⇄ menu.
+* **Pads.** "Bind to a pad" writes a knob def with `knobDef` (section 7b: a bare assignment, never `const`, although the
+  original plan said `const`) before the first statement using the call, and the argument becomes a reference to it.
+  Pads are inert until the sketch is trusted.
+* **Pads are code.** A pad's settings are data in its knob's call (`knob(0.8, { pads: [...] })`), so they are vanilla Hydra,
+  travel with any copy or export, and undo with the code. Write them only through the kit's helpers (`withPads`,
+  `updatePad`, `addPad`, `removePad`, `bindToPad`, `unbindKnob`).
+* **The `meta.kit` exception.** View state shared by every editor (each pad's dock position, `layout`, and whether the
+  dock is open, `dock`) lives in `sketch.meta.kit`, a namespace owned by the kit and written **only** through its helpers
+  (`withKitMeta`, `withPads`, `updatePad`, `unbindKnob`). This is the one exception to "write only `meta[<app>]`"
+  (section 2). An editor never writes `meta.kit` itself and preserves it like any other key.
 
 ## 9. Tests every editor must pass
 

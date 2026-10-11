@@ -88,9 +88,11 @@ rt.invoke('k', 'hold', [0.9, 0, 'linear', 'padA'])  // a pad press
 rt.invoke('k', 'release', [0.15, 'easeOutQuad', 'padA'])
 ```
 
-* **IR.** `knobDef(name, initial)` is a bare assignment (`k = knob(0.5)`, not `const`), so the knob is a global of the
+* **IR.** `knobDef(name, initial, pads?)` is a bare assignment (`k = knob(0.5)`, not `const`), so the knob is a global of the
   sketch: reachable by `runtime.invoke`, and by a person typing `k.hold(1)`, also when the sketch has `await` and runs
-  inside an async wrapper. `parseKnobDef(stmt)` recognises exactly `knob(<number>)` (any decl); other forms stay code.
+  inside an async wrapper. iDra's pads are plain data in the options, `knob(0.5, { pads: [{ mode: 'hold', to: 1 }] })`,
+  which the plugin ignores. `parseKnobDef(stmt)` recognises exactly `knob(<number>)` and `knob(<number>, { pads: [...] })`
+  whose pads use only `mode`, `to`, `off`, `attack`, `release` and `ease` as literals (any decl); other forms stay code.
   `importText`/`toCode` round-trip both. Use `knobDefs(sketch)` to list them.
 * **Safe mode** (untrusted sketch, or the harness's *safe* box) never loads plugins, so a knob def runs as its initial
   number (`k = 0.5`) and the sketch still shows; `RunResult.skipped` says so.

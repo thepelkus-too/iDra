@@ -148,7 +148,9 @@ export class Runner {
     const fp = trustFingerprint(sketch)
     let ok = this.approved.get(fp)
     if (ok === undefined) {
-      ok = !(await this.lib.needsTrust(sketch))
+      const needs = await this.lib.needsTrust(sketch)
+      // an approval given while the library answered (the owner's own pad binding) wins over the stored answer
+      ok = this.approved.get(fp) ?? !needs
       this.approved.set(fp, ok)
     }
     this.trust = { pending: !ok, parts }

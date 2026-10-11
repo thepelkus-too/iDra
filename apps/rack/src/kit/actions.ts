@@ -1,7 +1,7 @@
 // Document-level actions: open / new / import / export / copy. Copied from apps/stack.
 import { routeHash, toCode, type Sketch } from '@hydra-ipad/core'
 import { ctx } from './ctx'
-import { toast } from './overlay'
+import { toast } from '@hydra-ipad/kit'
 
 export function codeOf(sketch: Sketch = ctx.store.sketch): string {
   return toCode(sketch)

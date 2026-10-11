@@ -23,7 +23,7 @@ import { useContext, useMemo, useRef, useState } from 'preact/hooks'
 import type { RefObject } from 'preact'
 import type { Kind } from '../conv'
 import { ctx, edit, useStore } from '../ctx'
-import { useHandle, usePress, useSwipe } from '../gestures'
+import { useHandle, useSwipe } from '../gestures'
 import {
   duplicateMod,
   duplicateStmt,
@@ -44,13 +44,12 @@ import {
   uniqueName,
   updateCall,
 } from '../model'
-import { closePopover, openPopover, toast } from '../overlay'
+import { closePopover, openNumberEditor, openPopover, simpleField, toast, usePress } from '@hydra-ipad/kit'
 import { focusNode } from '../nav'
 import type { RowProblem } from '../problems'
 import { ArgView, argInfoFor, type ArgInfo } from './ArgView'
 import { openMenu, type MenuItem } from './Menu'
 import { FnPicker, RefPicker, useCatalogVersion } from './Picker'
-import { Keypad } from './Keypad'
 import { Scrub } from './Scrub'
 
 // ---------------------------------------------------------------- shared view state
@@ -675,6 +674,19 @@ const SETTING_HINT: Record<string, Hint> = { bpm: { min: 1, max: 240, step: 1, i
 function SettingBody({ stmt }: { stmt: Extract<Stmt, { k: 'setting' }> }) {
   const hint = SETTING_HINT[stmt.name]
   const set = (v: number) => edit((s) => updateStmt(s, stmt.id, (x) => (x.k === 'setting' ? { ...x, v } : x)), { coalesce: `set:${stmt.id}` })
+  const field = () =>
+    simpleField({
+      id: `stack:set:${stmt.id}`,
+      label: stmt.name,
+      hint,
+      def: stmt.name === 'bpm' ? 30 : 1,
+      get: () => {
+        const x = ctx.store.sketch.stmts.find((y) => y.id === stmt.id)
+        return x?.k === 'setting' ? x.v : stmt.v
+      },
+      set,
+      end: () => (ctx.store.endGroup(), ctx.runner.run()),
+    })
   return (
     <div class="crow plain" data-testid="setting-row">
       <span class="tok fname">{stmt.name}</span>
@@ -685,16 +697,11 @@ function SettingBody({ stmt }: { stmt: Extract<Stmt, { k: 'setting' }> }) {
         label={stmt.name}
         testid={`setting-${stmt.name}`}
         onChange={(v, ph) => (ph === 'end' ? (ctx.store.endGroup(), ctx.runner.run()) : set(v))}
-        onTap={(el) =>
-          openKeypadFor(el, stmt.name, stmt.v, stmt.name === 'bpm' ? 30 : 1, hint, (v) => set(v))
-        }
+        onTap={(el) => openNumberEditor(el, field())}
+        field={field}
       />
     </div>
   )
-}
-
-function openKeypadFor(el: HTMLElement, title: string, value: number, def: number, hint: Hint, onChange: (n: number) => void): void {
-  openPopover(el, () => <Keypad title={title} value={value} def={def} hint={hint} onChange={onChange} onClose={closePopover} />, { width: 268, label: title, onClose: () => (ctx.store.endGroup(), ctx.runner.run()) })
 }
 
 // ---------------------------------------------------------------- the list

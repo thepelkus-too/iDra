@@ -13,14 +13,12 @@ import {
   rollDice,
 } from '../actions'
 import { ctx, edit, useBackdrop, useRunner, useStore } from '../ctx'
-import { usePress } from '../gestures'
 import { setOut, updateStmt } from '../model'
-import { closeSheet, openPopover, openSheet, toast } from '../overlay'
+import { closeSheet, Keypad, openPopover, openSheet, padsTool, toast, usePress } from '@hydra-ipad/kit'
 import { appPrefs } from '../prefs'
 import { autoView, metaOf, stripOf } from '../view'
 import { focusNode } from '../nav'
 import { AudioMount } from './FnEditor'
-import { Keypad } from './Keypad'
 import { openMenu } from './Menu'
 import { addStatement } from './Rows'
 
@@ -37,7 +35,7 @@ export function TopBar({ mode, setMode, onToggleAudio }: { mode: 'blocks' | 'cod
   const handle = useRef<ReturnType<typeof mountSwitcher>>()
   useEffect(() => {
     if (!sw.current) return
-    handle.current = mountSwitcher(sw.current, { current: 'stack', sketchId: ctx.store.sketch.id })
+    handle.current = mountSwitcher(sw.current, { current: 'stack', sketchId: ctx.store.sketch.id, extraTools: [padsTool()] })
     return () => handle.current?.destroy()
   }, [])
   useEffect(() => handle.current?.refresh(sk.id), [sk.id])

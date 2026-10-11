@@ -5,7 +5,7 @@ import { createRuntime, type Runtime, type Sketch } from '@hydra-ipad/core'
 import { useEffect, useRef } from 'preact/hooks'
 import { compileOf, graphOf, metaNow } from '../doc'
 import { ctx } from '../kit/ctx'
-import { toast } from '../kit/overlay'
+import { toast } from '@hydra-ipad/kit'
 import { graphToIR, nodeById, outId, type Graph } from '../model'
 import { freeOutputs } from '../ops'
 
