@@ -140,9 +140,12 @@ Additive again; an editor that ignores it keeps working. Details and the frozen 
   `knobDefs(sketch)`, and bind a numeric argument to it with `setArg(sketch, callId, i, knobArg(name))` (a `{ k: 'var', name }`
   value). Add the plugin with `withMotion(sketch)` (the registry's pinned ref). Show a knob def like any def; never turn it
   into a `const`, or pads cannot reach it.
-* **Pads.** `rt.invoke(name, 'set' | 'to' | 'hold' | 'release', args)` calls the knob's method in the running sketch
-  (numbers and short strings only; ordered, never coalesced; returns false and reports a warning when refused). Give each
-  pad its own hold id (`rt.invoke('k', 'hold', [v, attack, ease, padId])`, release with the same id) so two fingers work.
+* **Pads.** `rt.invoke(name, 'set' | 'to' | 'hold' | 'release' | 'press' | 'lift', args)` calls the knob's method in the
+  running sketch (numbers and short strings only; ordered, never coalesced; returns false and reports a warning when
+  refused). With hydra-motion 0.2.0 or later a pad is `rt.invoke('k', 'press', [i])` and `rt.invoke('k', 'lift', [i])`,
+  `i` being the pad's place in the knob's `pads` option; for a sketch pinned to 0.1.0, give each pad its own hold id
+  (`rt.invoke('k', 'hold', [v, attack, ease, padId])`, release with the same id) so two fingers work. The kit's
+  `padPress` / `padRelease` with `motionPlaysPads(sketch)` pick the right one.
   Easing names for pickers: `MOTION_EASINGS`.
 * **Export.** `exportWithPrelude(sketch)` is the "self-contained" export (plugin inlined); `toCode` is unchanged. Mount
   `mountCompatBadge(el, sketch, { audio: getAudioEngine() })` next to your Export button and call `.update(sketch)` on change;

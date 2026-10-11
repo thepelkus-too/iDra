@@ -27,7 +27,7 @@ for byte).
 npm view hydra-motion          # must still say the name is free (it was when this package was written; check again)
 npm login
 npm publish --access public
-git tag hydra-motion-v0.1.0 && git push origin hydra-motion-v0.1.0
+git tag hydra-motion-v0.2.0 && git push origin hydra-motion-v0.2.0
 ```
 
 ## 3. Repoint iDra's registry
@@ -35,14 +35,15 @@ git tag hydra-motion-v0.1.0 && git push origin hydra-motion-v0.1.0
 In iDra, only three fields of the `hydra-motion` entry in `packages/core/plugins/registry.json` change:
 
 ```json
-"url": "https://cdn.jsdelivr.net/npm/hydra-motion@0.1.0/dist/hydra-motion.js",
-"version": "0.1.0",
+"url": "https://cdn.jsdelivr.net/npm/hydra-motion@0.2.0/dist/hydra-motion.js",
+"version": "0.2.0",
 "integrity": "sha256-…"   // of that exact file
 ```
 
-Then `packages/core/package.json` depends on `"hydra-motion": "0.1.0"` from npm instead of the workspace, and
+Then `packages/core/package.json` depends on `"hydra-motion": "0.2.0"` (or later) from npm instead of the workspace, and
 `scripts/sync-motion.mjs` stops rewriting the entry (or reads the npm copy to check the SRI). Sketches saved with the old
-site URL keep working while the site still serves `plugins/`; new ones get the npm URL.
+site URL keep working while the site still serves `plugins/` (including the earlier builds in
+`packages/core/plugins/archive/`); new ones get the npm URL.
 
 ## 4. Delete the workspace
 

@@ -6,6 +6,7 @@
 // 3. Offline: the harness reloads without network and the plugin still loads (service worker + script cache).
 import assert from 'node:assert/strict'
 import { cpSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
 import { execFileSync } from 'node:child_process'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
@@ -132,6 +133,11 @@ await step('shell registers the service worker; the plugin is served at its pinn
   assert.match(reg, /^\/\*! hydra-motion v/)
   const sw = await (await page.request.get(base + 'sw.js')).text()
   assert.match(sw, /plugins\/hydra-motion@[\d.]+\/hydra-motion\.js/, 'precached for offline use')
+  // sketches pinned to an earlier build still load it: 0.1.0 at its old path, byte for byte (its SRI), precached too
+  const old = await (await page.request.get(base + 'plugins/hydra-motion@0.1.0/hydra-motion.js')).text()
+  assert.match(old, /^\/\*! hydra-motion v0\.1\.0 /)
+  assert.equal('sha256-' + createHash('sha256').update(old).digest('base64'), 'sha256-Ika5SLr6ZBkOp2H6IWG2eeJpmOQQ/O0uu68YnPhy9ws=')
+  assert.match(sw, /plugins\/hydra-motion@0\.1\.0\/hydra-motion\.js/)
 })
 
 await step('Motion lab: load the lab sketch (iframe runtime, plugin from the registry URL)', async () => {

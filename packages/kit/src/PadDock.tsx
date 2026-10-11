@@ -8,7 +8,7 @@ import type { NumberField } from './field'
 import { kitHost, useHost, type KitHost } from './host'
 import { NumSlider } from './NumSlider'
 import { closePopover, openSheet, toast } from './overlay'
-import { addPad, bindToPad, kitMeta, knobBase, livePads, padPress, padRelease, padsOf, removePad, setKnobBase, unbindKnob, updatePad, withKitMeta, withPads, type PadConfig, type PadMode } from './pads'
+import { addPad, bindToPad, kitMeta, knobBase, livePads, motionPlaysPads, padPress, padRelease, padsOf, removePad, setKnobBase, unbindKnob, updatePad, withKitMeta, withPads, type PadConfig, type PadMode } from './pads'
 
 const MODES: Array<{ id: PadMode; label: string; hint: string }> = [
   { id: 'hold', label: 'Hold', hint: 'press goes to the value and stays; release glides back' },
@@ -209,6 +209,8 @@ function Pad({ pad, host, base, compact }: { pad: PadConfig; host: KitHost; base
   const [down, setDown] = useState(false)
   const [, bump] = useState(0)
   const ptr = useRef<number | null>(null)
+  // how this press was played (k.press, or hold/to on a 0.1.0 plugin): the release goes the same way
+  const via = useRef(false)
   const inert = !host.trusted()
   // trust changes without a store change (the owner taps Run it, a re-run settles): look again while inert
   useEffect(() => {
@@ -229,7 +231,8 @@ function Pad({ pad, host, base, compact }: { pad: PadConfig; host: KitHost; base
     ;(e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId)
     ptr.current = e.pointerId
     setDown(true)
-    const r = padPress(pad, host.invoke, base, on)
+    via.current = motionPlaysPads(host.sketch())
+    const r = padPress(pad, host.invoke, base, on, via.current)
     if (!r.ok) toast(`${pad.knob} is not running yet: wait for the preview to restart`, undefined, 2500)
     if (pad.mode === 'latch') {
       latched.set(pad.id, r.on)
@@ -240,7 +243,7 @@ function Pad({ pad, host, base, compact }: { pad: PadConfig; host: KitHost; base
     if (ptr.current !== e.pointerId) return
     ptr.current = null
     setDown(false)
-    padRelease(pad, host.invoke)
+    padRelease(pad, host.invoke, via.current)
   }
   return (
     <button

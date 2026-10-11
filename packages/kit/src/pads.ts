@@ -6,7 +6,7 @@
 // with a copy or an export and undo with the code. Only where each pad sits on screen, and whether the dock is open, live in
 // `sketch.meta.kit`, a namespace owned by this kit and written only through the helpers here (the one exception to "an
 // editor writes only meta[<app>]", see the contract).
-import { catalog, findCall, knobArg, knobDef, knobDefs, num, parseKnobDef, setArg, withMotion, type Call, type Chain, type KnobPad, type MotionMethod, type Sketch, type Stmt, type Value } from '@hydra-ipad/core'
+import { catalog, findCall, findMotionPlugin, knobArg, knobDef, knobDefs, num, parseKnobDef, setArg, withMotion, type Call, type Chain, type KnobPad, type MotionMethod, type Sketch, type Stmt, type Value } from '@hydra-ipad/core'
 
 export type PadMode = 'hold' | 'latch' | 'trigger'
 
@@ -15,6 +15,8 @@ export interface PadConfig {
   id: string
   /** the knob def's name */
   knob: string
+  /** its place in the knob's `pads` option (what `k.press(i)` plays); absent for pads saved before pads moved into the code */
+  index?: number
   label: string
   mode: PadMode
   /** hold / trigger: where the press goes. latch: the "on" value */
@@ -56,6 +58,7 @@ function fromCode(knob: string, i: number, p: KnobPad, layout: KitMeta['layout']
   return {
     id,
     knob,
+    index: i,
     label: i ? `${knob} ${i + 1}` : knob,
     mode: p.mode ?? 'hold',
     value: p.to,
@@ -144,6 +147,7 @@ export function addPad(sketch: Sketch, knob: string, value?: number): { sketch: 
   const pad: PadConfig = {
     ...last,
     id: padId(knob, mine.length),
+    index: mine.length,
     label: `${knob} ${mine.length + 1}`,
     value: value ?? base,
     value2: undefined,
@@ -221,6 +225,7 @@ export function bindToPad(sketch: Sketch, callId: string, index: number, current
   const pad: PadConfig = {
     id: padId(name, 0),
     knob: name,
+    index: 0,
     label: name,
     mode: 'hold',
     value: opts.padValue ?? (current === 0 ? 1 : +(current * 2).toPrecision(6)),
@@ -297,16 +302,31 @@ export function unbindKnob(sketch: Sketch, knob: string): Sketch {
 
 export type Invoke = (name: string, method: MotionMethod, args: Array<number | string>) => boolean
 
-/** What a press does: Hold and Trigger go to the value; Latch toggles (`on` is the latch's state before the press). */
-export function padPress(p: PadConfig, invoke: Invoke, base: number, on = false): { ok: boolean; on: boolean } {
-  if (p.mode === 'hold') return { ok: invoke(p.knob, 'hold', [p.value, p.attack, p.ease, p.id]), on: true }
-  if (p.mode === 'trigger') return { ok: invoke(p.knob, 'to', [p.value, p.attack, p.ease]), on: false }
+/**
+ * The sketch's hydra-motion plays pads itself: `k.press(i)` / `k.lift(i)`, added in 0.2.0. Sketches pinned to 0.1.0
+ * (bound before, or an inlined 0.1.0 block) keep working through hold / to / release.
+ */
+export function motionPlaysPads(sketch: Sketch): boolean {
+  const m = /^(\d+)\.(\d+)\./.exec(findMotionPlugin(sketch)?.version ?? '')
+  return !!m && (+m[1] > 0 || +m[2] >= 2)
+}
+
+/**
+ * What a press does: Hold and Trigger go to the value; Latch toggles (`on` is the latch's state before the press).
+ * With `viaPads` (see motionPlaysPads) it is `k.press(i)`, the same call a person could type, and the knob does the rest.
+ */
+export function padPress(p: PadConfig, invoke: Invoke, base: number, on = false, viaPads = false): { ok: boolean; on: boolean } {
+  const next = p.mode === 'hold' ? true : p.mode === 'latch' ? !on : false
+  if (viaPads && p.index !== undefined) return { ok: invoke(p.knob, 'press', [p.index]), on: next }
+  if (p.mode === 'hold') return { ok: invoke(p.knob, 'hold', [p.value, p.attack, p.ease, p.id]), on: next }
+  if (p.mode === 'trigger') return { ok: invoke(p.knob, 'to', [p.value, p.attack, p.ease]), on: next }
   const off = p.value2 ?? base
-  return on ? { ok: invoke(p.knob, 'to', [off, p.release, p.ease]), on: false } : { ok: invoke(p.knob, 'to', [p.value, p.attack, p.ease]), on: true }
+  return { ok: on ? invoke(p.knob, 'to', [off, p.release, p.ease]) : invoke(p.knob, 'to', [p.value, p.attack, p.ease]), on: next }
 }
 
 /** What a release does: only Hold lets go (glides back over `release`). */
-export function padRelease(p: PadConfig, invoke: Invoke): boolean {
+export function padRelease(p: PadConfig, invoke: Invoke, viaPads = false): boolean {
   if (p.mode !== 'hold') return true
+  if (viaPads && p.index !== undefined) return invoke(p.knob, 'lift', [p.index])
   return invoke(p.knob, 'release', [p.release, p.ease, p.id])
 }
