@@ -267,3 +267,97 @@ test('Hydra resetting its time restarts a glide instead of stalling', () => {
   G.time = 1
   near(k(), 0.5)
 })
+
+test('pads: press and lift play the pads option the way iDra draws them', () => {
+  const { G, m } = setup()
+  const k = m.knob(0.5, {
+    pads: [
+      { mode: 'hold', to: 1, attack: 0, release: 1, ease: 'linear' },
+      { mode: 'trigger', to: 2, attack: 1, ease: 'linear' },
+      { mode: 'latch', to: 3, ease: 'linear', attack: 0, release: 0 },
+      { to: 4 },
+    ],
+  })
+  assert.equal(k.pads.length, 4)
+  assert.deepEqual(k.pads[3], { mode: 'hold', to: 4, off: 0.5, attack: 0, release: 0.15, ease: 'easeOutQuad' })
+  assert.ok(Object.isFrozen(k.pads) && Object.isFrozen(k.pads[0]))
+
+  // hold: up at once, back over 1 s on lift
+  k.press(0)
+  near(k(), 1)
+  assert.equal(k.held, 1)
+  G.time = 5
+  near(k(), 1, 'stays while held')
+  k.lift(0)
+  G.time = 5.5
+  near(k(), 0.75)
+  G.time = 6
+  near(k(), 0.5)
+
+  // trigger: glides there and stays; lift does nothing
+  k.press(1)
+  G.time = 6.5
+  near(k(), 1.25)
+  k.lift(1)
+  G.time = 7
+  near(k(), 2)
+  near(k.base, 2)
+
+  // latch: each press toggles; off defaults to the initial
+  k.press(2)
+  near(k(), 3)
+  k.lift(2)
+  near(k(), 3, 'lift leaves a latch alone')
+  k.press(2)
+  near(k(), 0.5)
+  k.press(2)
+  near(k(), 3)
+})
+
+test('pads: two held pads stack like two fingers; press() with no index is pad 0', () => {
+  const { m } = setup()
+  const k = m.knob(0, { pads: [{ to: 1, release: 0 }, { to: -1, release: 0 }] })
+  k.press()
+  near(k(), 1)
+  k.press(1)
+  near(k(), -1, 'most recent wins')
+  k.lift(1)
+  near(k(), 1, 'back to the pad still down')
+  k.lift()
+  near(k(), 0)
+  // a typed hold and a pad do not release each other
+  k.hold(5)
+  k.press(0)
+  k.lift(0)
+  near(k(), 5)
+})
+
+test('pads: bad pads and indexes do nothing and never throw', () => {
+  const { G, m } = setup()
+  const k = m.knob(0.5, { pads: [{ mode: 'hold' }, null, { mode: 'wobble', to: 2, release: 0 }] })
+  assert.equal(k.pads[0], null)
+  k.press(0)
+  k.press(1)
+  k.press(9)
+  k.press(-1)
+  k.press('x')
+  k.lift(9)
+  near(k(), 0.5)
+  k.press(2)
+  near(k(), 2, 'unknown mode plays as hold')
+  k.lift(2)
+  near(k(), 0.5)
+  assert.ok(G.warnings.some((w) => /pad 0 has no number/.test(w)))
+  assert.ok(G.warnings.some((w) => /unknown pad mode "wobble"/.test(w)))
+  const plain = m.knob(1, { pads: 'nope' })
+  assert.equal(plain.pads.length, 0)
+  plain.press(0)
+  near(plain(), 1)
+  assert.equal(m.knob(1).pads.length, 0)
+  // chaining like the other methods
+  assert.equal(k.press(2), k)
+  assert.equal(k.lift(2), k)
+  k.destroy()
+  k.press(2)
+  near(k(), 0.5)
+})

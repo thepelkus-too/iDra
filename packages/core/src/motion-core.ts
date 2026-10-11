@@ -12,8 +12,8 @@ import easingNames from 'hydra-motion/dist/easings.json'
 
 /** The plugin's name, its registry id and the `origin` of anything it registers (`plugin:hydra-motion`). */
 export const MOTION_PLUGIN_ID = 'hydra-motion'
-/** The only methods `runtime.invoke` forwards. */
-export const MOTION_METHODS = ['set', 'to', 'hold', 'release'] as const
+/** The only methods `runtime.invoke` forwards (`press` / `lift` play a knob's pads: hydra-motion 0.2.0 and later). */
+export const MOTION_METHODS = ['set', 'to', 'hold', 'release', 'press', 'lift'] as const
 export type MotionMethod = (typeof MOTION_METHODS)[number]
 /** The easing names hydra-motion accepts (Hydra's own set; from the package's built `dist/easings.json`). */
 export const MOTION_EASINGS: readonly string[] = Object.freeze([...(easingNames as string[])])

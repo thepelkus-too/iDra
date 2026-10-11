@@ -1,6 +1,9 @@
+import { readFileSync } from 'node:fs'
+import { createRequire } from 'node:module'
+import { runInNewContext } from 'node:vm'
 import { describe, expect, it } from 'vitest'
 import { findMotionPlugin, importText, knobDefs, toCode, walkCalls, withMeta, type Sketch } from '@hydra-ipad/core'
-import { addPad, bindToPad, removePad, knobBase, knobNameFor, livePads, padPress, padRelease, padsOf, setKnobBase, unbindKnob, updatePad, withKitMeta } from '../src/pads'
+import { addPad, bindToPad, removePad, knobBase, knobNameFor, livePads, motionPlaysPads, padPress, toKnobPad, padRelease, padsOf, setKnobBase, unbindKnob, updatePad, withKitMeta } from '../src/pads'
 import { loopValue } from '../src/NumberEditor'
 import { setArg } from '@hydra-ipad/core'
 
@@ -142,6 +145,82 @@ describe('playing a pad', () => {
     padPress(t, invoke, 0)
     padRelease(t, invoke)
     expect(calls).toEqual([['k', 'to', [0.9, 0.1, 'easeOutQuad']]])
+  })
+})
+
+describe('playing a pad through the knob (hydra-motion 0.2: k.press / k.lift)', () => {
+  const calls: unknown[][] = []
+  const invoke = (...a: unknown[]) => (calls.push(a), true)
+  const pad = { id: 'k#2', knob: 'k', index: 1, label: 'k 2', mode: 'hold' as const, value: 0.9, attack: 0.1, release: 0.5, ease: 'easeOutQuad' }
+  it('press and lift name the pad by its place in the code', () => {
+    calls.length = 0
+    padPress(pad, invoke, 0.2, false, true)
+    padRelease(pad, invoke, true)
+    padPress({ ...pad, mode: 'trigger' }, invoke, 0.2, false, true)
+    padRelease({ ...pad, mode: 'trigger' }, invoke, true)
+    expect(calls).toEqual([
+      ['k', 'press', [1]],
+      ['k', 'lift', [1]],
+      ['k', 'press', [1]],
+    ])
+    const l = { ...pad, mode: 'latch' as const }
+    expect(padPress(l, invoke, 0, false, true).on).toBe(true)
+    expect(padPress(l, invoke, 0, true, true).on).toBe(false)
+  })
+  it('a pad read from before pads moved into the code (no index) still plays with hold / release', () => {
+    calls.length = 0
+    const { index: _i, ...legacy } = pad
+    padPress(legacy, invoke, 0.2, false, true)
+    padRelease(legacy, invoke, true)
+    expect(calls.map((c) => c[1])).toEqual(['hold', 'release'])
+  })
+  it('only a sketch pinned to hydra-motion 0.2 or later plays through press / lift', () => {
+    const s0 = sk('osc().rotate(0.3).out()\n')
+    expect(motionPlaysPads(s0)).toBe(false)
+    const r = bindToPad(s0, callId(s0, 'rotate'), 0, 0.3)!
+    expect(r.pad.index).toBe(0)
+    expect(motionPlaysPads(r.sketch)).toBe(true) // the registry's build
+    const withVersion = (version: string) => ({ ...r.sketch, plugins: r.sketch.plugins!.map((p) => ({ ...p, version })) })
+    expect(motionPlaysPads(withVersion('0.1.0'))).toBe(false)
+    expect(motionPlaysPads(withVersion('0.2.0'))).toBe(true)
+    expect(motionPlaysPads(withVersion('0.10.1'))).toBe(true)
+    expect(motionPlaysPads(withVersion('1.0.0'))).toBe(true)
+    expect(motionPlaysPads(withVersion('unknown'))).toBe(false)
+    expect(padsOf(addPad(r.sketch, r.knob).sketch).map((p) => p.index)).toEqual([0, 1])
+  })
+
+  // the built plugin with a fake Hydra clock: k.press / k.lift must do exactly what the kit used to send for each mode
+  const file = createRequire(import.meta.url).resolve('hydra-motion/dist/hydra-motion.js')
+  const G: Record<string, any> = { console: { warn() {}, log() {} }, time: 0, bpm: 30 }
+  G.window = G
+  G.globalThis = G
+  runInNewContext(readFileSync(file, 'utf8'), G)
+  it.each(['hold', 'latch', 'trigger'] as const)('%s: press / lift on the knob match the hold / to / release calls', (mode) => {
+    const p = { ...pad, index: 0, mode, value2: mode === 'latch' ? -1 : undefined }
+    G.time = 0
+    const viaPads = G.knob(0.2, { pads: [toKnobPad(p)] })
+    const viaCalls = G.knob(0.2)
+    const send = (k: any) => (name: string, method: string, args: unknown[]) => (k[method](...args), true)
+    let onA = false
+    let onB = false
+    const seen: Array<[number, number]> = []
+    const steps: Array<[number, 'down' | 'up']> = [[0, 'down'], [0.05, 'up'], [0.3, 'down'], [0.7, 'up'], [0.75, 'down'], [1.2, 'up']]
+    for (let t = 0, i = 0; t <= 2; t = +(t + 0.025).toFixed(3)) {
+      G.time = t
+      while (i < steps.length && steps[i][0] <= t) {
+        if (steps[i][1] === 'down') {
+          onA = padPress(p, send(viaPads), 0.2, onA, true).on
+          onB = padPress(p, send(viaCalls), 0.2, onB, false).on
+        } else {
+          padRelease(p, send(viaPads), true)
+          padRelease(p, send(viaCalls), false)
+        }
+        i++
+      }
+      seen.push([viaPads(), viaCalls()])
+    }
+    for (const [a, b] of seen) expect(a).toBeCloseTo(b, 12)
+    expect(new Set(seen.map(([a]) => a.toFixed(3))).size).toBeGreaterThan(3) // it actually moved
   })
 })
 

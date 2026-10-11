@@ -1,11 +1,11 @@
 <!-- SPDX-License-Identifier: MIT -->
 # hydra-motion
 
-Glides, holds and pads for [Hydra](https://hydra.ojack.xyz). One small script (about 3.5 KB gzipped, no dependencies)
+Glides, holds and pads for [Hydra](https://hydra.ojack.xyz). One small script (about 4 KB gzipped, no dependencies)
 that adds **`knob`** and **`gate`**: functions that return a number, which Hydra already calls every frame.
 
 ```js
-await loadScript('https://cdn.jsdelivr.net/gh/<owner>/<repo>@hydra-motion-v0.1.0/packages/motion/dist/hydra-motion.js')
+await loadScript('https://cdn.jsdelivr.net/gh/<owner>/<repo>@hydra-motion-v0.2.0/packages/motion/dist/hydra-motion.js')
 
 k = knob(0.5)                     // k() returns the current number
 osc(k, 0.1, 0.8).out()            // pass the knob itself (not k()): Hydra calls it every frame
@@ -24,7 +24,7 @@ The URL above is the form for tagged releases; use the exact tag you want (see C
 
 | | |
 |---|---|
-| `knob(initial = 0, { clock })` | `clock: 'hydra'` (default) follows Hydra's `time`, so `speed` scales it and `speed = 0` pauses glides; `'wall'` uses real time and keeps moving while Hydra is paused |
+| `knob(initial = 0, { clock, pads })` | `clock: 'hydra'` (default) follows Hydra's `time`, so `speed` scales it and `speed = 0` pauses glides; `'wall'` uses real time and keeps moving while Hydra is paused |
 | `k()` / `k.value` | the current number (always a finite number) |
 | `k.set(v)` | jump |
 | `k.to(v, dur, ease)` | glide from the current value; calling it mid-glide retargets smoothly |
@@ -34,12 +34,30 @@ The URL above is the form for tagged releases; use the exact tag you want (see C
 | `k.base` | the value the knob returns to when nothing holds it |
 | `k.busy` | true while the visible value is moving |
 | `k.held` | number of holds |
+| `k.press(i)` / `k.lift(i)` | play pad `i` (default 0) of the `pads` option, see **Pads** |
+| `k.pads` | the pads as the knob read them |
 | `k.onDone(fn)` | `fn(value, k)` each time the knob settles; returns an unsubscribe function |
 | `k.destroy()` | freeze at the current value |
 
 **Holds stack** (two pads on one knob): the most recent hold wins; releasing it returns to the previous hold that is still
 down, otherwise to the base. `k.to` and `k.set` while held move the base, not the held value, and a release glides
 to wherever the base is by then.
+
+## Pads
+
+```js
+k = knob(0.5, { pads: [
+  { mode: 'hold', to: 1, attack: 0, release: 0.15, ease: 'easeOutQuad' },   // press: go to 1 and stay; lift: glide back
+  { mode: 'latch', to: 0, off: 0.5 },                                        // each press toggles between 0 and 0.5
+  { mode: 'trigger', to: 2, attack: 1 },                                     // press: glide to 2 over 1 s and stay there
+] })
+k.press(0); k.lift(0)
+```
+
+Pads are plain data in the knob's options, so an editor can draw buttons for them and the same text runs anywhere. Each
+Hold pad holds under its own id, so two pads held at once stack like two holds. Left out: `mode` is `'hold'`, `attack` 0,
+`release` 0.15, `ease` `'easeOutQuad'`, `off` the knob's initial number. Lift only matters for Hold pads. Latches start off,
+also after re-running the code.
 
 **Easings** are Hydra's own set, the same names as arrays' `.ease(name)`: `linear`, `easeInQuad`, `easeOutQuad`,
 `easeInOutQuad`, the same for `Cubic`, `Quart` and `Quint`, and `sin`. A function `t => …` (0..1 → 0..1) works too.

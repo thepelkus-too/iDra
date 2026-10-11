@@ -2,10 +2,12 @@
 //   node scripts/sync-motion.mjs            update packages/core/plugins/registry.json (URL, version, SRI) from the built file
 //   node scripts/sync-motion.mjs --check    fail if the registry entry does not match the built file
 //   node scripts/sync-motion.mjs --copy <dir>  also copy the file to <dir>/plugins/hydra-motion.js (stable URL) and
-//                                              <dir>/plugins/hydra-motion@<version>/hydra-motion.js (pinned URL the registry uses)
+//                                              <dir>/plugins/hydra-motion@<version>/hydra-motion.js (pinned URL the registry uses),
+//                                              and every earlier build in packages/core/plugins/archive/ to its own pinned path
+// Earlier versions stay served because sketches pin the version they were made with (packages/core/plugins/archive/README.md).
 // After hydra-motion moves to its own repo, only the registry's url/version/integrity change (see packages/motion/EXTRACTING.md).
 import { createHash } from 'node:crypto'
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -22,6 +24,26 @@ export const motionBuild = { version: pkg.version, integrity, file, pinnedPath }
 
 const regPath = join(root, 'packages/core/plugins/registry.json')
 const reg = JSON.parse(readFileSync(regPath, 'utf8'))
+
+// earlier builds, kept byte for byte so sketches pinned to them still load
+const archiveDir = join(root, 'packages/core/plugins/archive')
+const archived = JSON.parse(readFileSync(join(archiveDir, 'integrity.json'), 'utf8'))
+const archiveErrors = []
+for (const [path, sri] of Object.entries(archived)) {
+  const p = join(archiveDir, path)
+  if (!existsSync(p)) archiveErrors.push(`${path} is listed in archive/integrity.json but missing`)
+  else if ('sha256-' + createHash('sha256').update(readFileSync(p)).digest('base64') !== sri) archiveErrors.push(`${path} no longer matches its SRI ${sri}: archived builds must not change`)
+}
+if (archived[pinnedPath.replace(/^plugins\//, '')]) archiveErrors.push(`${pkg.version} is archived but is also the current version: bump packages/motion's version`)
+// the version the registry pointed at before must be archived before the registry moves on from it
+const prevEntry = reg.plugins.find((p) => p.id === 'hydra-motion')
+if (prevEntry && prevEntry.version !== pkg.version && !archived[prevEntry.url.replace(/^plugins\//, '')]) {
+  archiveErrors.push(`hydra-motion ${prevEntry.version} is not archived; copy its built file to packages/core/plugins/archive/ first (see its README)`)
+}
+if (archiveErrors.length) {
+  console.error(archiveErrors.join('\n'))
+  process.exit(1)
+}
 const entry = {
   id: 'hydra-motion',
   name: 'hydra-motion',
@@ -32,7 +54,7 @@ const entry = {
   version: pkg.version,
   integrity,
   kind: 'js',
-  description: 'Glides, holds and pads: knob() values that glide (k.to), jump (k.set) and hold momentarily (k.hold / k.release), and gate() envelopes. Adds the globals knob, gate and hydraMotion.',
+  description: 'Glides, holds and pads: knob() values that glide (k.to), jump (k.set) and hold momentarily (k.hold / k.release), pads written in the code (knob(0.5, { pads: [...] }), played with k.press / k.lift), and gate() envelopes. Adds the globals knob, gate and hydraMotion.',
   verified: {
     status: 'verified',
     checked: 'build',
@@ -61,5 +83,9 @@ if (copy >= 0) {
     mkdirSync(dirname(join(out, p)), { recursive: true })
     writeFileSync(join(out, p), file)
   }
-  console.log(`hydra-motion ${pkg.version} → ${out}/plugins/`)
+  for (const path of Object.keys(archived)) {
+    mkdirSync(dirname(join(out, 'plugins', path)), { recursive: true })
+    writeFileSync(join(out, 'plugins', path), readFileSync(join(archiveDir, path)))
+  }
+  console.log(`hydra-motion ${pkg.version} (and ${Object.keys(archived).join(', ') || 'no earlier builds'}) → ${out}/plugins/`)
 }

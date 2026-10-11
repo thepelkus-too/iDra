@@ -46,6 +46,18 @@ describe('the registry entry and the built file', () => {
     const ref = motionPluginRef()
     expect(ref).toMatchObject({ id: 'hydra-motion', url: e.url, integrity: e.integrity, version: MOTION_VERSION })
   })
+  test('every earlier build stays in the archive, byte for byte, so sketches pinned to it still load', () => {
+    const dir = resolve(__dirname, '../plugins/archive')
+    const archived = JSON.parse(readFileSync(resolve(dir, 'integrity.json'), 'utf8')) as Record<string, string>
+    // 0.1.0 is what every sketch bound before 0.2.0 carries (url + this SRI)
+    expect(archived['hydra-motion@0.1.0/hydra-motion.js']).toBe('sha256-Ika5SLr6ZBkOp2H6IWG2eeJpmOQQ/O0uu68YnPhy9ws=')
+    for (const [path, sri] of Object.entries(archived)) {
+      const text = readFileSync(resolve(dir, path), 'utf8')
+      expect(sriSync(text), path).toBe(sri)
+      expect(text).toMatch(new RegExp(`^/\\*! hydra-motion v${path.split('@')[1].split('/')[0].replace(/\./g, '\\.')} `))
+    }
+    expect(Object.keys(archived)).not.toContain(`hydra-motion@${MOTION_VERSION}/hydra-motion.js`)
+  })
   test('sriSync matches WebCrypto/Node for ASCII and UTF-8 text', () => {
     for (const t of ['', 'abc', MOTION_SRC, 'é → ü · 🎛️'.repeat(40)]) expect(sriSync(t)).toBe('sha256-' + createHash('sha256').update(t).digest('base64'))
   })
@@ -220,6 +232,27 @@ describe.each(['inline', 'loopback'] as const)('runtime.invoke (%s transport, re
     expect(k()).toBe(0.9)
     expect(uniformValue()).toBe(0.9)
     rt.invoke('k', 'release', [0, 'linear', 'A'])
+    await tick()
+    expect(k()).toBe(0.5)
+    expect(errors).toEqual([])
+  })
+
+  test('press / lift play the pads written in the knob call', async () => {
+    const s = sketch()
+    s.stmts[0] = { ...knobDef('k', 0.5, [{ mode: 'hold', to: 0.9, release: 0, ease: 'linear' }, { mode: 'latch', to: 0.2, release: 0, ease: 'linear' }]), id: s.stmts[0].id }
+    expect((await rt.run(s)).ok).toBe(true)
+    const k = (window as any).k
+    expect(rt.invoke('k', 'press', [0])).toBe(true)
+    await tick()
+    expect(k()).toBe(0.9)
+    rt.invoke('k', 'lift', [0])
+    await tick()
+    expect(k()).toBe(0.5)
+    rt.invoke('k', 'press', [1])
+    rt.invoke('k', 'lift', [1])
+    await tick()
+    expect(k()).toBe(0.2)
+    rt.invoke('k', 'press', [1])
     await tick()
     expect(k()).toBe(0.5)
     expect(errors).toEqual([])
