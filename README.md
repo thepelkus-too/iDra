@@ -28,7 +28,7 @@ packages/core/            @hydra-ipad/core — no UI framework
 apps/shell/               the ONLY PWA: launcher + library UI, manifest, root-scope service worker
 apps/harness/             canvas + textarea + randomize + numbers + Diagnostics + Audio lab + Plugins + MIDI + isolation toggle
 scripts/                  build-all.mjs · e2e.mjs · e2e-audio-plugins.mjs · live-edit-bench.mjs · serve.mjs · make-icons.mjs · fixtures/ (test-only)
-docs/                     FRONTEND_CONTRACT.md IR.md previews.md security.md audio.md plugins.md midi.md live-edit.md ios-storage.md
+docs/                     FRONTEND_CONTRACT.md IR.md previews.md security.md audio.md plugins.md midi.md live-edit.md ios-storage.md kit.md motion.md previews-runtime.md
 vercel.json  .github/workflows/{ci,pages}.yml
 ```
 
@@ -64,7 +64,7 @@ original text and a content hash, so unchanged statements (and unchanged calls i
 Deploy (Vercel per-branch previews, GitHub Pages fallback): **[docs/previews.md](docs/previews.md)**. Open the **site root** in Safari → Share → *Add to Home Screen*;
 editors then open inside the installed app. Storage in the installed app is separate from Safari's: **[docs/ios-storage.md](docs/ios-storage.md)**.
 Camera and microphone need HTTPS and a tap; audio on iOS: **[docs/audio.md](docs/audio.md)**; plugins: **[docs/plugins.md](docs/plugins.md)**; MIDI: **[docs/midi.md](docs/midi.md)**; trust and isolation: **[docs/security.md](docs/security.md)**;
-how numeric drags avoid recompiling: **[docs/live-edit.md](docs/live-edit.md)**; glides, holds and pads (hydra-motion): **[docs/motion.md](docs/motion.md)**.
+how numeric drags avoid recompiling: **[docs/live-edit.md](docs/live-edit.md)**; glides, holds and pads (hydra-motion): **[docs/motion.md](docs/motion.md)**; switching chunks off and chunk previews: **[docs/IR.md](docs/IR.md)** ("Disabled nodes") and **[docs/previews-runtime.md](docs/previews-runtime.md)**.
 The shell's **Docs** button opens this README and everything in `docs/`, rendered at build time (`scripts/build-docs.mjs`) and precached, so they read offline in the installed app.
 
 ## Branch / PR conventions
