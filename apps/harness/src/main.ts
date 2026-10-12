@@ -38,6 +38,7 @@ import { CSS } from './styles'
 import { mountAudioLab, mountDiagnostics } from './diagnostics'
 import { mountMotionLab } from './motion-lab'
 import { mountPreviewsLab } from './previews-lab'
+import { mountEvalLab } from './eval-lab'
 
 applyAppBase()
 injectStyles('harness', CSS)
@@ -85,6 +86,7 @@ const pluginsTab = h('div', { class: 'tab', id: 'tab-plugins' })
 const midiTab = h('div', { class: 'tab', id: 'tab-midi' })
 const motionTab = h('div', { class: 'tab', id: 'tab-motion' })
 const previewsTab = h('div', { class: 'tab', id: 'tab-previews' })
+const evalTab = h('div', { class: 'tab', id: 'tab-eval' })
 const tabs = [
   ['code', 'Code', codeTab],
   ['knobs', 'Numbers', knobsTab],
@@ -94,6 +96,7 @@ const tabs = [
   ['midi', 'MIDI', midiTab],
   ['motion', 'Motion lab', motionTab],
   ['previews', 'Previews', previewsTab],
+  ['eval', 'Eval', evalTab],
 ] as const
 const tabBar = h('div', { class: 'tabs', role: 'tablist' })
 for (const [id, label, el] of tabs) {
@@ -106,13 +109,14 @@ for (const [id, label, el] of tabs) {
     prefs.set('tab', id)
     if (id === 'knobs') renderKnobs()
     previewsLab.setShown(id === 'previews')
+    if (id === 'eval') evalLab.refresh()
   })
   tabBar.append(b)
 }
 const stage = h('div', { class: 'stage', id: 'stage' })
 const errorsEl = h('div', { class: 'errors', id: 'errors', 'aria-live': 'polite' })
 const main = h('div', { class: 'main' },
-  h('div', { class: 'panel' }, tabBar, h('div', { style: 'min-height:0;overflow:hidden;display:grid' }, codeTab, knobsTab, diagTab, audioTab, pluginsTab, midiTab, motionTab, previewsTab)),
+  h('div', { class: 'panel' }, tabBar, h('div', { style: 'min-height:0;overflow:hidden;display:grid' }, codeTab, knobsTab, diagTab, audioTab, pluginsTab, midiTab, motionTab, previewsTab, evalTab)),
   h('div', { class: 'stage-wrap' }, stage, errorsEl),
 )
 const foot = h('div', { class: 'foot' })
@@ -137,6 +141,16 @@ const previewsLab = mountPreviewsLab(previewsTab, {
   runtime: () => rt,
   sketch: () => sketch,
   trusted: async () => trusted || !(await lib.needsTrust(sketch)),
+})
+const evalLab = mountEvalLab(evalTab, {
+  runtime: () => rt,
+  sketch: () => sketch,
+  commit: (s) => {
+    persist(s)
+    showSketchText(s)
+  },
+  safe: async () => safeToggle.checked || (!trusted && (await lib.needsTrust(sketch))),
+  report: (m) => (status.textContent = m),
 })
 let previewTimer: ReturnType<typeof setTimeout> | undefined
 midiTab.append(h('p', { class: 'status' }, 'Every preview on this page receives these messages through its Web MIDI stand-in, so hydra-midi sketches respond even where the browser has no Web MIDI (iPadOS Safari). Load the hydra-midi plugin (Plugins tab), then for example: await midi.start({ input: "*", channel: "*" }); osc(cc(1).range(1, 60)).out()'))
@@ -190,6 +204,7 @@ function persist(s: Sketch) {
   if (changed) {
     clearTimeout(previewTimer)
     previewTimer = setTimeout(() => previewsLab.refresh(), 400)
+    if (evalTab.classList.contains('on')) evalLab.refresh()
   }
   clearTimeout(thumbTimer)
   thumbTimer = setTimeout(async () => {
@@ -225,7 +240,8 @@ async function runNow(force = false) {
   banner.hidden = !need
   updateCameraBanner()
   updateMidiBanner()
-  const r = await rt.run(sketch, { safe: need || safeToggle.checked, force })
+  // an edit runs as the Eval tab says (vanilla Hydra or a clean slate); Run, a new sketch and a mode change start clean
+  const r = await rt.run(sketch, { safe: need || safeToggle.checked, force, reset: force ? 'clean' : evalLab.mode() === 'clean' ? 'clean' : 'none' })
   const problems = validate(sketch, catalog).filter((p) => p.severity !== 'info')
   status.textContent = `${r.ok ? 'ran' : 'failed'} · ${r.recompiled ? 'recompiled' : 'numbers only'} · ${r.ms.toFixed(0)} ms · ${isolation}${r.skipped.length ? ` · ${r.skipped.length} skipped (safe mode)` : ''}${problems.length ? ` · ${problems.length} problem(s): ${problems[0].message}` : ''}`
   return r
@@ -251,7 +267,9 @@ textarea.addEventListener('input', () => {
     const next: Sketch = { ...imp.sketch, createdAt: sketch.createdAt, meta: sketch.meta, plugins: sketch.plugins }
     persist(next)
     status.textContent = `${imp.report.chains} chain(s), ${imp.report.raw} raw block(s)${imp.warnings.length ? ' · ' + imp.warnings[0] : ''}`
-    void runNow().then(() => renderKnobs())
+    evalLab.refresh()
+    // "Run on every edit" off (Eval tab): edits wait for a deliberate run
+    if (evalLab.autoRun()) void runNow().then(() => renderKnobs())
   }, 300)
 })
 nameInput.addEventListener('change', () => persist({ ...sketch, name: nameInput.value.trim() || sketch.name }))
@@ -332,8 +350,9 @@ async function startRuntime() {
   rt = createRuntime(stage, { isolation, audio, catalog, width: 960, height: 540 })
   rt.onError(showError)
   rt.onError((e) => e.kind === 'camera' && updateCameraBanner())
-  ;(window as any).__harness = { get rt() { return rt }, get sketch() { return sketch }, lib, audio, runNow, core, previews: previewsLab }
+  ;(window as any).__harness = { get rt() { return rt }, get sketch() { return sketch }, lib, audio, runNow, core, previews: previewsLab, evalLab }
   await rt.ready.catch((e) => showError({ kind: 'runtime', message: String(e.message ?? e), at: Date.now() }))
+  evalLab.refresh()
 }
 
 // ------------------------------------------------------------------ boot

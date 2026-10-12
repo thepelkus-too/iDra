@@ -24,7 +24,8 @@
     "build:motion": "npm run build -w hydra-motion && node scripts/sync-motion.mjs",
     "test:e2e:motion": "node scripts/e2e-motion.mjs",
     "test:e2e:numbers": "node scripts/e2e-numbers.mjs",
-    "test:e2e:previews": "node scripts/e2e-previews.mjs"
+    "test:e2e:previews": "node scripts/e2e-previews.mjs",
+    "test:e2e:eval": "node scripts/e2e-eval.mjs"
   },
   "devDependencies": {
     "typescript": "^5.6.3",

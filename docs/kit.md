@@ -22,6 +22,7 @@ and Vitest compile it with the editor's own `jsx: automatic, jsxImportSource: pr
 | `pads.ts`, `PadDock.tsx` | `bindToPad`, `unbindKnob`, `addPad`, `removePad`, `padsOf`, `livePads`, `withPads`, `padPress`, `padRelease`, `PadDock`, `PadStrip`, `PadEditor`, `padsTool`, `showPadDock` | knob binding, `meta.kit.pads`, the floating pads |
 | `DisableToggle.tsx` | `DisableToggle`, `disableAction` | switch a modifier or statement off and on (`//` comments in the code) |
 | `PreviewPeek.tsx` | `PreviewPeek`, `kitPreviewPool`, `disposeKitPreviewPool`, `peekMessage` | chunk previews: a thumbnail that expands, ≈ for approximate, A/B for before/after |
+| `Held.tsx` | `HeldControls`, `SyncBadge`, `RunBar`, `heldActions`, `perform`, `runAll`, `hushAndRunAll`, `runAllHeldNow`, `numberTargets`, `runAllMode`, `liveWhileHeld`, `holdAll` (+ setters) | held and draft chains, runs at three sizes, out of sync (docs/evaluation.md) |
 
 ## How an editor adopts it
 
@@ -49,6 +50,9 @@ and Vitest compile it with the editor's own `jsx: automatic, jsxImportSource: pr
      trusted: () => !!ctx.runner && !ctx.runner.trust.pending,
      approveOnce: () => (ctx.runner?.track(ctx.store.sketch), ctx.runner?.approveOnce()),
      runtime: () => ctx.runner?.rt, // optional: chunk previews follow it (PreviewPeek)
+     // optional: partial runs and Run all through the runner (docs/evaluation.md); without them the kit hides its Run buttons
+     runPart: (sketch, ids) => ctx.runner?.runPart(sketch, ids),
+     runAll: (o) => ctx.runner?.runAll(o),
    })
    ```
    and add `padsTool()` to the switcher's `extraTools` so "Pads" is in the ⇄ menu.
@@ -148,6 +152,13 @@ follows the sketch and trust on every store change without restarting, and rende
 peeks share one pool, `kitPreviewPool()` (two runtimes; it follows `KitHost.runtime()`), unless given their own.
 docs/previews-runtime.md has what the pool does and costs.
 
+## Held and draft chains
+
+`<HeldControls id>`, `<SyncBadge>` and `<RunBar>` put the evaluation model in an editor: following, held and draft
+chains, ▶ per change, per chain and Run all held, Run all as vanilla Hydra or a clean slate, Hush + run all, Hold all.
+Everything they change is code (a draft is a `//` chain); see **docs/evaluation.md** for the rules and how to adopt them.
+The kit commits their edits with `{ noRun: true }` and runs exactly what changed through `KitHost.runPart`.
+
 ## Reconciled when the copies were merged
 
 `Keypad`, `NumSlider`, `overlay` and `gestures` were byte-identical in Graph, Blocks and Rack; Chain Stack had its own copies.
@@ -194,6 +205,9 @@ and the history cap; make Rack's `keepOnUndo` an option), then the code drawer a
   to switch instead, a def cascading both ways), `DisableToggle` (state, keyboard, the refusal's title) and `PreviewPeek`
   on a fake pool (one preview per spec, expand = active, ≈ and its note, refusals, edits passed on, nothing while off,
   closed on unmount). The real pool runs in `node scripts/e2e-previews.mjs` (docs/previews-runtime.md).
+* Unit, jsdom (`test/held.test.tsx`): `heldActions` (one change in place, the follow switch keeping an empty draft, Hold
+  all, numbers live while held), `HeldControls` (the change list, ▶ on one change runs only that chain with `noRun`, Run as
+  A/B, Revert, the follow switch as view state, no Run buttons without `runPart`), `RunBar` and `SyncBadge`.
 * End to end (`node scripts/e2e-numbers.mjs`, in CI): each editor at 1180×820 and 820×1180 with real timed touches through
   the DevTools protocol: tap opens the tabbed editor and the tab is remembered; a 450 ms hold then a slide steps by 0.1,
   then by 10, and the release is one undo step; the Ladder tab from a keyboard; a glide to a typed target moves the picture

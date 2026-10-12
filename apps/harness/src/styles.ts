@@ -54,4 +54,15 @@ input[type=text]{min-height:40px;border-radius:10px;border:1px solid var(--hi-li
 .pv-state{font-size:11px;color:var(--hi-dim);white-space:normal}
 #pv-diff figure{margin:0}
 #pv-diff figcaption{font-size:11px;color:var(--hi-dim)}
+.ev-out{margin:10px 0;padding:8px;border:1px solid var(--hi-line);border-radius:10px}
+.ev-out h3{margin:0 0 6px;font:600 13px var(--mono)}
+.ev-chain{display:flex;flex-direction:column;gap:2px;padding:6px 0;border-top:1px solid var(--hi-line)}
+.ev-chain:first-of-type{border-top:0}
+.ev-chain code{font:12px var(--mono);white-space:pre-wrap;word-break:break-all}
+.ev-chain.draft code,.ev-chain.shadowed code{color:var(--hi-dim)}
+.ev-state{font-size:11px;color:var(--hi-dim)}
+.ev-changes{margin:4px 0 0;padding:0;list-style:none}
+.ev-changes li{display:flex;gap:6px;align-items:center;font:12px var(--mono);padding:2px 0}
+.ev-changes li span{flex:1}
+#ev-sync[data-sync=out]{color:#ffd27a}
 `

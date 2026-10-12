@@ -414,7 +414,7 @@ export class Bridge {
     }
     this.origin = 'plugin:inline'
     try {
-      this.resetForRun(msg.reset.clearSources)
+      if (msg.reset) this.resetForRun(msg.reset.clearSources)
       this.mergeLive(msg.live)
       const needsAsync = /\bawait\b/.test(msg.code)
       if (needsAsync) {

@@ -8,8 +8,11 @@ export interface KitHost {
   /** the editor's name (`stack`, `graph`, …): kit preferences go to `appStorage(app)` */
   app: string
   sketch(): Sketch
-  /** an undoable edit; `view` = saved but not undoable and no re-run (pad layout); `coalesce` merges a gesture */
-  commit(next: Sketch, opts?: { view?: boolean; coalesce?: string }): void
+  /**
+   * an undoable edit; `view` = saved but not undoable and no re-run (pad layout); `coalesce` merges a gesture; `noRun` =
+   * undoable but the editor does not re-run it (the kit runs what it needs itself through `runPart`)
+   */
+  commit(next: Sketch, opts?: { view?: boolean; coalesce?: string; noRun?: boolean }): void
   /** end a coalesced gesture */
   endGroup?(): void
   /** the store's change subscription (popovers, sheets and the pad dock follow it) */
@@ -22,6 +25,13 @@ export interface KitHost {
   approveOnce?(): void
   /** the main runtime: chunk previews follow its time and live numbers and copy its outputs (PreviewPeek) */
   runtime?(): Runtime | undefined
+  /**
+   * A partial run of statements `ids` of `sketch` (the sketch just committed), through the editor's runner so its trust
+   * gate applies: `runtime.runPart(sketch, ids, { safe })`. Without it the kit's Run buttons stay hidden (docs/evaluation.md).
+   */
+  runPart?(sketch: Sketch, ids: string[]): void
+  /** Run all through the editor's runner: `reset` 'none' = vanilla Hydra, 'clean' = clean slate; `force` re-initialises sources */
+  runAll?(opts: { reset: 'clean' | 'none'; force?: boolean }): void
 }
 
 let host: KitHost | undefined
