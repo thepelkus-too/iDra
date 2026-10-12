@@ -128,6 +128,9 @@ describe('links to services whose audio a page cannot read', () => {
     expect(recognizeUnsupported('https://feeds.example/show.xml')).toBeUndefined()
     expect(recognizeUnsupported('https://notyoutube.com/x.mp3')).toBeUndefined()
     expect(recognizeUnsupported('not a url')).toBeUndefined()
+    // SoundCloud podcast RSS feeds are feeds, not SoundCloud pages
+    expect(recognizeUnsupported('https://feeds.soundcloud.com/users/soundcloud:users:123/sounds.rss')).toBeUndefined()
+    expect(recognizeUnsupported('https://soundcloud.com/someone/sounds.rss')).toBeUndefined()
   })
 })
 

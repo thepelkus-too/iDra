@@ -53,7 +53,8 @@ export function recognizeUnsupported(url: string): UnsupportedService | undefine
     return { service: 'Spotify', message: `Spotify’s audio is protected and only plays in Spotify’s own player. If the show is a podcast that is also published elsewhere, paste its RSS feed instead. ${ROUTES}` }
   if (is('podcasts.apple.com', 'itunes.apple.com'))
     return { service: 'Apple Podcasts', message: `That is an Apple Podcasts page, not the podcast itself. Most shows publish an RSS feed (look for “RSS” on the show’s website) — paste that here. ${ROUTES}` }
-  if (is('soundcloud.com', 'on.soundcloud.com'))
+  // SoundCloud's podcast RSS feeds (feeds.soundcloud.com/…/sounds.rss) are real feeds: only its web pages are flagged
+  if (is('soundcloud.com', 'on.soundcloud.com') && !is('feeds.soundcloud.com') && !looksLikeFeedUrl(u.href))
     return { service: 'SoundCloud', message: `SoundCloud pages play in SoundCloud’s own player, which web pages can’t listen to. If the track is downloadable, save it and use “Audio file…”; a SoundCloud podcast’s RSS feed can be pasted here. ${ROUTES}` }
   return undefined
 }
