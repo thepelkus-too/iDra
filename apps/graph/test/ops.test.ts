@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest'
-import { canonicalSketch, importText, newSketch, num, toCode, validate, type Sketch } from '@hydra-ipad/core'
+import { canonicalSketch, importText, newSketch, num, setDisabled, toCode, validate, type Sketch } from '@hydra-ipad/core'
 import { graphToIR, irToGraph, nodeById, outId, type CompileMeta, type Graph } from '../src/model'
-import { appendAfter, bake, connect, deleteNodes, disconnect, duplicateNodes, freeOutputs, newCallNode, setModulator, setNodeArg, splice, toggleBypass } from '../src/ops'
+import { appendAfter, bake, connect, deleteNodes, disconnect, duplicateNodes, freeOutputs, newCallNode, setModulator, setNodeArg, splice } from '../src/ops'
 import { defaultSpec } from '../src/kit/mods'
 
 /** a tiny driver: graph edits compiled straight back to the sketch, like the app does */
@@ -136,18 +136,19 @@ describe('duplication and baking', () => {
 })
 
 describe('other edits', () => {
-  test('splice a node into a cable, bypass it, delete it', () => {
+  test('splice a node into a cable, switch it off, delete it', () => {
     const d = new Doc('osc(10).out()\n')
     const st = d.sketch.stmts[0] as Extract<Sketch['stmts'][0], { k: 'chain' }>
     const e = d.g.edges.find((x) => x.from === st.chain.gen.id && x.to === outId('o0'))!
     const k = newCallNode('kaleid')
     d.ok(splice(d.g, e, k))
     expect(d.code()).toBe('osc(10).kaleid().out()\n')
-    d.ok(toggleBypass(d.g, k.id))
-    expect(d.code()).toBe('osc(10).out()\n')
-    expect(nodeById(d.g, k.id)?.bypassed).toBe(true)
-    d.ok(toggleBypass(d.g, k.id))
-    expect(d.code().replace(/\s+/g, '')).toBe('osc(10).kaleid().out()')
+    const on = d.sketch
+    d.sketch = setDisabled(d.sketch, k.id, true)
+    expect(d.code()).toBe('osc(10)\n  // .kaleid()\n  .out()\n')
+    expect(nodeById(d.g, k.id)?.disabled).toBe(true)
+    d.sketch = setDisabled(d.sketch, k.id, false)
+    expect(d.code()).toBe(toCode(on))
     d.apply(deleteNodes(d.g, [k.id]))
     expect(d.code().replace(/\s+/g, '')).toBe('osc(10).out()')
   })

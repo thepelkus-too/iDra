@@ -6,13 +6,16 @@ import * as model from './model'
 import * as ops from './ops'
 import { CSS } from './styles'
 import { autoView, metaOf } from './view'
+import { migrateBypass } from './migrate'
 import { ctx } from './kit/ctx'
 import { canvasApi } from './ui/Palette'
+import { kitPreviewPool } from '@hydra-ipad/kit'
 
 void boot({
   autoView: (s) => autoView(s, ctx.catalog),
   hasView: (s) => !!metaOf(s),
+  migrate: migrateBypass,
   App,
   css: CSS,
-  expose: { thumbs, ui, graphOf, compileOf, model, ops, canvasApi },
+  expose: { thumbs, ui, graphOf, compileOf, model, ops, canvasApi, migrateBypass, previewPool: () => kitPreviewPool() },
 })

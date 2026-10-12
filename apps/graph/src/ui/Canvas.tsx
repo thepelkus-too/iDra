@@ -19,6 +19,7 @@ import { sizeOf, type XY } from '../view'
 import { cablePath, midpoint, portPos } from './geom'
 import { NodeCard, Terminal } from './Nodes'
 import { canvasApi, openAddMenu, placeItem, type DropTarget, type Item } from './Palette'
+import { NodePeeks } from './Preview'
 
 export interface Cam {
   x: number
@@ -294,7 +295,7 @@ export function Canvas() {
       return
     }
     if (cur.t !== 'none' || pointers.current.size > 2) return
-    if (t.closest('input, textarea, select, .cm-editor, .xchip, .numslider')) return
+    if (t.closest('input, textarea, select, .cm-editor, .xchip, .numslider, .disable-toggle, .peye, .gpeek')) return
     const capture = () => box.current!.setPointerCapture?.(e.pointerId)
 
     const port = t.closest<HTMLElement>('.port')
@@ -540,8 +541,9 @@ export function Canvas() {
     const b = vt !== e.to ? macroPort(vt, 'in') : portPos(tn, pos(tn.id), e.port, ctx.catalog)
     const kind = fn.kind === 'mod' || (fn.kind === 'def' && tn.kind === 'call' && e.port !== 'in' && ctx.catalog.inputs(tn.call!.fn)[e.port as number]?.type === 'float') ? 'num' : 'tex'
     const fb = fn.kind === 'out' && b.x <= a.x + 20 ? 'fb' : ''
-    const byp = (fn.kind === 'call' && fn.bypassed) || (tn.kind === 'call' && tn.bypassed) ? 'byp' : ''
-    cables.push({ e, a, b, cls: `${kind} ${fb} ${byp} ${sameEdge(st.cable, e) ? 'sel' : ''}` })
+    // a cable into or out of a switched-off node stays, but carries nothing
+    const off = fn.disabled || tn.disabled ? 'off' : ''
+    cables.push({ e, a, b, cls: `${kind} ${fb} ${off} ${sameEdge(st.cable, e) ? 'sel' : ''}` })
   }
   function macroPort(gid: string, side: 'in' | 'out'): XY {
     const gr = (metaNow().groups ?? []).find((x) => x.id === gid)!
@@ -606,6 +608,7 @@ export function Canvas() {
             preview={previews.includes(n.id)}
           />
         ))}
+        <NodePeeks pos={pos} hidden={(id) => groups.has(id)} />
         {gList.map((gr) => {
           const p = pos(gr.ids[0])
           const fns = gr.ids.map((id) => nodeById(g, id)).filter((x): x is GNode => !!x && x.kind === 'call').map((x) => x.call!.fn)

@@ -207,7 +207,7 @@ export function duplicateNodes(g0: Graph, ids: string[]): { graph: Graph; map: R
     if (!(n.id in map) || !map[n.id]) continue
     const copy: GNode = { ...n, id: map[n.id] }
     if (n.call) copy.call = { id: map[n.id], fn: n.call.fn, args: n.call.args.slice() }
-    delete copy.bypassed
+    delete copy.disabled
     g.nodes.push(copy)
   }
   for (const e of g0.edges) {
@@ -217,13 +217,6 @@ export function duplicateNodes(g0: Graph, ids: string[]): { graph: Graph; map: R
     if (map[e.from] || e.port === 'in' || nodeById(g0, e.from)?.kind !== 'mod') g.edges.push({ from, to, port: e.port })
   }
   return { graph: g, map }
-}
-
-export function toggleBypass(g0: Graph, id: string, cat: Catalog = defaultCatalog): OpResult {
-  const n = nodeById(g0, id)
-  if (!n || n.kind !== 'call') return { error: 'only nodes in a chain can be bypassed' }
-  if (!n.bypassed && isGenerator(n, cat)) return { error: 'a generator cannot be bypassed: it starts the chain' }
-  return { graph: updateNode(g0, id, (x) => (x.bypassed ? { ...x, bypassed: undefined } : { ...x, bypassed: true })) }
 }
 
 /**

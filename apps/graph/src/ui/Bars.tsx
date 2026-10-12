@@ -1,5 +1,5 @@
 // The top bar, the selection bar, the picture-in-picture output and performance mode.
-import { newId } from '@hydra-ipad/core'
+import { newId, onPreviewMode, previewMode, setPreviewMode, type PreviewMode } from '@hydra-ipad/core'
 import { useEffect, useRef, useState } from 'preact/hooks'
 import { appPrefs } from '../prefs'
 import { applyGraph, arrange, compileOf, graphOf, metaNow, posOf, tryApply, ui, useUi } from '../doc'
@@ -8,14 +8,26 @@ import { codeBridge } from '../kit/CodeDrawer'
 import { ctx, useRunner, useStore } from '../kit/ctx'
 import { NumSlider, toast } from '@hydra-ipad/kit'
 import { nodeById } from '../model'
-import { bake, deleteNodes, disconnect, duplicateNodes, freeOutputs, toggleBypass } from '../ops'
+import { bake, deleteNodes, disconnect, duplicateNodes, freeOutputs } from '../ops'
 import type { XY } from '../view'
 import { liveFor, setCallNum } from './Nodes'
-import { togglePreview } from './Preview'
+import { NodeOff } from './Off'
+import { previewSpecFor, toggleAB, togglePreview } from './Preview'
+
+const MODE_LABEL: Record<PreviewMode, string> = { off: 'off', demand: 'on demand', live: 'live' }
+const NEXT_MODE: Record<PreviewMode, PreviewMode> = { off: 'demand', demand: 'live', live: 'off' }
+
+/** The previews preference (shared by every editor, per browser), following changes made elsewhere. */
+function usePreviewMode(): PreviewMode {
+  const [m, setM] = useState(previewMode())
+  useEffect(() => onPreviewMode(setM), [])
+  return m
+}
 
 export function TopBar() {
   const st = useUi()
   const runner = useRunner()
+  const pm = usePreviewMode()
   return (
     <header class="topbar" data-testid="topbar">
       <Switcher />
@@ -47,6 +59,15 @@ export function TopBar() {
           openMoreMenu(e.currentTarget as HTMLElement, [
             { label: 'Arrange (re-run the layout)', run: arrange, testid: 'menu-arrange' },
             { label: 'Fit to screen', run: () => ui.set({ fit: ui.state.fit + 1 }), testid: 'menu-fit' },
+            {
+              label: `Node previews: ${MODE_LABEL[pm]}`,
+              hint: `tap for ${MODE_LABEL[NEXT_MODE[pm]]}`,
+              run: () => {
+                setPreviewMode(NEXT_MODE[pm])
+                toast(NEXT_MODE[pm] === 'live' ? 'Previews: live (thumbnails animate; costs battery)' : NEXT_MODE[pm] === 'off' ? 'Previews: off' : 'Previews: on demand (a still; tap one to animate it)')
+              },
+              testid: 'menu-previews',
+            },
           ])
         }
       >
@@ -139,11 +160,7 @@ export function SelectionBar() {
           <button type="button" class="btn danger" data-testid="sel-delete" onClick={deleteSelection}>
             Delete
           </button>
-          {n?.kind === 'call' && (
-            <button type="button" class={`btn ${n.bypassed ? 'on' : ''}`} data-testid="sel-bypass" aria-pressed={!!n.bypassed} onClick={() => tryApply(toggleBypass(g, n.id, ctx.catalog))}>
-              Bypass
-            </button>
-          )}
+          {n && <span class="sel-off" data-testid="sel-off">{<NodeOff n={n} />}</span>}
           {calls.length > 1 && (
             <button type="button" class="btn" data-testid="sel-group" onClick={groupSelection}>
               Group
@@ -162,6 +179,11 @@ export function SelectionBar() {
           {n && (n.kind === 'call' || n.kind === 'out') && (
             <button type="button" class={`btn ${(meta.previews ?? []).includes(n.id) ? 'on' : ''}`} data-testid="sel-preview" onClick={() => togglePreview(n.id)}>
               👁 Preview
+            </button>
+          )}
+          {n?.kind === 'call' && previewSpecFor(ctx.store.sketch, n)?.mod && (
+            <button type="button" class={`btn ${st.ab === n.id ? 'on' : ''}`} data-testid="sel-ab" aria-pressed={st.ab === n.id} title="Before and after this node" onClick={() => toggleAB(n.id)}>
+              A/B
             </button>
           )}
           {n?.kind === 'call' && (

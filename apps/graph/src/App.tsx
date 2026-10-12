@@ -8,6 +8,7 @@ import { ctx, history, useRunner, useStore } from './kit/ctx'
 import { closeAllOverlays, OverlayHost, useLayout, useShortcuts, useTapGestures } from '@hydra-ipad/kit'
 import { deleteSelection, duplicateSelection, Pip, SelectionBar, TopBar } from './ui/Bars'
 import { Canvas } from './ui/Canvas'
+import { RevivedNote } from './ui/Off'
 import { canvasApi, Palette } from './ui/Palette'
 
 export function App({ stage }: { stage: HTMLElement }) {
@@ -45,6 +46,7 @@ export function App({ stage }: { stage: HTMLElement }) {
           <Canvas />
           <div class="banners-wrap">
             <Banners />
+            <RevivedNote />
           </div>
           <Palette onDragItem={(item, e) => canvasApi.dragItem(item, e)} />
           <SelectionBar />
