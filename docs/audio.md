@@ -108,7 +108,7 @@ Many podcast hosts (SoundCloud among them) send no CORS headers on their feeds. 
 **feeds-only** proxy, `api/feed.mjs`, and its build sets `FEED_PROXY_URL=/api/feed?url=` (in `vercel.json`'s `buildCommand`).
 The panel uses it only after a feed host refuses CORS; the state line then says the feed was read through the proxy. It
 proxies **feeds, never audio**: episodes from such hosts still play without analysis, or download through Safari and the Files
-app. Its safeguards (tested in `api/feed.test.mjs`):
+app. Its safeguards (tested in `scripts/feed-proxy.test.mjs`):
 
 * GET only; same-origin only (it refuses requests whose `Sec-Fetch-Site` is another site, and sends no
   `Access-Control-Allow-Origin`, so other sites' pages cannot read it);

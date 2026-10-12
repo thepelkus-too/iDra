@@ -1,9 +1,9 @@
-// node --test api/feed.test.mjs — the feeds-only proxy's safeguards, against local servers.
+// node --test scripts/feed-proxy.test.mjs — the feeds-only proxy's safeguards, against local servers.
 import { test, before, after } from 'node:test'
 import assert from 'node:assert/strict'
 import http from 'node:http'
 import dns from 'node:dns'
-import handler, { LIMITS, isPrivateAddress } from './feed.mjs'
+import handler, { LIMITS, isPrivateAddress } from '../api/feed.mjs'
 
 const RSS = '<?xml version="1.0"?><rss version="2.0"><channel><title>T</title></channel></rss>'
 let origin, proxy, base, proxyBase
