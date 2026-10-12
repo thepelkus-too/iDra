@@ -1,5 +1,5 @@
 export { createRuntime, buildFrameHtml } from './runtime/host'
-export type { Runtime, RuntimeOptions, RunOptions, RunResult, RuntimeError, PluginResult, Isolation, PreviewLoop } from './runtime/host'
+export type { Runtime, RuntimeOptions, RunOptions, PartRunOptions, RunResult, RuntimeError, PluginResult, Isolation, PreviewLoop } from './runtime/host'
 export { ScriptCache, verifyIntegrity, getScriptCache, isPinnedScriptUrl, sha256Hex, integrityOf, SCRIPT_CACHE_NAME } from './runtime/script-cache'
 export type { ScriptFetchResult, ScriptCacheEntry } from './runtime/script-cache'
 export { MidiShim } from './runtime/midi-shim'

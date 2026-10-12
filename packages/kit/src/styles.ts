@@ -116,6 +116,20 @@ export const KIT_CSS = `
 .disable-toggle.unavailable{opacity:.4;border-style:dashed}
 .is-disabled .disable-toggle{opacity:1;filter:none}
 
+/* ---- held and draft chains, run controls (docs/evaluation.md) */
+.held-controls{position:relative;display:inline-flex;align-items:center;gap:4px;vertical-align:middle}
+.held-controls>button,.run-bar>button,.run-bar>select,.sync-badge{min-height:32px;padding:0 10px;border:1px solid var(--hi-line);border-radius:8px;background:transparent;color:var(--hi-dim);font-weight:600;font-size:13px;touch-action:manipulation;-webkit-user-select:none;user-select:none}
+.held-follow{min-width:40px;font-size:16px}
+.held-follow:not(.on),.hold-all.on{color:#ffd27a;border-color:#ffd27a}
+.held-count{color:#ffd27a;border-color:#ffd27a}
+.held-run,.run-all,.run-held{color:var(--hi-accent);border-color:var(--hi-accent)}
+.held-changes{position:absolute;top:calc(100% + 4px);left:0;z-index:4;min-width:220px;margin:0;padding:6px;list-style:none;background:var(--hi-panel);border:1px solid var(--hi-line);border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,.5)}
+.held-changes li{display:flex;align-items:center;gap:6px;padding:2px 0}
+.held-changes .held-label{flex:1;font:13px var(--mono);color:var(--hi-text)}
+.held-changes button{min-width:40px;min-height:36px;border:1px solid var(--hi-line);border-radius:8px;background:transparent;color:var(--hi-dim)}
+.run-bar{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.sync-badge{color:#ffd27a;border-color:#ffd27a;background:rgba(255,210,122,.08)}
+
 /* ---- chunk previews */
 .preview-peek{display:inline-flex;flex-direction:column;gap:4px;vertical-align:top}
 .peek-pic{position:relative;display:block;padding:0;border:1px solid var(--hi-line);border-radius:6px;overflow:hidden;background:#000;width:128px;height:72px;line-height:0}

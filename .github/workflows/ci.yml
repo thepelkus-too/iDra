@@ -35,6 +35,8 @@ jobs:
         run: node scripts/e2e-numbers.mjs --skip-build
       - name: e2e chunk previews and disabling (Previews lab, pool size, main output untouched, trust gate)
         run: node scripts/e2e-previews.mjs --skip-build
+      - name: e2e evaluation model (Eval lab, vanilla vs clean slate, held chains run per change and per chain)
+        run: node scripts/e2e-eval.mjs --skip-build
       - name: iPad-viewport screenshots and metrics
         if: always()
         uses: actions/upload-artifact@v4

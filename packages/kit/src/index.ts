@@ -15,4 +15,5 @@ export { NumberEditor, openNumberEditor, glidePrefs, loopValue, sketchBpm, type 
 export { PadDock, PadEditor, PadStrip, PadTab, openPadEditor, padDockOpen, padsTool, showPadDock } from './PadDock'
 export { DisableToggle, disableAction, type DisableAction, type DisableToggleProps } from './DisableToggle'
 export { PreviewPeek, kitPreviewPool, disposeKitPreviewPool, peekMessage, type PreviewPeekProps } from './PreviewPeek'
+export { HeldControls, RunBar, SyncBadge, heldActions, numberTargets, perform, runAll, hushAndRunAll, runAllHeldNow, runAllMode, setRunAllMode, liveWhileHeld, setLiveWhileHeld, holdAll, setHoldAll, type HeldActions, type HeldControlsProps, type RunAllMode } from './Held'
 export { KIT_CSS } from './styles'

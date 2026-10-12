@@ -227,6 +227,14 @@ kit's `<PreviewPeek spec>` and register the main runtime with `setKitHost({ …,
 * Raw code is not run in previews, apart from `loadScript(…)` / `setFunction(…)` lines (plugins the chunk may call).
   Settings, defs and non-camera sources are kept.
 
+### 8c. Held and draft chains (evaluation model)
+
+Held and draft chains are code: a draft is a disabled (`//`) chain aimed at an output; it pairs with the chain playing
+there. Show a held chain and its draft as one chain with its pending changes (kit `<HeldControls>`), and never hide a
+draft. The follow switch is the only view state (`meta[<app>].hold`, written through core's `setFollow`). Runs from the
+kit go through `KitHost.runPart` / `runAll`, so the trust gate applies to them too. Opening a sketch runs it from a
+clean slate. Details and the adoption steps: docs/evaluation.md.
+
 ## 9. Tests every editor must pass
 
 Using `import { corpus } from '@hydra-ipad/core/corpus'` (35 sketches, one deliberately broken):

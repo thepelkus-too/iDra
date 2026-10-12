@@ -30,8 +30,11 @@ export interface RunMsg {
   code: string
   /** initial values of the live-parameter table (merged before evaluating) */
   live: Record<string, number>
-  /** clear these source slots (s0..s3) and reset outputs before evaluating */
-  reset: { clearSources: string[] }
+  /**
+   * Clean slate: clear these source slots (s0..s3), reset outputs, `render`, `speed`, `bpm`, `update`/`afterUpdate` before
+   * evaluating. `null`: evaluate only, as vanilla Hydra does (anything the code doesn't mention carries on).
+   */
+  reset: { clearSources: string[] } | null
 }
 export type HostToFrame =
   | InitMsg

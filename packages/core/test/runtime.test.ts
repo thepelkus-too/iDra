@@ -7,6 +7,7 @@ import { Catalog } from '../src/catalog'
 import { validate } from '../src/validate'
 import { corpus } from '../src/corpus'
 import { setArg, walkCalls, num, type Sketch } from '../src/ir'
+import { outOfSync, runDraft } from '../src/evaluation'
 import { MockHydra, resetMock } from './helpers/mock-hydra'
 
 /**
@@ -279,5 +280,103 @@ describe.each(['inline', 'loopback'] as const)('runtime (%s transport, real gene
     for (const { msg } of MSG_LOG) expect(() => structuredClone(msg)).not.toThrow()
     // a function can never cross: the host cannot smuggle behaviour into the frame
     expect(() => structuredClone({ t: 'live', table: { a: () => 1 } })).toThrow()
+  })
+})
+
+describe.each(['inline', 'loopback'] as const)('evaluation model: vanilla runs and partial runs (%s)', (mode) => {
+  beforeEach(() => {
+    MODE = mode
+  })
+  const frag = (i: number) => hydra().o[i].passes?.[0].frag as string | undefined
+
+  test('clean slate (default) blacks out outputs the code no longer mentions; vanilla leaves them playing', async () => {
+    ;({ rt } = mk())
+    await rt.run(fromCode('osc(10).out(o0)\nvoronoi(3).out(o1)'))
+    expect(frag(1)).toContain('voronoi')
+    await rt.run(fromCode('osc(10).out(o0)'), { reset: 'none' })
+    expect(frag(1)).toContain('voronoi')
+    expect(Object.keys(rt.playing()).sort()).toEqual(['o0', 'o1'])
+    await rt.run(fromCode('osc(10).out(o0)'), { force: true })
+    expect(frag(1)).not.toContain('voronoi')
+    expect(Object.keys(rt.playing())).toEqual(['o0'])
+  })
+
+  test('vanilla keeps speed and update; clean slate resets them', async () => {
+    ;({ rt } = mk())
+    await rt.run(fromCode('speed = 3\nosc().out()'))
+    expect(hydra().sandbox.userProps?.speed ?? (window as any).speed).toBe(3)
+    await rt.run(fromCode('osc(2).out()'), { reset: 'none' })
+    expect((window as any).speed).toBe(3)
+    await rt.run(fromCode('osc(3).out()'))
+    expect((window as any).speed).toBe(1)
+  })
+
+  test('vanilla does not clear a source that the code stops mentioning', async () => {
+    ;({ rt } = mk())
+    await rt.run(fromCode('s0.initImage("a.png")\nsrc(s0).out()'), { safe: false })
+    const log = hydra().s[0].log
+    const n = log.length
+    await rt.run(fromCode('osc().out()'), { reset: 'none' })
+    expect(log.slice(n)).toEqual([])
+    await rt.run(fromCode('osc(2).out()'))
+    expect(log.slice(n)).toEqual([['clear']])
+  })
+
+  test('runPart runs one chain and leaves the other outputs alone', async () => {
+    ;({ rt } = mk())
+    const a = fromCode('osc(10).out(o0)\nnoise(3).out(o1)')
+    await rt.run(a)
+    const o1Renders = hydra().o[1].renders
+    // the document changes both chains; only o0 is run
+    const b = fromCode('shape(4).out(o0)\nvoronoi(5).out(o1)')
+    const r = await rt.runPart(b, [b.stmts[0].id])
+    expect(r.ok).toBe(true)
+    expect(frag(0)).toContain('shape')
+    expect(frag(1)).toContain('noise')
+    expect(hydra().o[1].renders).toBe(o1Renders)
+    expect(outOfSync(b, rt.playing())).toEqual(['o1'])
+    // a whole run afterwards evaluates even though its code is the same as the last whole run's
+    const again = await rt.run(a)
+    expect(again.recompiled).toBe(true)
+    expect(outOfSync(a, rt.playing())).toEqual([])
+  })
+
+  test('runPart takes the defs a chain reads, not settings', async () => {
+    ;({ rt } = mk())
+    await rt.run(fromCode('speed = 2\nosc().out()'))
+    const s = fromCode('speed = 5\nk = 7\nosc(k).out(o0)')
+    const r = await rt.runPart(s, [s.stmts[2].id])
+    expect(r.ok).toBe(true)
+    expect((window as any).k).toBe(7)
+    expect((window as any).speed).toBe(2)
+  })
+
+  test('a held chain: Run swaps in the draft; playing() follows; live numbers count for sync', async () => {
+    ;({ rt } = mk())
+    const s = fromCode('osc(10).rotate(0.2).out(o0)\n// osc(10).rotate(0.5).kaleid(4).out(o0)\nnoise(3).out(o1)')
+    await rt.run(s)
+    expect(frag(0)).not.toContain('kaleid')
+    const plan = runDraft(s, s.stmts[1].id)
+    await rt.runPart(plan.sketch, plan.run)
+    expect(frag(0)).toContain('kaleid')
+    expect(frag(1)).toContain('noise')
+    expect(outOfSync(plan.sketch, rt.playing())).toEqual([])
+    // a number dragged live on the playing chain: the document has it too, so still in sync
+    const playingStmt = plan.sketch.stmts[1]
+    const rotate = (playingStmt as any).chain.mods[0]
+    rt.setLive(`${rotate.id}:0`, 0.9)
+    await tick(150)
+    expect(outOfSync(plan.sketch, rt.playing())).toEqual(['o0'])
+    expect(outOfSync(setArg(plan.sketch, rotate.id, 0, num(0.9)), rt.playing())).toEqual([])
+  })
+
+  test('hush forgets what plays', async () => {
+    ;({ rt } = mk())
+    let calls = 0
+    rt.onPlaying(() => calls++)
+    await rt.run(fromCode('osc().out()'))
+    await rt.hush()
+    expect(rt.playing()).toEqual({})
+    expect(calls).toBe(2)
   })
 })

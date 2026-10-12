@@ -1,8 +1,9 @@
 /// <reference path="../types.d.ts" />
 import { catalog as defaultCatalog, type Catalog, type CatalogDelta } from '../catalog'
-import { toRunnable } from '../codegen'
+import { liveId, toRunnable } from '../codegen'
 import { importText } from '../parse'
-import { contentHash, type PluginRef, type Sketch, type Stmt } from '../ir'
+import { contentHash, type Chain, type OutName, type PluginRef, type Sketch, type Stmt, type Value } from '../ir'
+import { activeOnly, outputGroups, partialRunSet, type PlayingMap } from '../evaluation'
 import type { AudioEngine } from '../audio'
 import type { ErrorKind, FrameMsg, FrameToHost, HostToFrame, Transport } from './protocol'
 import { Bridge } from './bridge'
@@ -66,6 +67,17 @@ export interface RunOptions {
   safe?: boolean
   /** re-evaluate even if nothing but numbers changed, and re-initialise sources */
   force?: boolean
+  /**
+   * `clean` (default): today's clean slate before evaluating: all four outputs black, `render` back to o0, `speed` 1, `bpm`
+   * 30, `update`/`afterUpdate` cleared, changed sources (all of them with `force`) cleared, so the screen matches the code.
+   * `none`: vanilla Hydra's eval: only the code runs and anything it doesn't mention carries on (a deleted chain keeps
+   * playing). The clock is never reset either way. Opening a different sketch should always use `clean`.
+   */
+  reset?: 'clean' | 'none'
+}
+
+export interface PartRunOptions {
+  safe?: boolean
 }
 
 export interface RunResult {
@@ -106,6 +118,17 @@ export interface Runtime {
   readonly stats: { runs: number; recompiles: number; liveMessages: number; lastRunMs: number }
   readonly errors: RuntimeError[]
   run(input: Sketch | string, opts?: RunOptions): Promise<RunResult>
+  /**
+   * A partial run: evaluate statements `ids` of `sketch` against the current runtime state, resetting nothing else: other
+   * outputs keep playing, sources and globals stay. The `def`s and sources those statements read run with them; settings
+   * and raw code only when listed (`partialRunSet`). Runs after any run already asked for. This is how a held chain's Run,
+   * a draft's Run and a code view's "run this line" reach the screen (docs/evaluation.md).
+   */
+  runPart(sketch: Sketch, ids: string[], opts?: PartRunOptions): Promise<RunResult>
+  /** what each output is drawing, as of the last run (with live numbers applied): compare with `outOfSync(sketch, …)` */
+  playing(): PlayingMap
+  /** called after every run, partial run or hush that changed what plays */
+  onPlaying(cb: () => void): () => void
   hush(): Promise<void>
   setResolution(w: number, h: number): Promise<void>
   screenshot(opts?: { type?: string; quality?: number }): Promise<string>
@@ -263,6 +286,10 @@ export function createRuntime(container: HTMLElement, opts: RuntimeOptions = {})
   let queued: { input: Sketch | string; opts: RunOptions; waiters: Array<{ res: (r: RunResult) => void }> } | undefined
   let runScheduled = false
   let runChain: Promise<unknown> = Promise.resolve()
+
+  // what each output draws (statement id + the chain as it ran), for out-of-sync checks
+  let playingMap = new Map<OutName, { stmt: string; chain: Chain }>()
+  const playingListeners = new Set<() => void>()
 
   // defs of the sketch last run: the only names invoke() forwards
   let knownDefs = new Set<string>()
@@ -492,11 +519,56 @@ export function createRuntime(container: HTMLElement, opts: RuntimeOptions = {})
     }
   }
 
+  /** Record the chains `sk` draws as playing: replacing everything (clean slate) or only the outputs it mentions. */
+  function notePlaying(sk: Sketch, replace: boolean) {
+    const next = replace ? new Map<OutName, { stmt: string; chain: Chain }>() : new Map(playingMap)
+    for (const g of outputGroups(sk)) {
+      if (!g.playing) continue
+      const st = sk.stmts.find((x) => x.id === g.playing)
+      if (st?.k === 'chain') next.set(g.out, { stmt: st.id, chain: activeOnly(st.chain) })
+    }
+    playingMap = next
+    emitPlaying()
+  }
+  function emitPlaying() {
+    for (const cb of [...playingListeners]) {
+      try {
+        cb()
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+  /** The chain with the live table's current numbers in place of the ones it ran with. */
+  function withLive(c: Chain): Chain {
+    const call = (x: Chain['gen']): Chain['gen'] => {
+      let changed = false
+      const args = x.args.map((a, i): Value => {
+        if (a.k === 'tex') {
+          const ch = withLive(a.chain)
+          if (ch !== a.chain) changed = true
+          return ch === a.chain ? a : { ...a, chain: ch }
+        }
+        const v = lastLive[liveId(x.id, i)]
+        if (a.k === 'num' && v !== undefined && v !== a.v) {
+          changed = true
+          return { k: 'num', v }
+        }
+        return a
+      })
+      return changed ? { ...x, args } : x
+    }
+    const gen = call(c.gen)
+    const mods = c.mods.map(call)
+    return gen === c.gen && mods.every((m, i) => m === c.mods[i]) ? c : { ...c, gen, mods }
+  }
+
   async function execute(input: Sketch | string, o: RunOptions): Promise<RunResult> {
     const t0 = performance.now()
     await ready
     stats.runs++
     const safe = !!o.safe
+    const clean = o.reset !== 'none'
     let sketch: Sketch | undefined
     let rawText: string | undefined
     if (typeof input === 'string') {
@@ -531,17 +603,19 @@ export function createRuntime(container: HTMLElement, opts: RuntimeOptions = {})
         return { ok: true, recompiled: false, skipped, ms: performance.now() - t0 }
       }
       const clear: string[] = []
-      for (const [slot, k] of applied) if (o.force || sources.get(slot) !== k) clear.push(slot)
+      // vanilla: a changed source re-initialises from its own statement; a deleted one keeps showing, as in Hydra
+      if (clean) for (const [slot, k] of applied) if (o.force || sources.get(slot) !== k) clear.push(slot)
       const keep = new Set([...applied].filter(([slot, k]) => !o.force && sources.get(slot) === k).map(([slot]) => slot))
       const reduced = toRunnable(sk, { safe, live: true, catalog: cat, skipSource: (s) => keep.has(s.slot) })
       code = reduced.code
       stats.recompiles++
       try {
-        await request<unknown>((id) => ({ t: 'run', id, code, live, reset: { clearSources: clear } }))
+        await request<unknown>((id) => ({ t: 'run', id, code, live, reset: clean ? { clearSources: clear } : null }))
         lastKey = key
         lastSafe = safe
-        lastLive = { ...live }
-        applied = sources
+        lastLive = clean ? { ...live } : { ...lastLive, ...live }
+        applied = clean ? sources : new Map([...applied, ...sources])
+        notePlaying(sk, clean)
         stats.lastRunMs = performance.now() - t0
         return { ok: true, recompiled: true, skipped, ms: stats.lastRunMs }
       } catch (e: any) {
@@ -551,12 +625,13 @@ export function createRuntime(container: HTMLElement, opts: RuntimeOptions = {})
     }
     // raw text path
     stats.recompiles++
-    const clear = [...applied.keys()]
+    const clear = clean ? [...applied.keys()] : []
     try {
-      await request<unknown>((id) => ({ t: 'run', id, code, live, reset: { clearSources: clear } }))
+      await request<unknown>((id) => ({ t: 'run', id, code, live, reset: clean ? { clearSources: clear } : null }))
       lastKey = undefined
       lastSafe = safe
-      applied = new Map()
+      if (clean) applied = new Map()
+      notePlaying(importText(rawText!).sketch, clean)
       stats.lastRunMs = performance.now() - t0
       return { ok: true, recompiled: true, skipped, ms: stats.lastRunMs }
     } catch (e: any) {
@@ -577,6 +652,45 @@ export function createRuntime(container: HTMLElement, opts: RuntimeOptions = {})
         runChain = runChain.then(async () => {
           const r = await execute(q.input, q.opts).catch((e): RunResult => ({ ok: false, recompiled: true, error: String(e?.message ?? e), skipped: [], ms: 0 }))
           for (const w of q.waiters) w.res(r)
+        })
+      })
+    })
+  }
+
+  async function executePart(sketch: Sketch, ids: string[], o: PartRunOptions): Promise<RunResult> {
+    const t0 = performance.now()
+    await ready
+    stats.runs++
+    const safe = !!o.safe
+    knownDefs = new Set(sketch.stmts.flatMap((s) => (s.k === 'def' && !s.disabled ? [s.name] : [])))
+    const set = new Set(partialRunSet(sketch, ids))
+    if (!set.size) return { ok: true, recompiled: false, skipped: [], ms: performance.now() - t0 }
+    if (!safe) await ensurePlugins(sketch)
+    const part: Sketch = { ...sketch, stmts: sketch.stmts.filter((s) => set.has(s.id)) }
+    const sources = new Map<string, string>()
+    for (const s of part.stmts) if (s.k === 'source') sources.set(s.slot, srcKey(s))
+    const r = toRunnable(part, { safe, live: true, catalog: cat, skipSource: (s) => applied.get(s.slot) === srcKey(s) })
+    stats.recompiles++
+    try {
+      await request<unknown>((id) => ({ t: 'run', id, code: r.code, live: r.live, reset: null }))
+      // the frame no longer matches any whole-sketch run: the next run() evaluates even if its code is unchanged
+      lastKey = undefined
+      lastLive = { ...lastLive, ...r.live }
+      applied = new Map([...applied, ...sources])
+      notePlaying(part, false)
+      stats.lastRunMs = performance.now() - t0
+      return { ok: true, recompiled: true, skipped: r.skipped, ms: stats.lastRunMs }
+    } catch (e: any) {
+      return { ok: false, recompiled: true, error: String(e.message ?? e), skipped: r.skipped, ms: performance.now() - t0 }
+    }
+  }
+
+  function runPart(sketch: Sketch, ids: string[], o: PartRunOptions = {}): Promise<RunResult> {
+    return new Promise<RunResult>((res) => {
+      // after the frame's debounced run(), if one is scheduled: requests reach the frame in the order they were made
+      raf(() => {
+        runChain = runChain.then(async () => {
+          res(await executePart(sketch, ids, o).catch((e): RunResult => ({ ok: false, recompiled: true, error: String(e?.message ?? e), skipped: [], ms: 0 })))
         })
       })
     })
@@ -637,6 +751,8 @@ export function createRuntime(container: HTMLElement, opts: RuntimeOptions = {})
     applied = new Map()
     loadedPlugins.clear()
     lastLive = {}
+    playingMap = new Map()
+    emitPlaying()
     await start()
   }
 
@@ -651,11 +767,23 @@ export function createRuntime(container: HTMLElement, opts: RuntimeOptions = {})
     stats,
     errors,
     run,
+    runPart,
+    playing() {
+      const out: PlayingMap = {}
+      for (const [o, p] of playingMap) out[o] = { stmt: p.stmt, chain: withLive(p.chain) }
+      return out
+    },
+    onPlaying(cb) {
+      playingListeners.add(cb)
+      return () => playingListeners.delete(cb)
+    },
     async hush() {
       await ready
       lastKey = undefined
       applied = new Map()
       await request((id) => ({ t: 'hush', id }))
+      playingMap = new Map()
+      emitPlaying()
     },
     async setResolution(w, h) {
       await ready
@@ -754,6 +882,7 @@ export function createRuntime(container: HTMLElement, opts: RuntimeOptions = {})
       errorListeners.clear()
       liveListeners.clear()
       frameListeners.clear()
+      playingListeners.clear()
     },
   }
   void helloSeen
