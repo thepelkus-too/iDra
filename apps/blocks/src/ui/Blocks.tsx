@@ -17,6 +17,7 @@ import { renameDef, setArg, setOut, updateCall, updateStmt, type ArgRef } from '
 import { RawEditor } from '../kit/raw'
 import { OP_LABEL, setAt, srcToMath, mathToSrc, type MathNode, type MathPath } from '../math'
 import { CAP_H, HAT_H, rowH, scriptSize, socketH, type LooseStack } from '../view'
+import { BlockTools, openBlockMenu, openStmtMenu, StmtSwitch, type BlockAt } from './Chunk'
 
 export const TYPE_LABEL: Record<string, string> = { src: 'Source', coord: 'Geometry', color: 'Color', combine: 'Blend', combineCoord: 'Modulate', unknown: 'Unknown', plugin: 'Plugin' }
 export const TYPE_ICON: Record<string, string> = { src: '◉', coord: '⤢', color: '◐', combine: '⊕', combineCoord: '≈', unknown: '?', plugin: '✦' }
@@ -53,9 +54,10 @@ export function Script({ s, x, y, collapsed, look }: { s: Stmt; x: number; y: nu
   switch (s.k) {
     case 'chain':
       return (
-        <div class={`script chain ${s.chain.out === null ? 'unplugged' : ''} ${look.shadowed.has(s.id) ? 'shadowed' : ''} ${collapsed ? 'folded' : ''}`} style={style} data-stmt={s.id} data-testid="script" data-kind="chain">
+        <div class={`script chain ${s.chain.out === null ? 'unplugged' : ''} ${look.shadowed.has(s.id) ? 'shadowed' : ''} ${collapsed ? 'folded' : ''} ${s.disabled ? 'is-disabled off' : ''}`} style={style} data-stmt={s.id} data-testid="script" data-kind="chain" data-off={s.disabled ? '1' : undefined}>
           {look.shadowed.has(s.id) && <span class="badge shadow" title="a later script shows on the same output">shadowed</span>}
-          {collapsed ? <FoldedHat chain={s.chain} stmtId={s.id} look={look} /> : <Stack chain={s.chain} top stmtId={s.id} look={look} />}
+          {s.disabled && <span class="badge offbadge">switched off: // in the code</span>}
+          {collapsed ? <FoldedHat chain={s.chain} stmtId={s.id} look={look} /> : <Stack chain={s.chain} top stmtId={s.id} look={look} off={!!s.disabled} />}
           <Cap stmtId={s.id} chain={s.chain} />
         </div>
       )
@@ -89,14 +91,14 @@ const box = (s: Stmt) => {
   const z = scriptSize(s, ctx.catalog)
   return { width: `${z.w}px`, height: `${z.h}px` }
 }
-const drag = (p: () => Payload | undefined, tap?: () => void) => pressToDrag(p, tap) as unknown as JSX.PointerEventHandler<HTMLElement>
+const drag = (p: () => Payload | undefined, tap?: () => void, long?: (el: HTMLElement) => void) => pressToDrag(p, tap, long) as unknown as JSX.PointerEventHandler<HTMLElement>
 
 // ---------------------------------------------------------------- stacks (a chain: hat + blocks)
 
-export function Stack({ chain, top, stmtId, socket, look }: { chain: Chain; top: boolean; stmtId: string; socket?: ArgRef; look: Look }) {
+export function Stack({ chain, top, stmtId, socket, look, off }: { chain: Chain; top: boolean; stmtId: string; socket?: ArgRef; look: Look; off?: boolean }) {
   return (
     <div class="stack" data-chain={chain.id}>
-      <Block call={chain.gen} index={-1} chain={chain} top={top} stmtId={stmtId} socket={socket} look={look} />
+      <Block call={chain.gen} index={-1} chain={chain} top={top} stmtId={stmtId} socket={socket} look={look} off={off} />
       {chain.mods.map((m, i) => (
         <Block key={m.id} call={m} index={i} chain={chain} top={top} stmtId={stmtId} look={look} />
       ))}
@@ -106,6 +108,7 @@ export function Stack({ chain, top, stmtId, socket, look }: { chain: Chain; top:
 
 function FoldedHat({ chain, stmtId, look }: { chain: Chain; stmtId: string; look: Look }) {
   const type = typeOf(chain.gen.fn)
+  const at: BlockAt = { call: chain.gen, chain, index: -1, stmtId, top: true }
   return (
     <div
       class={`block hat t-${type} ${look.sel === chain.gen.id ? 'sel' : ''}`}
@@ -117,7 +120,7 @@ function FoldedHat({ chain, stmtId, look }: { chain: Chain; stmtId: string; look
       data-stmt={stmtId}
       data-testid="block"
       data-fn={chain.gen.fn}
-      onPointerDown={drag(() => ({ t: 'script', stmtId }), () => ui.select(chain.gen.id, stmtId))}
+      onPointerDown={drag(() => ({ t: 'script', stmtId }), () => ui.select(chain.gen.id, stmtId), (el) => openBlockMenu(el, at))}
     >
       <span class="ticon">{TYPE_ICON[type]}</span>
       <b class="fname">{chain.gen.fn}</b>
@@ -127,6 +130,7 @@ function FoldedHat({ chain, stmtId, look }: { chain: Chain; stmtId: string; look
       <button type="button" class="btn sm" data-testid="unfold" onClick={(e) => (e.stopPropagation(), toggleFold(stmtId))}>
         unfold
       </button>
+      <BlockTools b={at} />
     </div>
   )
 }
@@ -137,8 +141,11 @@ export function toggleFold(stmtId: string): void {
   ctx.store.setView({ collapsed: c.includes(stmtId) ? c.filter((x) => x !== stmtId) : [...c, stmtId] })
 }
 
-function Block({ call, index, chain, top, stmtId, socket, look }: { call: Call; index: number; chain: Chain; top: boolean; stmtId: string; socket?: ArgRef; look: Look }) {
+function Block({ call, index, chain, top, stmtId, socket, look, off }: { call: Call; index: number; chain: Chain; top: boolean; stmtId: string; socket?: ArgRef; look: Look; off?: boolean }) {
   const hat = index < 0
+  // a hat that starts a statement (a script, or the chain a `set` holds) switches that whole statement
+  const at: BlockAt = { call, chain, index, stmtId, top: top || (!!socket && 'def' in socket) }
+  const struck = !!call.disabled || (hat && !!off)
   const def = ctx.catalog.get(call.fn)
   const type = typeOf(call.fn)
   const inputs = def?.inputs ?? []
@@ -151,7 +158,7 @@ function Block({ call, index, chain, top, stmtId, socket, look }: { call: Call; 
   }
   return (
     <div
-      class={`block ${hat ? 'hat' : 'stk'} t-${type} ${look.sel === call.id ? 'sel' : ''} ${look.errors[call.id] ? 'err' : ''} ${!def ? 'unknown' : ''}`}
+      class={`block ${hat ? 'hat' : 'stk'} t-${type} ${look.sel === call.id ? 'sel' : ''} ${look.errors[call.id] ? 'err' : ''} ${!def ? 'unknown' : ''} ${call.disabled ? 'is-disabled' : ''} ${struck ? 'off' : ''}`}
       style={{ height: `${rowH(call, hat, ctx.catalog)}px` }}
       data-drop="after"
       data-chain={chain.id}
@@ -160,9 +167,10 @@ function Block({ call, index, chain, top, stmtId, socket, look }: { call: Call; 
       data-stmt={top ? stmtId : undefined}
       data-call={call.id}
       data-fn={call.fn}
+      data-off={struck ? '1' : undefined}
       data-testid="block"
       title={look.errors[call.id]}
-      onPointerDown={drag(payload, () => ui.select(call.id, stmtId))}
+      onPointerDown={drag(payload, () => ui.select(call.id, stmtId), (el) => openBlockMenu(el, at))}
     >
       <span class="ticon" aria-label={TYPE_LABEL[type]}>
         {TYPE_ICON[type]}
@@ -182,6 +190,7 @@ function Block({ call, index, chain, top, stmtId, socket, look }: { call: Call; 
           ＋
         </button>
       )}
+      <BlockTools b={at} />
     </div>
   )
 }
@@ -462,7 +471,7 @@ function DefBlock({ s, style, sel, look }: { s: Extract<Stmt, { k: 'def' }>; sty
   const v = s.value
   const tex = v.k === 'tex' || v.k === 'ref'
   return (
-    <div class={`script defblk ${sel ? 'sel' : ''}`} style={{ ...style, minWidth: `${z.w}px`, height: `${z.h}px` }} data-stmt={s.id} data-testid="script" data-kind="def" onPointerDown={drag(() => ({ t: 'script', stmtId: s.id }), () => ui.select(s.id))}>
+    <div class={`script defblk ${sel ? 'sel' : ''} ${s.disabled ? 'is-disabled off' : ''}`} style={{ ...style, minWidth: `${z.w}px`, height: `${z.h}px` }} data-stmt={s.id} data-testid="script" data-kind="def" data-off={s.disabled ? '1' : undefined} onPointerDown={drag(() => ({ t: 'script', stmtId: s.id }), () => ui.select(s.id), (el) => openStmtMenu(el, s.id, `set ${s.name}`))}>
       <span class="ticon">𝑥</span>
       <span>set</span>
       <button type="button" class="btn sm defname" data-testid="def-name" onClick={(e) => (e.stopPropagation(), promptText('Variable name', s.name, (t) => /^[A-Za-z_$][\w$]*$/.test(t) && edit((sk) => renameDef(sk, s.id, t))))}>
@@ -470,6 +479,8 @@ function DefBlock({ s, style, sel, look }: { s: Extract<Stmt, { k: 'def' }>; sty
       </button>
       <span>to</span>
       {tex ? <Socket refr={ref} v={v} label="" look={look} stmtId={s.id} /> : <Slot refr={ref} v={v} label="" hint={{ min: Math.min(0, v.k === 'num' ? v.v * 2 : 0), max: Math.max(1, Math.abs(v.k === 'num' ? v.v : 1) * 2), step: 0.01 }} />}
+      {/* a set that holds a chain switches from its hat, like a script */}
+      {v.k !== 'tex' && <StmtSwitch id={s.id} what={`set ${s.name}`} />}
     </div>
   )
 }
@@ -526,9 +537,10 @@ function SetupBlock({ s, style, sel }: { s: Stmt; style: Record<string, string>;
   }
   const z = scriptSize(s, ctx.catalog)
   return (
-    <div class={`script setup ${sel ? 'sel' : ''}`} style={{ ...style, minWidth: `${z.w}px`, height: `${z.h}px` }} data-stmt={s.id} data-testid="script" data-kind={s.k} onPointerDown={drag(() => ({ t: 'script', stmtId: s.id }), () => ui.select(s.id))}>
+    <div class={`script setup ${sel ? 'sel' : ''} ${s.disabled ? 'is-disabled off' : ''}`} style={{ ...style, minWidth: `${z.w}px`, height: `${z.h}px` }} data-stmt={s.id} data-testid="script" data-kind={s.k} data-off={s.disabled ? '1' : undefined} onPointerDown={drag(() => ({ t: 'script', stmtId: s.id }), () => ui.select(s.id), (el) => openStmtMenu(el, s.id, s.k))}>
       <span class="ticon">⚙</span>
       {body}
+      <StmtSwitch id={s.id} what={s.k === 'source' ? 'this source' : s.k === 'render' ? 'show' : s.k === 'setting' ? s.name : s.k} />
     </div>
   )
 }

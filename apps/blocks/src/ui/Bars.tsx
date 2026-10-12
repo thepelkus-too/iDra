@@ -13,6 +13,7 @@ import { appPrefs } from '../prefs'
 import { STARTERS } from '../starters'
 import { metaNow } from '../doc'
 import { wsApi } from './Workspace'
+import { isOff, previewModeItem, switchIdOf, toggleSwitch } from './Chunk'
 
 export function TopBar() {
   const st = useUi()
@@ -50,6 +51,7 @@ export function TopBar() {
             { label: 'Tidy up (lay out again)', run: tidy, testid: 'menu-tidy' },
             { label: 'Fit to screen', run: () => ui.set({ fit: ui.state.fit + 1 }), testid: 'menu-fit' },
             { label: 'Full-screen output', run: () => ui.set({ perform: true }), testid: 'menu-full' },
+            previewModeItem(),
           ])
         }
       >
@@ -73,6 +75,8 @@ export function SelectionBar() {
   const stmtId = selectedStmtId()
   const stmt = ctx.store.sketch.stmts.find((s) => s.id === stmtId)
   const folded = !!stmtId && (metaNow().collapsed ?? []).includes(stmtId)
+  const offId = stmt && (stmt.k === 'comment' || stmt.k === 'raw') ? undefined : switchIdOf(ctx.store.sketch, st.sel)
+  const off = !!offId && isOff(ctx.store.sketch, offId)
   return (
     <div class="selbar" role="toolbar" aria-label="Selection" data-testid="selbar">
       <button type="button" class="btn" data-testid="sel-dup" onClick={duplicateSel}>
@@ -84,6 +88,11 @@ export function SelectionBar() {
       <button type="button" class="btn" data-testid="sel-mutate" title="Nudge every number of the script a little" onClick={() => mutateSel()}>
         ✨ Mutate
       </button>
+      {offId && (
+        <button type="button" class={`btn ${off ? 'on' : ''}`} data-testid="sel-switch" title="Switch off: it stays in the code as a // comment" onClick={() => toggleSwitch(offId)}>
+          {off ? 'Switch on' : '// Off'}
+        </button>
+      )}
       {stmt?.k === 'chain' && (
         <button type="button" class={`btn ${folded ? 'on' : ''}`} data-testid="sel-fold" onClick={foldSel}>
           {folded ? 'Unfold' : 'Fold'}

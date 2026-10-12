@@ -647,6 +647,186 @@ if (want('10')) await block('10', async () => {
   assert.deepEqual(S.errors.filter((e) => !/Permissions policy/.test(e)), [], '10: no page errors')
 })
 
+// ============================================================================================================ 11. switch off, preview
+// Step 09: blocks adopt core's disabled flag (`//` in the code) and the kit's chunk previews. Blocks never had a bypass, mute
+// or solo flag of its own, so there is no old view state to migrate (see the README).
+const offOf = (S, id) => S.page.evaluate((id) => {
+  const el = document.querySelector(`.workspace [data-call="${id}"]`)
+  return !!el && el.classList.contains('is-disabled') && el.classList.contains('off')
+}, id)
+/** mean brightness of the open peek's canvas (0..255), or -1 when there is none */
+const peekLuma = (page) => page.evaluate(() => {
+  const c = document.querySelector('[data-testid=peek-pop] canvas')
+  if (!c || !c.width) return -1
+  const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data
+  let t = 0
+  for (let i = 0; i < d.length; i += 4) t += (d[i] + d[i + 1] + d[i + 2]) / 3
+  return t / (d.length / 4)
+})
+/** a coarse sample of the open peek's pixels */
+const peekPixels = (page) => page.evaluate(() => {
+  const c = document.querySelector('[data-testid=peek-pop] canvas')
+  const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data
+  const out = []
+  for (let i = 0; i < d.length; i += 4 * 97) out.push(d[i], d[i + 1], d[i + 2])
+  return out
+})
+const meanDiff = (a, b) => a.reduce((t, v, i) => t + Math.abs(v - b[i]), 0) / a.length
+
+if (want('11')) await block('11', async () => {
+  const S = await startS({ viewport: { width: 1180, height: 820 } })
+  const { page, touch } = S
+  const code = 'osc(20, 0.1, 0.8)\n  .rotate(0.8)\n  .modulate(noise(3), 0.1)\n  .kaleid(4)\n  .out()\n\nnoise(5).color(1, 0, 0.5).out(o1)\n'
+  let id
+  await check('11a', 'switch a block off by touch: the code comments that line only; it stays visible, editable and selectable; the hat switches its script; back on gives the same text', async () => {
+    id = await importAndOpen(page, S.base, code, 'Switch off')
+    await waitForPicture(page)
+    const rot = await callId(S, 'rotate')
+    await focus(S, (await page.evaluate(() => window.__blocks.store.sketch.stmts[0].id)))
+    await touch.tap(`.workspace [data-call="${rot}"] > .blk-tools .disable-toggle`)
+    await sleep(300)
+    assert.equal(await codeOf(page), code.replace('  .rotate(0.8)', '  // .rotate(0.8)'), 'only the rotate line is commented')
+    assert.ok(await offOf(S, rot), 'the block is still drawn, marked off')
+    // still editable: a keypad edit on the switched-off block lands in its comment
+    await keypad(S, numSel(rot, 0), '1.5')
+    assert.match(await codeOf(page), /\/\/ \.rotate\(1\.5\)/, 'the number edits inside the comment')
+    // still selectable: a tap selects it and the selection bar offers to switch it on
+    await touch.tap(grab('rotate'))
+    await page.waitForSelector('[data-testid=sel-switch]')
+    assert.equal((await page.textContent('[data-testid=sel-switch]')).trim(), 'Switch on')
+    // modulate takes its texture argument along
+    const mod = await callId(S, 'modulate')
+    await touch.tap(`.workspace [data-call="${mod}"] > .blk-tools .disable-toggle`)
+    await sleep(300)
+    assert.match(await codeOf(page), /\n {2}\/\/ \.modulate\(noise\(3\), 0\.1\)\n/, 'modulate and its noise are one commented line')
+    await shot(page, '11-switched-off.png')
+    // the hat of the second script switches the whole script
+    const hat = await callId(S, 'noise', 1)
+    await focus(S, (await page.evaluate(() => window.__blocks.store.sketch.stmts[1].id)))
+    await touch.tap(`.workspace [data-call="${hat}"] > .blk-tools .disable-toggle`)
+    await sleep(300)
+    assert.ok((await codeOf(page)).endsWith('\n// noise(5).color(1, 0, 0.5).out(o1)\n'), 'the second script is a comment')
+    assert.equal(await page.getAttribute(`.workspace [data-stmt="${(await page.evaluate(() => window.__blocks.store.sketch.stmts[1].id))}"]`, 'data-off'), '1')
+    // and all back on, by touch
+    await touch.tap(`.workspace [data-call="${hat}"] > .blk-tools .disable-toggle`)
+    await sleep(250)
+    await focus(S, (await page.evaluate(() => window.__blocks.store.sketch.stmts[0].id)))
+    for (const c of [mod, rot]) {
+      await touch.tap(`.workspace [data-call="${c}"] > .blk-tools .disable-toggle`)
+      await sleep(250)
+    }
+    assert.equal(await codeOf(page), code.replace('rotate(0.8)', 'rotate(1.5)'), 'back on: the original text with the one edited number')
+    return 'rotate → // .rotate(…); modulate with noise(3) on one line; the hat comments its script; all back on'
+  })
+
+  await check('11b', 'preview "up to here" from a block\'s eye; A/B a modifier from its long-press menu; closing stops the preview', async () => {
+    await page.evaluate(() => window.__blocks.core.setPreviewMode('demand'))
+    const kal = await callId(S, 'kaleid')
+    await focus(S, (await page.evaluate(() => window.__blocks.store.sketch.stmts[0].id)))
+    await touch.tap(`.workspace [data-call="${kal}"] > .blk-tools [data-testid=eye]`)
+    await page.waitForSelector('[data-testid=peek-pop][data-kind=prefix]')
+    assert.match(await page.textContent('[data-testid=peek-pop] .peek-title'), /osc → rotate → modulate → kaleid/)
+    await page.waitForFunction(() => {
+      const c = document.querySelector('[data-testid=peek-pop] canvas')
+      if (!c) return false
+      const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data
+      for (let i = 0; i < d.length; i += 40) if (d[i] + d[i + 1] + d[i + 2] > 30) return true
+      return false
+    }, null, { timeout: 30000 })
+    const still = await peekLuma(page)
+    // tap: it expands and animates
+    await touch.tap('[data-testid=peek-pop] .peek-pic')
+    await page.waitForFunction(() => document.querySelector('[data-testid=peek-pop] .preview-peek')?.dataset.state === 'running', null, { timeout: 20000 })
+    await shot(page, '11-peek.png')
+    // close it: the handle goes, nothing keeps running
+    await touch.tap('[data-testid=popover-scrim]')
+    await sleep(400)
+    assert.equal(await page.locator('[data-testid=peek-pop]').count(), 0)
+    const runs0 = (await page.evaluate(() => window.__blocks.previewStats())).frames
+    await sleep(1500)
+    const runs1 = (await page.evaluate(() => window.__blocks.previewStats())).frames
+    assert.equal(runs1, runs0, 'no preview frames after closing')
+    // A/B: hold the block, let go, pick Before / after
+    await touch.hold(grab('rotate'), 650)
+    await page.waitForSelector('[data-testid=menu-ab]')
+    await touch.tap('[data-testid=menu-ab]')
+    await page.waitForSelector('[data-testid=peek-pop][data-kind=diff]')
+    await touch.tap('[data-testid=peek-pop] .peek-pic')
+    await page.waitForSelector('.peek-ab button')
+    await page.waitForFunction(() => document.querySelector('[data-testid=peek-pop] .preview-peek')?.dataset.state === 'running', null, { timeout: 20000 })
+    await sleep(800)
+    const b = await peekPixels(page)
+    await touch.tap('.peek-ab button:has-text("A")')
+    await sleep(800)
+    const a = await peekPixels(page)
+    const ab = meanDiff(a, b)
+    assert.ok(ab > 8, `before and after differ (mean difference ${ab.toFixed(1)})`)
+    await shot(page, '11-ab.png')
+    await touch.tap('[data-testid=popover-scrim]')
+    const stats = await page.evaluate(() => window.__blocks.previewStats())
+    assert.ok(stats.maxRuntimes <= 2, 'at most the pool size of runtimes')
+    // previews off: no eyes, no preview items in the menu
+    await touch.tap('[data-testid=more]')
+    await touch.tap('[data-testid=menu-previews]') // demand → live
+    await touch.tap('[data-testid=more]')
+    await touch.tap('[data-testid=menu-previews]') // live → off
+    await sleep(200)
+    assert.equal(await page.locator('.workspace [data-testid=eye]').count(), 0, 'no eyes while previews are off')
+    await touch.hold(grab('rotate'), 650)
+    await page.waitForSelector('[data-testid=menu-switch]')
+    assert.equal(await page.locator('[data-testid=menu-ab]').count(), 0)
+    await touch.tap('[data-testid=popover-scrim]')
+    await page.evaluate(() => window.__blocks.core.setPreviewMode('demand'))
+    return `prefix still luma ${still.toFixed(0)}; A/B mean difference ${ab.toFixed(0)}/255; no frames after closing; pool runtimes at most ${stats.maxRuntimes}`
+  })
+
+  await check('11c', 'switch editors on a sketch with switched-off parts and back: same code, the same blocks off', async () => {
+    await focus(S, (await page.evaluate(() => window.__blocks.store.sketch.stmts[0].id)))
+    await touch.tap(`.workspace [data-call="${await callId(S, 'rotate')}"] > .blk-tools .disable-toggle`)
+    await sleep(300)
+    await page.evaluate(() => window.__blocks.lib.flush())
+    const before = await codeOf(page)
+    assert.match(before, /\/\/ \.rotate/)
+    for (const app of ['Chain Stack', 'Harness']) {
+      await touch.tap('.hi-switch > button')
+      await touch.tap(`.hi-switch a:has-text("${app}")`)
+      await page.waitForURL(app === 'Harness' ? /\/harness\// : /\/stack\//, { timeout: 15000 })
+      await sleep(1500)
+      if (app === 'Harness') assert.equal(await page.inputValue('#code'), before, 'the harness shows the same commented code')
+      await page.click('.hi-switch > button')
+      await page.click('.hi-switch a:has-text("Blocks")')
+      await page.waitForURL(/\/blocks\//, { timeout: 15000 })
+      await page.waitForFunction((id) => window.__blocks?.store?.sketch?.id === id, id, { timeout: 15000 })
+      assert.equal(await codeOf(page), before, `back from ${app}: same code`)
+      assert.ok(await offOf(S, await callId(S, 'rotate')), `back from ${app}: rotate still off`)
+    }
+    return 'Blocks → Chain Stack → Blocks → Harness → Blocks'
+  })
+
+  await check('11d', 'importing commented-out code: revived chunks show as switched-off blocks, with a one-time, dismissible note', async () => {
+    const c35 = readFileSync(join(root, 'packages/core/corpus/35-disabled-statements.js'), 'utf8')
+    await importAndOpen(page, S.base, c35, 'Revived')
+    await waitForPicture(page)
+    await page.waitForSelector('[data-testid=revived-note]')
+    const text = await page.textContent('[data-testid=revived-note]')
+    const n = await page.evaluate(() => window.__blocks.chunk.disabledCount(window.__blocks.store.sketch))
+    assert.match(text, new RegExp(`^${n} commented-out chunks were revived as disabled`))
+    const off = await page.locator('.workspace [data-off="1"]').count()
+    assert.ok(off >= n - 1, `${off} switched-off scripts or blocks drawn`)
+    await shot(page, '11-revived.png')
+    await touch.tap('[data-testid=revived-dismiss]')
+    assert.equal(await page.locator('[data-testid=revived-note]').count(), 0)
+    await page.reload()
+    await page.waitForFunction(() => !!window.__blocks?.store, null, { timeout: 15000 })
+    await sleep(500)
+    assert.equal(await page.locator('[data-testid=revived-note]').count(), 0, 'dismissed for good')
+    assert.equal(await codeOf(page), c35, 'export identical')
+    return `${n} revived; ${off} drawn switched off; note gone after dismiss and reload`
+  })
+  notes.push('Blocks had no bypass, mute or solo state of its own (only loose blocks, which are not in the code), so step 09 has no old view state to migrate.')
+  assert.deepEqual(S.errors.filter((e) => !/Permissions policy/.test(e)), [], '11: no page errors')
+})
+
 // ============================================================================================================ summary
 const md = ['# Acceptance run', '', `Chromium (software WebGL / SwiftShader), touch emulation via CDP. Generated ${new Date().toISOString().slice(0, 10)}.`, '', '| # | check | result | note |', '|---|---|---|---|']
 for (const r of results) md.push(`| ${r.id} | ${r.title} | ${r.ok ? 'pass' : '**FAIL**'} | ${String(r.note ?? '').replace(/\|/g, '/').replace(/\n/g, ' ').slice(0, 300)} |`)
