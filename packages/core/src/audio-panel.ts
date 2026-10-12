@@ -13,7 +13,21 @@ import {
   type AudioInputInfo,
 } from './audio-sources'
 import { AudioAssetError, getAudioAssets, type AudioAssets } from './audio-assets'
-import { audioProxyUrl, getPodcastLibrary, isDirectAudioUrl, resolveAudioUrl, resumePoint, FEED_BLOCKED_TEXT, type PodcastEpisode, type PodcastFeed, type PodcastLibrary } from './podcast'
+import {
+  audioProxyUrl,
+  downloadEpisode,
+  getPodcastLibrary,
+  isDirectAudioUrl,
+  requestPersistentStorage,
+  resolveAudioUrl,
+  resumePoint,
+  storageEstimate,
+  FEED_BLOCKED_TEXT,
+  type PodcastEpisode,
+  type PodcastFeed,
+  type PodcastLibrary,
+} from './podcast'
+import type { AudioAsset } from './audio-assets'
 import { appStorage } from './storage'
 import { h, injectStyles, TOKENS_CSS } from './ui'
 
@@ -44,8 +58,13 @@ ${TOKENS_CSS}
 .hi-audio .fname{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%}
 .hi-audio .seek{grid-template-columns:1fr}
 .hi-audio .eps{display:grid;gap:4px;max-height:260px;overflow:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain}
-.hi-audio .eps button{display:grid;gap:2px;text-align:left;padding:8px 10px;min-height:48px;height:auto}
-.hi-audio .eps button[aria-current=true]{border-color:var(--hi-accent)}
+.hi-audio .ep{display:grid;grid-template-columns:1fr auto;gap:4px}
+.hi-audio .ep .dl{min-width:56px;padding:0 8px;font-variant-numeric:tabular-nums}
+.hi-audio .ep .dl.saved{color:var(--hi-accent)}
+.hi-audio .dls{display:grid;gap:4px;border-top:1px solid var(--hi-line);padding-top:6px}
+.hi-audio .dls[hidden]{display:none}
+.hi-audio .eps button.play{display:grid;gap:2px;text-align:left;padding:8px 10px;min-height:48px;height:auto}
+.hi-audio .eps button.play[aria-current=true]{border-color:var(--hi-accent)}
 .hi-audio .eps b{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .hi-audio .eps small{color:var(--hi-dim);font-size:12px}
 .hi-audio .feed-title{font-weight:600}
@@ -94,7 +113,7 @@ const fmtDate = (t?: number) => {
 }
 const SPEEDS = [0.75, 1, 1.25, 1.5, 1.75, 2]
 const FILE_HELP = 'Accepts audio saved from Patreon, Telegram or any download: save it to the Files app first (Share › Save to Files), then choose it here.'
-const fmtMB = (n?: number) => (n === undefined ? '' : n < 1048576 ? `${Math.max(1, Math.round(n / 1024))} KB` : `${(n / 1048576).toFixed(1)} MB`)
+const fmtMB = (n?: number) => (n === undefined ? '' : n < 1048576 ? `${Math.max(1, Math.round(n / 1024))} KB` : n < 1073741824 ? `${(n / 1048576).toFixed(1)} MB` : `${(n / 1073741824).toFixed(1)} GB`)
 
 /** Audio control panel: source (mic, input device, file, stream URL, other apps), transport, meters, Hydra's settings, monitor. */
 export function mountAudioPanel(el: HTMLElement, opts: AudioPanelOptions = {}): AudioPanelHandle {
@@ -160,10 +179,14 @@ export function mountAudioPanel(el: HTMLElement, opts: AudioPanelOptions = {}): 
   const speedSel = h('select', { 'aria-label': 'Speed', 'data-role': 'speed' }, ...SPEEDS.map((v) => h('option', { value: String(v), selected: v === savedRate }, `${v}×`))) as HTMLSelectElement
   speedSel.value = String(SPEEDS.includes(savedRate) ? savedRate : 1)
   const podState = h('div', { class: 'state', hidden: true, 'data-role': 'pod-state', 'aria-live': 'polite' })
+  const dlNote = h('div', { class: 'note', hidden: true, 'data-role': 'download-note', 'aria-live': 'polite' })
+  const dlHead = h('div', { class: 'feed-title', 'data-role': 'downloads-head' })
+  const dlList = h('div', { class: 'eps', role: 'list', 'data-role': 'downloads' })
+  const dlBox = h('div', { class: 'dls', hidden: true }, dlHead, h('div', { class: 'note' }, 'Saved on this device: they play offline and always drive visuals.'), dlList)
   const streamBox = h('div', { class: 'src', hidden: true },
     h('div', { class: 'row' }, urlInput, openBtn),
     h('div', { class: 'note' }, 'A podcast RSS feed, a direct MP3/AAC/Ogg link, or internet radio. Analysis needs the host to allow it (CORS); otherwise it can still play.'),
-    urlNote, recentRow, feedTitle, episodeList,
+    dlBox, urlNote, recentRow, feedTitle, episodeList, dlNote,
     h('div', { class: 'row' }, back15, fwd15, speedSel),
     podState,
   )
@@ -322,7 +345,7 @@ export function mountAudioPanel(el: HTMLElement, opts: AudioPanelOptions = {}): 
     }
     if (choice === 'stream') {
       void refreshRecent()
-      void loadPositions()
+      void loadPositions().then(loadDownloads)
     }
     if (choice !== 'other') applyChoice()
   })
@@ -387,7 +410,12 @@ export function mountAudioPanel(el: HTMLElement, opts: AudioPanelOptions = {}): 
 
   // ---- podcast / URL
   /** what "Start" plays for the Podcast / URL source */
-  let pick: { url: string; name?: string; feedUrl?: string; duration?: number } | undefined
+  let pick: { url: string; name?: string; feedUrl?: string; duration?: number; src?: string } | undefined
+  /** downloaded episodes by episode URL, with their Blob (a reference: the bytes stay in IndexedDB until read) */
+  let downloads = new Map<string, { asset: AudioAsset; blob: Blob }>()
+  /** downloads in progress by episode URL */
+  const active = new Map<string, { ctl: AbortController; pct: string }>()
+  let objectUrl: string | undefined
   let feed: PodcastFeed | undefined
   let positions = new Map<string, number>()
   let loading = false
@@ -398,7 +426,7 @@ export function mountAudioPanel(el: HTMLElement, opts: AudioPanelOptions = {}): 
     urlNote.hidden = !msg
   }
   const streamFor = (p: NonNullable<typeof pick>) =>
-    new StreamSource(p.url, { name: p.name, startAt: resumePoint(positions.has(p.url) ? { url: p.url, position: positions.get(p.url)!, updatedAt: 0 } : undefined, p.duration), rate: Number(speedSel.value) || 1, proxy })
+    new StreamSource(p.src ?? p.url, { name: p.name, startAt: resumePoint(positions.has(p.url) ? { url: p.url, position: positions.get(p.url)!, updatedAt: 0 } : undefined, p.duration), rate: Number(speedSel.value) || 1, proxy })
   const refreshRecent = async () => {
     try {
       const list = await podcasts.recentFeeds()
@@ -420,7 +448,7 @@ export function mountAudioPanel(el: HTMLElement, opts: AudioPanelOptions = {}): 
   const savePosition = () => {
     const src = engine.source
     const tr = src?.transport
-    if (!pick || !(src instanceof StreamSource) || src.url !== pick.url || !tr || !tr.duration) return
+    if (!pick || !(src instanceof StreamSource) || src.url !== (pick.src ?? pick.url) || !tr || !tr.duration) return
     const at = tr.currentTime
     if (!(at > 0)) return
     positions.set(pick.url, at)
@@ -434,23 +462,116 @@ export function mountAudioPanel(el: HTMLElement, opts: AudioPanelOptions = {}): 
     if (!feed.episodes.length) episodeList.append(h('div', { class: 'note' }, 'This feed lists no audio episodes.'))
     for (const ep of feed.episodes.slice(0, 300)) {
       const at = positions.get(ep.url)
-      const meta = [fmtDate(ep.date), ep.duration ? fmtTime(ep.duration) : '', fmtMB(ep.size), at ? `resume at ${fmtTime(at)}` : ''].filter(Boolean).join(' · ')
-      const b = h('button', { type: 'button', role: 'listitem', 'data-role': 'episode', 'data-url': ep.url, 'aria-current': pick?.url === ep.url ? 'true' : 'false' }, h('b', {}, ep.title), h('small', {}, meta))
+      const saved = downloads.has(ep.url)
+      const meta = [fmtDate(ep.date), ep.duration ? fmtTime(ep.duration) : '', fmtMB(ep.size), saved ? 'on this device' : '', at && at >= 5 ? `resume at ${fmtTime(at)}` : ''].filter(Boolean).join(' · ')
+      const b = h('button', { type: 'button', class: 'play', 'data-role': 'episode', 'data-url': ep.url, 'aria-current': pick?.url === ep.url ? 'true' : 'false' }, h('b', {}, ep.title), h('small', {}, meta))
       b.addEventListener('click', () => playEpisode(ep))
-      episodeList.append(b)
+      const job = active.get(ep.url)
+      const dl = h('button', { type: 'button', class: saved ? 'dl saved' : 'dl', 'data-role': 'download', 'data-url': ep.url, 'aria-label': saved ? `${ep.title} is saved on this device` : job ? `Cancel downloading ${ep.title}` : `Download ${ep.title} for offline`, disabled: saved }, saved ? '✓' : job ? job.pct : '↓')
+      dl.addEventListener('click', () => (job ? job.ctl.abort() : void startDownload(ep)))
+      episodeList.append(h('div', { class: 'ep', role: 'listitem' }, b, dl))
     }
+  }
+  const sayDl = (msg: string, cls = 'note') => {
+    dlNote.textContent = msg
+    dlNote.className = cls
+    dlNote.hidden = !msg
+  }
+  const renderDownloads = async () => {
+    const list = [...downloads.values()]
+    dlList.textContent = ''
+    dlBox.hidden = list.length === 0
+    if (!list.length) return
+    const total = list.reduce((n, d) => n + d.asset.size, 0)
+    const est = await storageEstimate()
+    const room = est.quota !== undefined && est.usage !== undefined ? ` · about ${fmtMB(Math.max(0, est.quota - est.usage))} free for this site` : ''
+    dlHead.textContent = `Downloads (${list.length}) · ${fmtMB(total)} of ${fmtMB(assets.limits.maxTotal)}${room}`
+    for (const { asset } of list) {
+      const o = asset.origin!
+      const at = positions.get(o.url)
+      const meta = [o.feedTitle, o.duration ? fmtTime(o.duration) : '', fmtMB(asset.size), at && at >= 5 ? `resume at ${fmtTime(at)}` : ''].filter(Boolean).join(' · ')
+      const play = h('button', { type: 'button', class: 'play', 'data-role': 'downloaded', 'data-url': o.url, 'aria-current': pick?.url === o.url ? 'true' : 'false' }, h('b', {}, o.title), h('small', {}, meta))
+      play.addEventListener('click', () => playEpisode({ id: o.url, url: o.url, title: o.title, duration: o.duration }, o.feedUrl))
+      const del = h('button', { type: 'button', class: 'dl', 'data-role': 'delete-download', 'data-url': o.url, 'aria-label': `Delete ${o.title} from this device` }, 'Delete')
+      del.addEventListener('click', () => void deleteDownload(asset))
+      dlList.append(h('div', { class: 'ep', role: 'listitem' }, play, del))
+    }
+  }
+  const loadDownloads = async () => {
+    try {
+      const list = await assets.downloads()
+      const next = new Map<string, { asset: AudioAsset; blob: Blob }>()
+      for (const a of list) {
+        const got = await assets.get(a.id)
+        if (got && a.origin) next.set(a.origin.url, { asset: a, blob: got.blob })
+      }
+      downloads = next
+    } catch {
+      downloads = new Map()
+    }
+    await renderDownloads()
+    renderEpisodes()
+  }
+  const startDownload = async (ep: PodcastEpisode) => {
+    const ctl = new AbortController()
+    const job = { ctl, pct: '0%' }
+    active.set(ep.url, job)
+    sayDl(`Downloading “${ep.title}”… tap the percentage to cancel.`)
+    renderEpisodes()
+    void requestPersistentStorage()
+    let last = 0
+    try {
+      await downloadEpisode(ep, {
+        assets,
+        feed,
+        proxy: proxy ?? null,
+        signal: ctl.signal,
+        onProgress: ({ received, total }) => {
+          job.pct = total ? `${Math.min(99, Math.floor((received / total) * 100))}%` : fmtMB(received)
+          const now = Date.now()
+          if (now - last > 250) {
+            last = now
+            renderEpisodes()
+          }
+        },
+      })
+      sayDl(`“${ep.title}” is saved on this device.`)
+    } catch (e) {
+      sayDl(ctl.signal.aborted ? 'Download cancelled.' : (e as Error).message, ctl.signal.aborted ? 'note' : 'note err')
+    } finally {
+      active.delete(ep.url)
+      await refreshSaved()
+      await loadDownloads()
+    }
+  }
+  const deleteDownload = async (asset: AudioAsset) => {
+    const url = asset.origin?.url
+    if (url && pick?.url === url && pick.src && engine.source instanceof StreamSource && engine.source.url === pick.src) {
+      savePosition()
+      engine.stop()
+      engine.setSource(undefined)
+    }
+    await assets.remove(asset.id).catch(() => {})
+    sayDl(`Deleted “${asset.origin?.title ?? asset.name}” from this device.`)
+    await refreshSaved()
+    await loadDownloads()
   }
   const playPick = (p: NonNullable<typeof pick>) => {
     savePosition()
+    const saved = downloads.get(p.url)
+    if (objectUrl) URL.revokeObjectURL(objectUrl)
+    objectUrl = saved ? URL.createObjectURL(saved.blob) : undefined
+    p = { ...p, src: objectUrl, name: p.name ?? saved?.asset.origin?.title }
     pick = p
     const wasRunning = engine.state === 'running' || engine.state === 'paused'
     engine.setSource(streamFor(p))
     // choosing an episode is a tap: start right away (setSource restarts a running engine by itself)
     if (!wasRunning) void engine.start().catch(() => {})
     renderEpisodes()
+    void renderDownloads()
     refresh()
   }
-  const playEpisode = (ep: PodcastEpisode) => playPick({ url: ep.url, name: ep.title, feedUrl: feed?.url, duration: ep.duration })
+  const playEpisode = (ep: PodcastEpisode, feedUrl = feed?.url) => playPick({ url: ep.url, name: ep.title, feedUrl, duration: ep.duration })
   const openUrl = async (raw: string) => {
     const u = raw.trim()
     prefs.set('streamUrl', u)
@@ -696,7 +817,7 @@ export function mountAudioPanel(el: HTMLElement, opts: AudioPanelOptions = {}): 
   if (choice === 'stream') {
     const u = urlInput.value.trim()
     if (u && isDirectAudioUrl(u)) pick = { url: u }
-    void loadPositions()
+    void loadPositions().then(loadDownloads)
     void refreshRecent()
   }
   // pick up an engine that already has a source (another panel set it up)
@@ -713,6 +834,8 @@ export function mountAudioPanel(el: HTMLElement, opts: AudioPanelOptions = {}): 
       unFrame()
       savePosition()
       clearInterval(posTimer)
+      active.forEach((j) => j.ctl.abort())
+      if (objectUrl && !(engine.source instanceof StreamSource && engine.source.url === objectUrl)) URL.revokeObjectURL(objectUrl)
       document.removeEventListener('visibilitychange', onHide)
       cancelAnimationFrame(raf)
       root.remove()

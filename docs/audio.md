@@ -42,7 +42,7 @@ has its own meters (the audio panel, `audioBindings().subscribe`) for the chrome
 |---|---|---|
 | **Microphone** | `getUserMedia` with `echoCancellation`, `noiseSuppression`, `autoGainControl` **off** (they flatten the dynamics the visuals react to) | a refused permission says how to allow it (on iPad: Settings › Apps › Safari › Microphone, or the “aA” menu › Website Settings), it never throws at the sketch |
 | **Input device…** | `enumerateDevices()`; *Find inputs* asks once so labels appear; the choice is remembered (`hydra-core:audioInput`) and matched by label if the id changed | a USB-C interface shows up here on iPadOS |
-| **Audio file…** | the Files picker, played through `<audio>` + `MediaElementSource` (no full decode: a 10-minute track would be ~230 MB decoded) | transport: play/pause, seek, loop, file name and time; **keep on this device** stores it in IndexedDB (`hydra-ipad-audio`), max 60 MB per file and 250 MB in all, never in the sketch. The picker says it takes audio saved from Patreon, Telegram or any download via the Files app |
+| **Audio file…** | the Files picker, played through `<audio>` + `MediaElementSource` (no full decode: a 10-minute track would be ~230 MB decoded) | transport: play/pause, seek, loop, file name and time; **keep on this device** stores it in IndexedDB (`hydra-ipad-audio`), max 60 MB per file and 1 GB in all (shared with downloaded episodes), never in the sketch. Downloaded podcast episodes are listed here too. The picker says it takes audio saved from Patreon, Telegram or any download via the Files app |
 | **Podcast / URL…** | a podcast RSS/Atom feed, a direct audio URL, internet radio or HLS, played through `<audio crossorigin="anonymous">` | episode list, play/pause, seek, ±15 s, speed 0.75–2×; see *Podcasts* and *Streams and CORS* below. No feeds or stream URLs ship with the app. |
 | **Tab / screen audio** | `getDisplayMedia` | only listed where the API exists (desktop Chrome/Edge; never iPadOS) |
 | **Other apps…** | explanation only | a web page cannot record other apps' audio on an iPad: use the mic near the speaker, or a USB-C interface (line-in or a loopback cable) under *Input device* |
@@ -86,6 +86,16 @@ source type); the panel says so. Diagnostics → *HLS streams* reports `canPlayT
   and the last position of the 200 most recently played episodes (saved every 5 s while playing, on pause/stop, and when the
   page is hidden). Choosing an episode resumes there, unless the place is in its first 5 s or last 30 s. *Forget* removes the
   chosen feed and its positions; *Forget all* clears everything.
+* **Downloads for offline listening:** the ↓ next to an episode saves it on the device (progress shows on the button; tap it
+  again to cancel). Reading the bytes needs CORS on the audio host (or your proxy); without it the panel says so and points to
+  saving the file through Safari or a podcast app and using *Audio file…* with *keep on this device*. Downloads go into the same
+  kept-audio store as picked files (IndexedDB `hydra-ipad-audio`, stored as a Blob so a long episode is not copied into one
+  buffer): up to 400 MB per episode and 1 GB for files and downloads together, checked against the feed's size and
+  `Content-Length` before downloading and again while streaming. Nothing is evicted automatically. The first download asks the
+  browser to keep the site's storage (`navigator.storage.persist()`), which Safari may grant for home-screen apps.
+  **Downloads** at the top of *Podcast / URL…* lists them with the space used (and what the browser says is free) and a
+  **Delete** button each; tapping one plays it from the device with the same transport, speed and saved position, and it
+  always drives visuals (the bytes are local, so CORS no longer applies). They also appear under *Audio file…* › kept files.
 * **HLS (`.m3u8`) podcasts and radio:** Safari plays HLS natively. Whether Web Audio receives the samples from a native HLS
   `<audio>` element has varied across Safari versions (often silence even with CORS); when that happens the engine reports
   analysis as blocked after ~1.5 s and offers *Play without analysis*. Not yet verified on an iPad: see the checklist.
@@ -116,6 +126,7 @@ should be shipped as a default: a public open relay is an abuse and legal risk. 
 | **Microphone** | yes | yes, after permission; iOS may route output to the receiver while it is open |
 | **Audio file** (Files app, downloads, Patreon/Telegram saves) | yes | yes; long files stream from the file, no full decode |
 | **Stream URL** (radio, direct MP3/AAC/Ogg) | only if the host sends CORS headers | same; otherwise *play only* |
+| **Downloaded episode** | yes, offline too | yes, if the host allowed the download (CORS) |
 | **Podcast feed** | the list needs CORS on the feed; analysis needs CORS on the audio host (and every redirect) | same; otherwise the direct-URL or download route, or *play only* |
 | **HLS (`.m3u8`)** | Safari only, and often silence even with CORS | plays natively; analysis to be verified per stream |
 | **Input device** (USB-C interface, line-in, loopback cable) | yes | yes; the route for audio from other devices or apps |
@@ -180,4 +191,6 @@ Nothing above proves iPadOS behaviour; CI only has Chromium with fake devices.
    an HLS podcast or radio URL and note whether analysis works (Safari often gives silence).
 8. **Podcast with the silent switch on** (iPads that have one) and **with the screen locked**: note whether playback goes on and
    whether analysis (the meters) is still moving when you unlock.
-9. **Camera in the sandboxed frame:** Diagnostics › *Probe camera in frame* (expected: denied, see docs/security.md).
+9. **Downloads:** download an episode from a CORS-friendly feed, turn on Airplane Mode, play it from *Downloads*: it plays and
+   the meters move. Delete it; the space shown drops. Note whether a ~100 MB episode downloads without the tab reloading.
+10. **Camera in the sandboxed frame:** Diagnostics › *Probe camera in frame* (expected: denied, see docs/security.md).

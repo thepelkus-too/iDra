@@ -388,6 +388,38 @@ await step('episode on a host without CORS: “plays but can’t drive visuals�
   await page.click('[data-role=start]')
 })
 
+await step('download an episode for offline; play it from Downloads with the network off; delete it', async () => {
+  const dl = (title) => page.locator('.ep', { has: episode(title) }).locator('[data-role=download]')
+  await dl('Episode with CORS').click()
+  await page.waitForFunction(() => /is saved on this device/.test(document.querySelector('[data-role=download-note]').textContent), null, { timeout: 15000 })
+  assert.equal(await dl('Episode with CORS').textContent(), '✓')
+  assert.match(await episode('Episode with CORS').textContent(), /on this device/)
+  await page.waitForSelector('[data-role=downloaded]')
+  assert.match(await page.textContent('[data-role=downloads-head]'), /Downloads \(1\)/)
+  // a host without CORS can't be downloaded: said plainly
+  await dl('Episode without CORS').click()
+  await page.waitForFunction(() => /doesn’t let web pages download/.test(document.querySelector('[data-role=download-note]').textContent), null, { timeout: 15000 })
+  await shot(page, '02e-podcast-downloads')
+  // offline: the download plays and analyses from the device
+  await context.setOffline(true)
+  try {
+    await page.click('[data-role=downloaded]')
+    await page.waitForFunction(() => window.__harness.audio.state === 'running' && window.__harness.audio.analysis === 'ok' && window.__harness.audio.source.url.startsWith('blob:'), null, { timeout: 15000 })
+    assert.equal((await audioState()).label, 'Episode with CORS')
+    await page.selectOption('[data-role=speed]', '1.5')
+    assert.equal(await page.evaluate(() => window.__harness.audio.source.transport.rate), 1.5)
+    await page.selectOption('[data-role=speed]', '1')
+  } finally {
+    await context.setOffline(false)
+  }
+  // it is also among the kept files of the Audio file source
+  assert.ok(await page.evaluate(async () => (await window.__harness.core.getAudioAssets().list()).some((a) => a.origin?.title === 'Episode with CORS')))
+  await page.click('[data-role=delete-download]')
+  await page.waitForFunction(() => document.querySelector('[data-role=downloads]').closest('.dls').hidden, null, { timeout: 10000 })
+  assert.equal(await page.evaluate(() => window.__harness.audio.state), 'idle')
+  assert.deepEqual(await page.evaluate(async () => (await window.__harness.core.getAudioAssets().downloads()).length), 0)
+})
+
 await step('feed without CORS: said plainly, with the two working routes', async () => {
   await openLink(podUrl(podB, '/feed.xml'))
   await page.waitForFunction(() => /doesn’t let web pages read its feed/.test(document.querySelector('[data-role=url-note]').textContent), null, { timeout: 15000 })

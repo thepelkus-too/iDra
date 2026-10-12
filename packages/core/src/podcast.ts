@@ -6,6 +6,7 @@
 
 import { openSimpleStore, type SimpleStore } from './idb-store'
 import { isHlsUrl, proxiedUrl } from './audio-sources'
+import { AudioAssetError, type AudioAsset, type AudioAssets } from './audio-assets'
 
 // ------------------------------------------------------------------ build-time proxy hook (unset by default)
 
@@ -447,4 +448,106 @@ export function resumePoint(p: EpisodePosition | undefined, duration?: number): 
   if (p.position < 5) return 0
   if (d && p.position > d - 30) return 0
   return p.position
+}
+
+// ------------------------------------------------------------------ downloads for offline listening
+
+export interface DownloadProgress {
+  received: number
+  /** from Content-Length or the feed's enclosure length; undefined when unknown */
+  total?: number
+}
+
+export const DOWNLOAD_BLOCKED_TEXT =
+  'This podcast’s host doesn’t let web pages download its episodes (no CORS headers), so it can’t be saved here. Download it in Safari or a podcast app, save it to Files, and pick it under “Audio file…” (tick “keep on this device”).'
+
+/**
+ * Download an episode into the kept-audio store (audio-assets.ts) for offline playback. Reading the bytes needs CORS on the
+ * audio host (or the AUDIO_PROXY_URL proxy); without it this throws PodcastError('no-cors') with the route that works.
+ * Checks the size against the store's caps before and during the download; `signal` cancels it.
+ */
+export async function downloadEpisode(
+  ep: Pick<PodcastEpisode, 'url' | 'title' | 'size' | 'duration' | 'date' | 'type'>,
+  opts: { assets: AudioAssets; feed?: Pick<PodcastFeed, 'url' | 'title'>; fetch?: FetchLike; proxy?: string | null; signal?: AbortSignal; onProgress?: (p: DownloadProgress) => void },
+): Promise<AudioAsset> {
+  const { assets } = opts
+  const f: FetchLike = opts.fetch ?? ((i, init) => fetch(i, init))
+  const proxy = audioProxyUrl(opts.proxy)
+  await assets.checkDownload(ep.size, ep.title)
+  let res: Response
+  try {
+    res = await f(ep.url, { mode: 'cors', credentials: 'omit', redirect: 'follow', signal: opts.signal })
+  } catch (e) {
+    if (opts.signal?.aborted) throw e
+    if (!proxy) throw new PodcastError(DOWNLOAD_BLOCKED_TEXT, 'no-cors')
+    try {
+      res = await f(proxiedUrl(proxy, ep.url), { mode: 'cors', credentials: 'omit', redirect: 'follow', signal: opts.signal })
+    } catch (e2) {
+      if (opts.signal?.aborted) throw e2
+      throw new PodcastError(DOWNLOAD_BLOCKED_TEXT, 'no-cors')
+    }
+  }
+  if (!res.ok) {
+    void res.body?.cancel?.().catch(() => {})
+    throw new PodcastError(`The server answered ${res.status}${res.statusText ? ` ${res.statusText}` : ''}.`, 'http')
+  }
+  const header = Number(res.headers.get('content-length'))
+  const total = header > 0 ? header : ep.size
+  if (header > 0 && header !== ep.size) {
+    try {
+      await assets.checkDownload(header, ep.title)
+    } catch (e) {
+      void res.body?.cancel?.().catch(() => {})
+      throw e
+    }
+  }
+  const type = (res.headers.get('content-type') ?? '').split(';')[0].trim() || ep.type || 'audio/mpeg'
+  const max = assets.limits.maxDownload
+  const parts: BlobPart[] = []
+  let received = 0
+  const body = res.body as ReadableStream<Uint8Array> | null
+  if (body?.getReader) {
+    const reader = body.getReader()
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) break
+      received += value.byteLength
+      if (received > max) {
+        void reader.cancel().catch(() => {})
+        throw new AudioAssetError(`“${ep.title}” is over ${Math.round(max / 1048576)} MB; downloads that large are not kept on the device.`)
+      }
+      parts.push(value as Uint8Array<ArrayBuffer>)
+      opts.onProgress?.({ received, total })
+    }
+  } else {
+    const b = await res.blob()
+    received = b.size
+    parts.push(b)
+    opts.onProgress?.({ received, total })
+  }
+  const blob = new Blob(parts, { type })
+  const name = ep.title || ep.url.split('/').pop() || 'episode'
+  return assets.addDownload(blob, { url: ep.url, title: name, feedUrl: opts.feed?.url, feedTitle: opts.feed?.title, duration: ep.duration, date: ep.date }, name)
+}
+
+/** Ask the browser to keep this site's storage (downloads) from being evicted under storage pressure. Best effort. */
+export async function requestPersistentStorage(): Promise<boolean> {
+  try {
+    const st = (globalThis.navigator as any)?.storage
+    if (!st?.persist) return false
+    if (await st.persisted?.()) return true
+    return !!(await st.persist())
+  } catch {
+    return false
+  }
+}
+
+/** Space the browser reports for this site (bytes), when it says. */
+export async function storageEstimate(): Promise<{ usage?: number; quota?: number }> {
+  try {
+    const e = await (globalThis.navigator as any)?.storage?.estimate?.()
+    return { usage: e?.usage, quota: e?.quota }
+  } catch {
+    return {}
+  }
 }
