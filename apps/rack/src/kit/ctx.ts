@@ -38,6 +38,8 @@ setKitHost({
     ctx.runner?.track(ctx.store.sketch)
     ctx.runner?.approveOnce()
   },
+  // chunk previews (PreviewPeek) follow the main runtime's clock and live numbers and copy its pictures for ≈ previews
+  runtime: () => ctx.runner?.rt,
 })
 
 /** What the undo taps and ⌘Z / ⌘Enter act on. */

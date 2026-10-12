@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { catalog, canonicalSketch, importText, liveId, num, toCode, validate, withMeta, type Sketch } from '@hydra-ipad/core'
+import { catalog, canonicalSketch, enableAll, importText, liveId, num, setDisabled, toCode, validate, withMeta, type Sketch } from '@hydra-ipad/core'
 import { corpus } from '@hydra-ipad/core/corpus'
 import { APP, autoView, bpmOf, layoutOf, metaOf, readsOf, type RackMeta } from '../src/view'
 import { isInteger, panelOf } from '../src/panel'
@@ -9,8 +9,8 @@ import {
   addModule,
   assignMod,
   baseOf,
-  bypass,
-  liveBypass,
+  auditionSketch,
+  migrateBypass,
   mutateChain,
   mutateLanes,
   randomizeCall,
@@ -18,7 +18,6 @@ import {
   routeLane,
   swapFn,
   unassignMod,
-  unbypass,
   unrouteLane,
 } from '../src/ops'
 import { beatsToMs, ease, Fader, lerpTable, liveTableOf, sameShape, shapeOf } from '../src/fade'
@@ -161,20 +160,66 @@ describe('rack edits', () => {
     expect(code(swapFn(sk, id, 'modulate', catalog))).toBe('osc().modulate(o0).out()\n')
   })
 
-  test('bypass takes a module out of the code and puts it back exactly where it was', () => {
-    const src = 'osc(10).rotate(0.5).kaleid(4).scale(2).out()\n'
-    const sk = imp(src)
-    const ch = (sk.stmts[0] as { chain: { id: string; mods: Array<{ id: string }> } }).chain
-    const meta: RackMeta = { v: 1 }
-    const a = bypass(sk, meta, ch.id, ch.mods[1].id)
-    expect(code(a.sketch)).toBe('osc(10).rotate(0.5).scale(2).out()\n')
-    const b = bypass(a.sketch, { v: 1, bypass: a.bypass }, ch.id, ch.mods[0].id)
-    expect(code(b.sketch)).toBe('osc(10).scale(2).out()\n')
-    expect(liveBypass(b.sketch, { v: 1, bypass: b.bypass })).toHaveLength(2)
-    const c = unbypass(b.sketch, { v: 1, bypass: b.bypass }, ch.mods[1].id)
-    const d = unbypass(c.sketch, { v: 1, bypass: c.bypass }, ch.mods[0].id)
-    expect(code(d.sketch)).toBe('osc(10).rotate(0.5).kaleid(4).scale(2).out()\n')
-    expect(d.bypass).toEqual([])
+  test('old sketches: a bypassed module goes back into its chain switched off, and meta.rack.bypass is removed', () => {
+    // what the old ⏻ left behind for osc(10).rotate(0.5).kaleid(4).scale(2): kaleid bypassed, then rotate (kaleid's
+    // entry re-anchored to the start of the chain)
+    const sk0 = imp('osc(10).scale(2).out()\nnoise(3).out(o1)\n')
+    const ch = (sk0.stmts[0] as { chain: { id: string; gen: { id: string } } }).chain
+    const rot = { id: 'c-rot', fn: 'rotate', args: [num(0.5)] }
+    const kal = { id: 'c-kal', fn: 'kaleid', args: [num(5)] }
+    const old = withMeta(sk0, APP, {
+      v: 1,
+      fade: 2,
+      scenes: {},
+      bypass: [
+        { chain: ch.id, after: null, call: kal },
+        { chain: ch.id, after: null, call: rot },
+        { chain: 'gone', after: null, call: { id: 'c-x', fn: 'invert', args: [] } },
+      ],
+    })
+    const sk = migrateBypass(old)
+    expect(code(sk)).toBe('osc(10)\n  // .rotate(0.5)\n  // .kaleid(5)\n  .scale(2).out()\nnoise(3).out(o1)\n')
+    expect(metaOf(sk)).toEqual({ v: 1, fade: 2, scenes: {} })
+    expect('bypass' in (sk.meta!.rack as object)).toBe(false)
+    expect(code(enableAll(sk))).toBe('osc(10).rotate(0.5).kaleid(5).scale(2).out()\nnoise(3).out(o1)\n')
+    // the export runs in vanilla Hydra (the importer reads the // lines back as the same switched-off modules)
+    expect(canonicalSketch(imp(code(sk)))).toEqual(canonicalSketch({ ...sk, meta: undefined }))
+    // idempotent; a sketch without the old key is returned as it is
+    expect(migrateBypass(sk)).toBe(sk)
+    const plain = imp('osc().out()\n')
+    expect(migrateBypass(plain)).toBe(plain)
+    // an anchor that is no longer in the chain: the module goes to the end of the row
+    const lost = migrateBypass(withMeta(sk0, APP, { v: 1, bypass: [{ chain: ch.id, after: 'c-gone', call: rot }] }))
+    expect(code(lost)).toBe('osc(10).scale(2)\n  // .rotate(0.5)\n  .out()\nnoise(3).out(o1)\n')
+  })
+
+  test('switched off: a disabled row hides nothing, routes and reads skip it, scenes see it as structure', () => {
+    let sk = imp('osc().out()\nnoise().blend(src(o1)).out()\n')
+    const [a, b] = sk.stmts as Array<{ id: string; chain: { id: string; mods: Array<{ id: string }> } }>
+    expect(layoutOf(sk).lanes.o0.map((r) => r.shadowed)).toEqual([true, false])
+    expect(readsOf(sk).o0).toEqual(['o1'])
+    sk = setDisabled(sk, b.id, true)
+    expect(layoutOf(sk).lanes.o0.map((r) => r.shadowed)).toEqual([false, false])
+    expect(activeChain(sk, 'o0')!.id).toBe(a.id)
+    expect(readsOf(sk).o0).toEqual([])
+    // routing blends into the chain you see, not the switched-off one
+    expect(code(routeLane(sk, 'o0', 'o2').sketch).split('\n')[0]).toBe('osc().blend(src(o2)).out()')
+    // a switched-off modifier no longer reads
+    const bl = imp('osc().blend(src(o1)).out()\n')
+    expect(readsOf(setDisabled(bl, (bl.stmts[0] as typeof a).chain.mods[0].id, true)).o0).toEqual([])
+    // switching changes the shape (a scene recall that differs only in on/off swaps at the end of the fade)
+    const base = imp('osc(10).rotate(0.5).out()\n')
+    const rid = (base.stmts[0] as typeof a).chain.mods[0].id
+    expect(sameShape(base.stmts, setDisabled(base, rid, true).stmts, catalog)).toBe(false)
+    expect(sameShape(base.stmts, setDisabled(base, (base.stmts[0] as typeof a).id, true).stmts, catalog)).toBe(false)
+  })
+
+  test('audition adds a render() for the lane without touching the sketch', () => {
+    const sk = imp('osc().out()\nnoise().out(o2)\n')
+    const before = JSON.stringify(sk)
+    const a = auditionSketch(sk, 'o2')
+    expect(code(a)).toBe('osc().out()\nnoise().out(o2)\n\nrender(o2)\n')
+    expect(JSON.stringify(sk)).toBe(before)
   })
 
   test('routing: an empty lane starts src(oN); a busy one blends it in; unroute takes it out again', () => {

@@ -26,9 +26,12 @@ export function liveTableOf(stmts: Stmt[], cat: Catalog): Record<string, number>
   return t
 }
 
-/** The statements with every live number blanked out (and source text dropped): equal shapes compile to the same code. */
+/**
+ * The statements with every live number blanked out (and source text dropped): equal shapes compile to the same code.
+ * Switched-off modules and statements count as shape (switching one changes what compiles).
+ */
 export function shapeOf(stmts: Stmt[], cat: Catalog): string {
-  const call = (c: Call): unknown => ({ id: c.id, fn: c.fn, args: c.args.map((a, i) => (a.k === 'num' && isLive(c.fn, i, cat) ? '#' : value(a))) })
+  const call = (c: Call): unknown => ({ id: c.id, fn: c.fn, off: !!c.disabled, args: c.args.map((a, i) => (a.k === 'num' && isLive(c.fn, i, cat) ? '#' : value(a))) })
   const chain = (c: Chain): unknown => ({ id: c.id, out: c.out, gen: call(c.gen), mods: c.mods.map(call) })
   const value = (v: Value): unknown => (v.k === 'tex' ? { k: 'tex', chain: chain(v.chain) } : v)
   return JSON.stringify(

@@ -1,11 +1,11 @@
 // The four output lanes (o0–o3), each a row of modules in signal order ending in an output tile, then the trays for
 // everything that is not a lane: unplugged chains, variables, raw JS, notes and setup statements. Nothing is hidden.
 import { OUT_NAMES, newId, type OutName, type Stmt } from '@hydra-ipad/core'
-import { commit, fadeTo, metaNow, setView, ui, useUi } from '../doc'
+import { audition, commit, fadeTo, metaNow, setView, ui, useUi } from '../doc'
 import { ctx } from '../kit/ctx'
 import { openMenu } from '../kit/Menu'
 import { insertStmt, removeStmt, renameDef, setOut, updateStmt } from '../kit/model'
-import { toast } from '@hydra-ipad/kit'
+import { DisableToggle, toast } from '@hydra-ipad/kit'
 import { RawEditor } from '../kit/raw'
 import { addGenerator, mutateChain, randomLane } from '../ops'
 import { layoutOf, type ChainStmt, type Layout, type Row } from '../view'
@@ -73,12 +73,16 @@ function Lane({ o, rows }: { o: OutName; rows: Row[] }) {
         <button type="button" class="icon sm" data-testid={`lane-morph-${o}`} aria-label="Morph" title="Morph to random values over 8 beats" disabled={!rows.length} onClick={morph}>
           ⤳
         </button>
+        <button type="button" class="icon sm" data-testid={`audition-${o}`} aria-label={`Audition ${o.toUpperCase()}`} title="Audition: this lane full screen for a moment (the sketch is not changed)" disabled={!rows.length} onClick={() => audition(o)}>
+          ◱
+        </button>
       </div>
       <div class="lanebody">
         {rows.map((r) => (
-          <div key={r.stmt.id} class={`lanerow ${r.shadowed ? 'shadowed' : ''}`} data-stmt={r.stmt.id} data-testid="lanerow">
+          <div key={r.stmt.id} class={`lanerow ${r.shadowed ? 'shadowed' : ''} ${r.stmt.disabled ? 'is-disabled' : ''}`} data-stmt={r.stmt.id} data-testid="lanerow">
             {r.shadowed && <span class="tag" title={`A later row also writes ${o}: this one is not seen`}>shadowed</span>}
-            <ChainRow chain={r.stmt.chain} />
+            {r.stmt.disabled && <span class="tag off" title="Switched off: a // comment in the code. Its generator's // switches it back on">off</span>}
+            <ChainRow chain={r.stmt.chain} owner={r.stmt.id} />
             <OutTile s={r.stmt} o={o} onScreen={onScreen} />
           </div>
         ))}
@@ -143,8 +147,8 @@ function Trays({ L }: { L: Layout }) {
         <section class="tray unplugged" data-testid="tray-unplugged" aria-label="Unplugged">
           <h3>Unplugged · not on any output</h3>
           {L.unplugged.map((s) => (
-            <div key={s.id} class="lanerow" data-stmt={s.id} data-testid="unplugged">
-              <ChainRow chain={s.chain} />
+            <div key={s.id} class={`lanerow ${s.disabled ? 'is-disabled' : ''}`} data-stmt={s.id} data-testid="unplugged">
+              <ChainRow chain={s.chain} owner={s.id} />
               <button
                 type="button"
                 class="outtile plug-in"
@@ -163,7 +167,8 @@ function Trays({ L }: { L: Layout }) {
           <h3>Vars</h3>
           <div class="varrow">
             {L.vars.map((d) => (
-              <div key={d.id} class={`var ${st.sel === d.id ? 'sel' : ''}`} data-stmt={d.id} data-testid="var">
+              <div key={d.id} class={`var ${st.sel === d.id ? 'sel' : ''} ${d.disabled ? 'is-disabled' : ''}`} data-stmt={d.id} data-testid="var">
+                {d.value.k !== 'tex' && <DisableToggle id={d.id} what={d.name} onChange={(next) => commit(next)} />}
                 <button
                   type="button"
                   class="vname"
@@ -175,7 +180,7 @@ function Trays({ L }: { L: Layout }) {
                   {d.decl} {d.name}
                 </button>
                 {d.value.k === 'tex' ? (
-                  <ChainRow chain={d.value.chain} depth={1} />
+                  <ChainRow chain={d.value.chain} depth={1} owner={d.id} />
                 ) : d.value.k === 'ref' ? (
                   <code class="chip">{d.value.name}</code>
                 ) : d.value.k === 'vec4' ? (

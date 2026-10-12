@@ -2,8 +2,9 @@
 //
 // The lane layout is derived from the code every time (a chain sits in the lane of the output it writes, rows in source
 // order), so it can never disagree with the code; what is stored is what the code cannot say: scenes, pinned controls,
-// bypassed modules, frozen lanes, which mini-modules are open and the crossfade length.
-import { OUT_NAMES, type Call, type Chain, type OutName, type Sketch, type Stmt } from '@hydra-ipad/core'
+// frozen lanes, which mini-modules are open and the crossfade length. Switched-off modules are in the code (as `//`
+// comments, core's `disabled` flag), not here.
+import { OUT_NAMES, activeSketch, type Call, type Chain, type OutName, type Sketch, type Stmt } from '@hydra-ipad/core'
 import { APP } from './app'
 
 export { APP }
@@ -14,6 +15,7 @@ export interface Scene {
   at: number
 }
 
+/** The old bypass (before modules could be switched off in the code): migrated to `disabled` on first open, see ops.ts. */
 export interface Bypassed {
   /** chain the module was taken out of */
   chain: string
@@ -26,8 +28,12 @@ export interface RackMeta {
   v: 1
   /** slot '1'..'8' → scene */
   scenes?: Record<string, Scene>
-  /** controls shown in performance mode: `callId:i` or `d:defId` (at most 8) */
+  /**
+   * controls shown in performance mode (at most 8): a knob (`callId:i` or `d:defId`), a module's on/off switch (`off:id`),
+   * a module's preview (`pv:chainId:callId`) or the pad strip (`kit:pads`)
+   */
   pins?: string[]
+  /** legacy: removed by `migrateBypass` */
   bypass?: Bypassed[]
   /** lanes the dice and morph leave alone */
   frozen?: OutName[]
@@ -52,7 +58,7 @@ export function autoView(_sketch: Sketch): RackMeta {
 export type ChainStmt = Extract<Stmt, { k: 'chain' }>
 export interface Row {
   stmt: ChainStmt
-  /** a later chain writes the same output */
+  /** a later (switched-on) chain writes the same output */
   shadowed: boolean
 }
 export interface Layout {
@@ -77,7 +83,8 @@ export function layoutOf(sketch: Sketch): Layout {
         const lane = laneOf(s.chain)
         if (!lane) out.unplugged.push(s)
         else {
-          for (const r of lanes[lane]) r.shadowed = true
+          // a switched-off chain draws nothing, so it hides nothing either
+          if (!s.disabled) for (const r of lanes[lane]) if (!r.stmt.disabled) r.shadowed = true
           lanes[lane].push({ stmt: s, shadowed: false })
         }
         break
@@ -91,8 +98,9 @@ export function layoutOf(sketch: Sketch): Layout {
   return out
 }
 
-/** Which outputs each lane reads (`src(oN)` or `oN` anywhere in its chains): the mixer's routing matrix. */
-export function readsOf(sketch: Sketch): Record<OutName, OutName[]> {
+/** Which outputs each lane reads (`src(oN)` or `oN` anywhere in its switched-on chains): the mixer's routing matrix. */
+export function readsOf(sketch0: Sketch): Record<OutName, OutName[]> {
+  const sketch = activeSketch(sketch0)
   const r = Object.fromEntries(OUT_NAMES.map((o) => [o, [] as OutName[]])) as Record<OutName, OutName[]>
   const visit = (c: Chain, into: Set<OutName>) => {
     for (const call of [c.gen, ...c.mods])

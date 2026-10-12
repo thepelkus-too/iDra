@@ -5,8 +5,10 @@ import { useEffect, useState } from 'preact/hooks'
 import { ctx } from './kit/ctx'
 import { getArg, setArg, type ArgRef } from './kit/model'
 import type { CommitOpts } from './kit/store'
-import { toast } from '@hydra-ipad/kit'
+import { disableAction, toast } from '@hydra-ipad/kit'
 import { beatsToMs, Fader, liveTableOf, sameShape } from './fade'
+import { auditionSketch } from './ops'
+import { liveActivity } from './previews'
 import { APP, bpmOf, metaOf, type RackMeta } from './view'
 
 export function metaNow(sk: Sketch = ctx.store.sketch): RackMeta {
@@ -38,12 +40,36 @@ export function setValue(ref: ArgRef, v: Value, coalesce?: string): void {
 
 export const valueAt = (ref: ArgRef): Value | undefined => getArg(ctx.store.sketch, ref)
 
+// ---------------------------------------------------------------- switching off, auditioning
+
+/**
+ * Switch a module or statement off or on (core's `disabled`: a `//` comment in the code), as the kit's `DisableToggle`
+ * does, for the rack's own controls (menus, performance pins). One undo step; a refusal is shown, never silent.
+ */
+export function toggleOff(id: string, what = ''): void {
+  const before = ctx.store.sketch
+  const r = disableAction(before, id, what).apply()
+  if (!r.sketch) return void toast(r.note ?? 'This can’t be switched off on its own.')
+  commit(r.sketch)
+  if (r.note) toast(r.note, { label: 'Undo', run: () => commit(before) })
+}
+
+/**
+ * Audition a lane: the output shows that lane full screen (the main runtime runs the sketch with `render(lane)` added)
+ * without touching the sketch; `undefined` goes back. Edits made meanwhile run auditioned too.
+ */
+export function audition(lane?: OutName): void {
+  if (ui.state.audition === lane) return
+  ui.set({ audition: lane })
+  ctx.runner.setView(lane ? (s) => auditionSketch(s, lane) : undefined)
+}
+
 // ---------------------------------------------------------------- scenes
 
 const raf = (cb: () => void) => (typeof requestAnimationFrame === 'function' ? requestAnimationFrame(cb) : setTimeout(cb, 16))
 
 export const fader = new Fader({
-  setLiveBatch: (t) => ctx.runner.rt?.setLiveBatch(t),
+  setLiveBatch: (t) => (liveActivity(), ctx.runner.rt?.setLiveBatch(t)),
   now: () => performance.now(),
   frame: raf,
 })
@@ -106,6 +132,10 @@ export interface UiState {
   fading?: string
   /** lane rows scroll: which lane is visible in portrait */
   bay: boolean
+  /** a lane shown full screen for a moment (the sketch is unchanged) */
+  audition?: OutName
+  /** the one-time note on a sketch opened for the first time with commented-out code revived as switched-off chunks */
+  revived?: number
 }
 
 const listeners = new Set<() => void>()
