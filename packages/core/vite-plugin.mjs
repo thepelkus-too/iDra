@@ -90,6 +90,8 @@ export function hydraApp(metaUrl, extra = {}) {
       __REPO_URL__: JSON.stringify(repoUrlFrom(root)),
       __COMMIT__: JSON.stringify(commit),
       __BRANCH__: JSON.stringify(branch),
+      // optional CORS proxy for podcast feeds/audio (docs/audio.md › Running your own proxy); unset by default, none ships
+      __AUDIO_PROXY_URL__: JSON.stringify(env.AUDIO_PROXY_URL || ''),
       ...define,
     },
     build: { outDir: 'dist', emptyOutDir: true, target: ['es2020', 'safari14'], sourcemap: false, ...build },

@@ -13,6 +13,7 @@ import {
   type AudioInputInfo,
 } from './audio-sources'
 import { AudioAssetError, getAudioAssets, type AudioAssets } from './audio-assets'
+import { audioProxyUrl, getPodcastLibrary, isDirectAudioUrl, resolveAudioUrl, resumePoint, FEED_BLOCKED_TEXT, type PodcastEpisode, type PodcastFeed, type PodcastLibrary } from './podcast'
 import { appStorage } from './storage'
 import { h, injectStyles, TOKENS_CSS } from './ui'
 
@@ -42,6 +43,16 @@ ${TOKENS_CSS}
 .hi-audio .src[hidden],.hi-audio [hidden]{display:none!important}
 .hi-audio .fname{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%}
 .hi-audio .seek{grid-template-columns:1fr}
+.hi-audio .eps{display:grid;gap:4px;max-height:260px;overflow:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain}
+.hi-audio .eps button{display:grid;gap:2px;text-align:left;padding:8px 10px;min-height:48px;height:auto}
+.hi-audio .eps button[aria-current=true]{border-color:var(--hi-accent)}
+.hi-audio .eps b{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hi-audio .eps small{color:var(--hi-dim);font-size:12px}
+.hi-audio .feed-title{font-weight:600}
+.hi-audio .state{font-size:12px;padding:4px 8px;border-radius:6px;background:var(--hi-bg);justify-self:start}
+.hi-audio .state.ok{color:var(--hi-accent)}
+.hi-audio .state.warn{color:var(--hi-warn)}
+.hi-audio .state.bad{color:var(--hi-bad)}
 `
 
 export interface AudioPanelOptions {
@@ -50,6 +61,10 @@ export interface AudioPanelOptions {
   notes?: boolean
   /** opt-in file store (default: the shared one) */
   assets?: AudioAssets
+  /** recent podcast feeds and episode positions (default: the shared one) */
+  podcasts?: PodcastLibrary
+  /** CORS proxy for feeds/audio (default: the AUDIO_PROXY_URL build setting, unset unless someone configured one) */
+  proxy?: string | null
 }
 
 export interface AudioPanelHandle {
@@ -64,10 +79,21 @@ const OTHER_APPS_TEXT =
 
 const fmtTime = (t: number) => {
   if (!isFinite(t)) return '0:00'
-  const m = Math.floor(t / 60)
+  const hr = Math.floor(t / 3600)
+  const m = Math.floor((t % 3600) / 60)
   const s = Math.floor(t % 60)
-  return `${m}:${String(s).padStart(2, '0')}`
+  return hr ? `${hr}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}` : `${m}:${String(s).padStart(2, '0')}`
 }
+const fmtDate = (t?: number) => {
+  if (t === undefined) return ''
+  try {
+    return new Date(t).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
+  } catch {
+    return ''
+  }
+}
+const SPEEDS = [0.75, 1, 1.25, 1.5, 1.75, 2]
+const FILE_HELP = 'Accepts audio saved from Patreon, Telegram or any download: save it to the Files app first (Share › Save to Files), then choose it here.'
 const fmtMB = (n?: number) => (n === undefined ? '' : n < 1048576 ? `${Math.max(1, Math.round(n / 1024))} KB` : `${(n / 1048576).toFixed(1)} MB`)
 
 /** Audio control panel: source (mic, input device, file, stream URL, other apps), transport, meters, Hydra's settings, monitor. */
@@ -75,6 +101,8 @@ export function mountAudioPanel(el: HTMLElement, opts: AudioPanelOptions = {}): 
   injectStyles('audio-panel', CSS)
   const engine = opts.engine ?? getAudioEngine()
   const assets = opts.assets ?? getAudioAssets()
+  const podcasts = opts.podcasts ?? getPodcastLibrary()
+  const proxy = audioProxyUrl(opts.proxy)
   const prefs = appStorage('core')
 
   // ---- source picker
@@ -82,7 +110,7 @@ export function mountAudioPanel(el: HTMLElement, opts: AudioPanelOptions = {}): 
     ['mic', 'Microphone'],
     ['device', 'Input device…'],
     ['file', 'Audio file…'],
-    ['stream', 'Stream URL…'],
+    ['stream', 'Podcast / URL…'],
   ]
   if (displayAudioSupported()) choices.push(['display', 'Tab / screen audio'])
   choices.push(['other', 'Other apps…'])
@@ -101,6 +129,7 @@ export function mountAudioPanel(el: HTMLElement, opts: AudioPanelOptions = {}): 
   const fileInput = h('input', { type: 'file', accept: 'audio/*,video/*', style: 'display:none', 'data-role': 'file-input' }) as HTMLInputElement
   const chooseBtn = h('button', { 'data-role': 'choose-file' }, 'Choose file…')
   const fileName = h('div', { class: 'note fname', 'data-role': 'file-name' }, 'No file chosen')
+  const fileHelp = h('div', { class: 'note', 'data-role': 'file-help' }, FILE_HELP)
   const seek = h('input', { type: 'range', min: 0, max: 1, step: 0.1, value: 0, 'aria-label': 'Seek', 'data-role': 'seek', disabled: true }) as HTMLInputElement
   const loop = h('input', { type: 'checkbox', checked: true, 'data-role': 'loop' }) as HTMLInputElement
   const keep = h('input', { type: 'checkbox', 'data-role': 'keep' }) as HTMLInputElement
@@ -110,14 +139,35 @@ export function mountAudioPanel(el: HTMLElement, opts: AudioPanelOptions = {}): 
   const fileBox = h('div', { class: 'src', hidden: true },
     h('div', { class: 'row' }, chooseBtn, fileInput),
     fileName,
-    h('label', { class: 'seek' }, seek),
+    fileHelp,
     h('div', { class: 'row' }, h('label', { class: 'check' }, loop, 'loop'), h('label', { class: 'check', title: 'Stored on this device only, never in the sketch' }, keep, 'keep on this device')),
     savedRow,
   )
 
-  // stream
-  const urlInput = h('input', { type: 'url', placeholder: 'https://…/stream.mp3', 'aria-label': 'Stream URL', 'data-role': 'stream-url', autocapitalize: 'off', autocomplete: 'off', spellcheck: false, value: prefs.get<string>('streamUrl') ?? '' }) as HTMLInputElement
-  const streamBox = h('div', { class: 'src', hidden: true }, h('div', { class: 'row' }, urlInput), h('div', { class: 'note' }, 'Internet radio or a direct MP3/AAC/Ogg link. Analysis needs the server to allow it (CORS); otherwise it can still play.'))
+  // podcast / URL (podcast RSS or Atom feed, direct audio file, internet radio, HLS)
+  const urlInput = h('input', { type: 'url', placeholder: 'Podcast feed or https://…/episode.mp3', 'aria-label': 'Podcast feed or audio URL', 'data-role': 'stream-url', autocapitalize: 'off', autocomplete: 'off', spellcheck: false, value: prefs.get<string>('streamUrl') ?? '' }) as HTMLInputElement
+  const openBtn = h('button', { 'data-role': 'url-open' }, 'Open')
+  const urlNote = h('div', { class: 'note', hidden: true, 'data-role': 'url-note' })
+  const recentSel = h('select', { 'aria-label': 'Recent podcasts', 'data-role': 'recent-feeds' }) as HTMLSelectElement
+  const forgetFeedBtn = h('button', { 'data-role': 'forget-feed', title: 'Forget this podcast and its saved positions' }, 'Forget')
+  const forgetAllBtn = h('button', { 'data-role': 'forget-all-feeds', title: 'Forget every podcast and position kept on this device' }, 'Forget all')
+  const recentRow = h('div', { class: 'row', hidden: true }, recentSel, forgetFeedBtn, forgetAllBtn)
+  const feedTitle = h('div', { class: 'feed-title', hidden: true, 'data-role': 'feed-title' })
+  const episodeList = h('div', { class: 'eps', hidden: true, role: 'list', 'data-role': 'episodes' })
+  const back15 = h('button', { 'data-role': 'back15', 'aria-label': 'Back 15 seconds', disabled: true }, '−15 s')
+  const fwd15 = h('button', { 'data-role': 'fwd15', 'aria-label': 'Forward 15 seconds', disabled: true }, '+15 s')
+  const savedRate = Number(prefs.get<number>('podcastRate')) || 1
+  const speedSel = h('select', { 'aria-label': 'Speed', 'data-role': 'speed' }, ...SPEEDS.map((v) => h('option', { value: String(v), selected: v === savedRate }, `${v}×`))) as HTMLSelectElement
+  speedSel.value = String(SPEEDS.includes(savedRate) ? savedRate : 1)
+  const podState = h('div', { class: 'state', hidden: true, 'data-role': 'pod-state', 'aria-live': 'polite' })
+  const streamBox = h('div', { class: 'src', hidden: true },
+    h('div', { class: 'row' }, urlInput, openBtn),
+    h('div', { class: 'note' }, 'A podcast RSS feed, a direct MP3/AAC/Ogg link, or internet radio. Analysis needs the host to allow it (CORS); otherwise it can still play.'),
+    urlNote, recentRow, feedTitle, episodeList,
+    h('div', { class: 'row' }, back15, fwd15, speedSel),
+    podState,
+  )
+  const seekRow = h('label', { class: 'seek', hidden: true }, seek)
 
   const otherBox = h('div', { class: 'src note', hidden: true, 'data-role': 'other-apps' }, OTHER_APPS_TEXT)
 
@@ -155,7 +205,7 @@ export function mountAudioPanel(el: HTMLElement, opts: AudioPanelOptions = {}): 
 
   const root = h('div', { class: 'hi-audio', role: 'group', 'aria-label': 'Audio' },
     h('div', { class: 'row' }, sourceSel, startBtn, playBtn, time),
-    deviceBox, fileBox, streamBox, otherBox,
+    deviceBox, fileBox, streamBox, otherBox, seekRow,
     resumeBtn, analysisNote, playOnlyBtn, hint,
     meter, status, ...controls, monGain, muteRow, notes,
   )
@@ -197,6 +247,7 @@ export function mountAudioPanel(el: HTMLElement, opts: AudioPanelOptions = {}): 
     deviceBox.hidden = choice !== 'device'
     fileBox.hidden = choice !== 'file'
     streamBox.hidden = choice !== 'stream'
+    seekRow.hidden = choice !== 'file' && choice !== 'stream'
     otherBox.hidden = choice !== 'other'
     startBtn.hidden = choice === 'other'
   }
@@ -243,10 +294,8 @@ export function mountAudioPanel(el: HTMLElement, opts: AudioPanelOptions = {}): 
       }
       case 'file':
         return pendingFile ? new FileSource(pendingFile.blob, pendingFile.name, { loop: loop.checked }) : undefined
-      case 'stream': {
-        const u = urlInput.value.trim()
-        return u ? new StreamSource(u) : undefined
-      }
+      case 'stream':
+        return pick ? streamFor(pick) : undefined
       case 'display':
         return new DisplaySource()
       default:
@@ -270,6 +319,10 @@ export function mountAudioPanel(el: HTMLElement, opts: AudioPanelOptions = {}): 
     if (choice === 'file') {
       void refreshSaved()
       if (!pendingFile) fileInput.click()
+    }
+    if (choice === 'stream') {
+      void refreshRecent()
+      void loadPositions()
     }
     if (choice !== 'other') applyChoice()
   })
@@ -331,14 +384,197 @@ export function mountAudioPanel(el: HTMLElement, opts: AudioPanelOptions = {}): 
     if (tr) tr.loop = loop.checked
   })
   seek.addEventListener('input', () => engine.source?.transport?.seek(Number(seek.value)))
-  urlInput.addEventListener('change', () => {
-    prefs.set('streamUrl', urlInput.value.trim())
-    applyChoice()
+
+  // ---- podcast / URL
+  /** what "Start" plays for the Podcast / URL source */
+  let pick: { url: string; name?: string; feedUrl?: string; duration?: number } | undefined
+  let feed: PodcastFeed | undefined
+  let positions = new Map<string, number>()
+  let loading = false
+  let blockedUnknown = false
+  const say = (msg: string, cls = 'note') => {
+    urlNote.textContent = msg
+    urlNote.className = cls
+    urlNote.hidden = !msg
+  }
+  const streamFor = (p: NonNullable<typeof pick>) =>
+    new StreamSource(p.url, { name: p.name, startAt: resumePoint(positions.has(p.url) ? { url: p.url, position: positions.get(p.url)!, updatedAt: 0 } : undefined, p.duration), rate: Number(speedSel.value) || 1, proxy })
+  const refreshRecent = async () => {
+    try {
+      const list = await podcasts.recentFeeds()
+      recentSel.textContent = ''
+      recentSel.append(h('option', { value: '' }, `Recent podcasts (${list.length})`))
+      for (const f of list) recentSel.append(h('option', { value: f.url, selected: f.url === feed?.url }, `${f.title} · ${f.episodes} ep.`))
+      recentRow.hidden = list.length === 0
+    } catch {
+      recentRow.hidden = true
+    }
+  }
+  const loadPositions = async () => {
+    try {
+      positions = new Map((await podcasts.positions()).map((p) => [p.url, p.position]))
+    } catch {
+      positions = new Map()
+    }
+  }
+  const savePosition = () => {
+    const src = engine.source
+    const tr = src?.transport
+    if (!pick || !(src instanceof StreamSource) || src.url !== pick.url || !tr || !tr.duration) return
+    const at = tr.currentTime
+    if (!(at > 0)) return
+    positions.set(pick.url, at)
+    void podcasts.savePosition(pick.url, at, { duration: tr.duration, feedUrl: pick.feedUrl }).catch(() => {})
+  }
+  const renderEpisodes = () => {
+    episodeList.textContent = ''
+    feedTitle.hidden = episodeList.hidden = !feed
+    if (!feed) return
+    feedTitle.textContent = `${feed.title} · ${feed.episodes.length} episode${feed.episodes.length === 1 ? '' : 's'}`
+    if (!feed.episodes.length) episodeList.append(h('div', { class: 'note' }, 'This feed lists no audio episodes.'))
+    for (const ep of feed.episodes.slice(0, 300)) {
+      const at = positions.get(ep.url)
+      const meta = [fmtDate(ep.date), ep.duration ? fmtTime(ep.duration) : '', fmtMB(ep.size), at ? `resume at ${fmtTime(at)}` : ''].filter(Boolean).join(' · ')
+      const b = h('button', { type: 'button', role: 'listitem', 'data-role': 'episode', 'data-url': ep.url, 'aria-current': pick?.url === ep.url ? 'true' : 'false' }, h('b', {}, ep.title), h('small', {}, meta))
+      b.addEventListener('click', () => playEpisode(ep))
+      episodeList.append(b)
+    }
+  }
+  const playPick = (p: NonNullable<typeof pick>) => {
+    savePosition()
+    pick = p
+    const wasRunning = engine.state === 'running' || engine.state === 'paused'
+    engine.setSource(streamFor(p))
+    // choosing an episode is a tap: start right away (setSource restarts a running engine by itself)
+    if (!wasRunning) void engine.start().catch(() => {})
+    renderEpisodes()
+    refresh()
+  }
+  const playEpisode = (ep: PodcastEpisode) => playPick({ url: ep.url, name: ep.title, feedUrl: feed?.url, duration: ep.duration })
+  const openUrl = async (raw: string) => {
+    const u = raw.trim()
+    prefs.set('streamUrl', u)
+    blockedUnknown = false
+    if (!u) {
+      say('')
+      return
+    }
+    if (isDirectAudioUrl(u)) {
+      // a direct audio link: no request needed to know what it is; Start (or the next tap) plays it
+      say('')
+      feed = undefined
+      renderEpisodes()
+      savePosition()
+      pick = { url: u }
+      applyChoice()
+      return
+    }
+    loading = true
+    say('Checking the link…')
+    refresh()
+    const r = await resolveAudioUrl(u, { proxy: proxy ?? null })
+    loading = false
+    if (urlInput.value.trim() !== u) return refresh() // the owner pasted something else meanwhile
+    if (r.kind !== 'feed' && feed) {
+      // the list on screen no longer matches the link (playback, if any, carries on)
+      feed = undefined
+      renderEpisodes()
+    }
+    switch (r.kind) {
+      case 'unsupported':
+        say(r.message, 'hint')
+        break
+      case 'error':
+        say(r.message, 'note err')
+        break
+      case 'audio':
+        say('')
+        savePosition()
+        pick = { url: r.url }
+        applyChoice()
+        break
+      case 'blocked':
+        say(r.message, 'hint')
+        if (!r.looksLikeFeed) {
+          // maybe radio or an audio file on a host without CORS: try it; the stream source says whether it plays
+          blockedUnknown = true
+          savePosition()
+          pick = { url: r.url }
+          applyChoice()
+        }
+        break
+      case 'feed':
+        feed = r.feed
+        say(r.viaProxy ? 'Feed read through your proxy (AUDIO_PROXY_URL).' : '')
+        await podcasts.rememberFeed(r.feed).catch(() => {})
+        await loadPositions()
+        renderEpisodes()
+        await refreshRecent()
+        break
+    }
+    refresh()
+  }
+  urlInput.addEventListener('change', () => void openUrl(urlInput.value))
+  openBtn.addEventListener('click', () => void openUrl(urlInput.value))
+  urlInput.addEventListener('keydown', (e) => {
+    if ((e as KeyboardEvent).key === 'Enter') {
+      e.preventDefault()
+      urlInput.blur()
+    }
   })
+  recentSel.addEventListener('change', () => {
+    if (!recentSel.value) return
+    urlInput.value = recentSel.value
+    void openUrl(recentSel.value)
+  })
+  forgetFeedBtn.addEventListener('click', async () => {
+    const u = recentSel.value || feed?.url
+    if (!u) return
+    await podcasts.forgetFeed(u).catch(() => {})
+    if (feed?.url === u) {
+      feed = undefined
+      renderEpisodes()
+    }
+    await loadPositions()
+    await refreshRecent()
+    say('Forgotten on this device.')
+  })
+  forgetAllBtn.addEventListener('click', async () => {
+    await podcasts.forgetAll().catch(() => {})
+    positions = new Map()
+    renderEpisodes()
+    await refreshRecent()
+    say('Every podcast and saved position was forgotten on this device.')
+  })
+  const nudge = (d: number) => {
+    const tr = engine.source?.transport
+    if (!tr) return
+    const to = tr.currentTime + d
+    tr.seek(tr.duration ? Math.min(tr.duration - 0.5, to) : to)
+  }
+  back15.addEventListener('click', () => nudge(-15))
+  fwd15.addEventListener('click', () => nudge(15))
+  speedSel.addEventListener('change', () => {
+    const v = Number(speedSel.value) || 1
+    prefs.set('podcastRate', v)
+    const tr = engine.source?.transport
+    if (tr && engine.source instanceof StreamSource) tr.rate = v
+  })
+  // keep the place in an episode: every few seconds while playing, and when the page is hidden
+  const posTimer = setInterval(() => {
+    if (engine.state === 'running' && engine.source?.transport?.playing) savePosition()
+  }, 5000)
+  const onHide = () => {
+    if (document.visibilityState === 'hidden') savePosition()
+  }
+  document.addEventListener('visibilitychange', onHide)
 
   startBtn.addEventListener('click', async () => {
     try {
-      if (engine.state === 'running' || engine.state === 'paused' || engine.state === 'starting') engine.stop()
+      if (engine.state === 'running' || engine.state === 'paused' || engine.state === 'starting') {
+        savePosition()
+        engine.stop()
+      }
       else {
         if (!engine.source || engine.state === 'error') {
           const src = sourceForChoice()
@@ -356,14 +592,16 @@ export function mountAudioPanel(el: HTMLElement, opts: AudioPanelOptions = {}): 
     }
   })
   playBtn.addEventListener('click', async () => {
-    if (engine.state === 'running') engine.pause()
-    else await engine.resume()
+    if (engine.state === 'running') {
+      savePosition()
+      engine.pause()
+    } else await engine.resume()
   })
   resumeBtn.addEventListener('click', () => void engine.resumeFromGesture())
   playOnlyBtn.addEventListener('click', async () => {
-    const u = engine.source instanceof StreamSource ? engine.source.url : urlInput.value.trim()
-    if (!u) return
-    engine.setSource(new StreamSource(u, { playOnly: true }))
+    const src = engine.source instanceof StreamSource ? engine.source.asPlayOnly() : pick ? new StreamSource(pick.url, { name: pick.name, playOnly: true }) : undefined
+    if (!src) return
+    engine.setSource(src)
     try {
       await engine.start()
     } catch {
@@ -372,12 +610,40 @@ export function mountAudioPanel(el: HTMLElement, opts: AudioPanelOptions = {}): 
   })
 
   // ---- state → UI
+  const refreshPodState = () => {
+    const src = engine.source
+    let text = ''
+    let cls = ''
+    if (choice !== 'stream') text = ''
+    else if (loading || engine.state === 'starting') text = 'Loading…'
+    else if (engine.state === 'error') {
+      cls = 'bad'
+      text = engine.lastError?.canPlayOnly ? 'Plays, but the host doesn’t allow analysis: tap “Play without analysis”.' : `Error: ${engine.error}`
+      if (blockedUnknown && engine.lastError?.code === 'unreachable') text += ` ${FEED_BLOCKED_TEXT}`
+    } else if ((engine.state === 'running' || engine.state === 'paused') && src instanceof StreamSource) {
+      if (src.playOnly) {
+        cls = 'warn'
+        text = 'Play only: plays but can’t drive visuals.'
+      } else if (engine.analysis === 'ok') {
+        cls = 'ok'
+        text = src.viaProxy ? 'Analysis allowed (through your proxy): drives visuals.' : 'Analysis allowed: drives visuals.'
+      } else if (engine.analysis === 'blocked') {
+        cls = 'warn'
+        text = 'Plays but can’t drive visuals (the analyser gets silence).'
+      } else text = engine.state === 'paused' ? 'Paused.' : 'Playing · checking analysis…'
+    }
+    podState.textContent = text
+    podState.className = `state ${cls}`
+    podState.hidden = !text
+  }
   const refresh = () => {
     const running = engine.state === 'running' || engine.state === 'paused'
     startBtn.textContent = running ? 'Stop' : engine.state === 'starting' ? 'Starting…' : 'Start'
     playBtn.disabled = !(running && engine.source?.transport)
     playBtn.textContent = engine.state === 'paused' ? 'Play' : 'Pause'
     seek.disabled = !(running && engine.source?.transport)
+    back15.disabled = fwd15.disabled = !(running && !!engine.source?.transport?.duration)
+    refreshPodState()
     mute.checked = engine.monitorState.muted
     status.className = engine.state === 'error' ? 'note err' : 'note'
     const label = engine.source ? engine.source.label + (engine.source.playOnly ? ' (play only)' : '') : 'no source'
@@ -427,6 +693,12 @@ export function mountAudioPanel(el: HTMLElement, opts: AudioPanelOptions = {}): 
   })
   if (choice === 'device') void refreshDevices()
   if (choice === 'file') void refreshSaved()
+  if (choice === 'stream') {
+    const u = urlInput.value.trim()
+    if (u && isDirectAudioUrl(u)) pick = { url: u }
+    void loadPositions()
+    void refreshRecent()
+  }
   // pick up an engine that already has a source (another panel set it up)
   if (!engine.source && choice !== 'file' && choice !== 'other' && choice !== 'display') {
     const src = sourceForChoice()
@@ -439,6 +711,9 @@ export function mountAudioPanel(el: HTMLElement, opts: AudioPanelOptions = {}): 
       unState()
       unSettings()
       unFrame()
+      savePosition()
+      clearInterval(posTimer)
+      document.removeEventListener('visibilitychange', onHide)
       cancelAnimationFrame(raf)
       root.remove()
     },
