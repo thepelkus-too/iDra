@@ -66,6 +66,24 @@ button.on,.btn.on{border-color:var(--hi-accent);color:var(--hi-accent);backgroun
 .badge{position:absolute;right:0;top:-22px;font-size:11px;border-radius:6px;padding:1px 6px;border:1px solid var(--hi-line);color:var(--hi-dim);white-space:nowrap}
 .badge.shadow{color:var(--bad);border-color:var(--bad)}
 
+/* switched off (// in the code): the kit's .is-disabled dims and stripes; here a grey stripe and a struck-through label */
+.blk-tools{display:inline-flex;align-items:center;gap:4px;margin-left:auto;padding-left:8px}
+.blk-tools button{min-height:30px;min-width:34px;padding:0 4px;border-radius:8px;font-size:13px;background:rgba(0,0,0,.28)}
+.blk-tools .disable-toggle{font:600 12px var(--mono);color:#dfe3ea;border-color:rgba(255,255,255,.25)}
+.blk-tools .disable-toggle.off{color:#fff;border-color:#fff;background:rgba(0,0,0,.5)}
+.blk-tools .eye{border:1px solid rgba(255,255,255,.25);color:#fff;line-height:1}
+.block.off{border-left-color:#8a8f98}
+.block.off>.fname,.defblk.off>.defname,.setup.off>b{text-decoration:line-through;text-decoration-thickness:2px;text-decoration-color:rgba(255,255,255,.8)}
+.defblk.off,.setup.off{border-left-color:#8a8f98}
+.script.off>.cap{border-left-color:#8a8f98}
+.badge.offbadge{left:0;right:auto;color:#cfd3da;border-color:#8a8f98;font-family:var(--mono)}
+.block.held{box-shadow:0 0 0 3px rgba(255,255,255,.55)}
+.peek-pop{display:flex;flex-direction:column;align-items:flex-start;gap:8px;padding:10px}
+.peek-pop .peek-title{font:600 13px var(--mono);color:var(--hi-text);white-space:normal}
+.peek-pop .peek-hint{color:var(--hi-dim);font-size:12px}
+.banner.revived{flex-wrap:nowrap;max-width:520px}
+.banner.revived code{font:12px var(--mono)}
+
 /* inputs: round slots (numbers, reporters), square sockets (pictures) */
 .slot{display:inline-flex;align-items:center;gap:4px;border-radius:20px;min-height:36px}
 .slot>.nl{font-size:11px;color:#c8ccd4}

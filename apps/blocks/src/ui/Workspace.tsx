@@ -218,12 +218,12 @@ export function Workspace() {
     }
     return m
   }, [runner.currentErrors().length, sk])
-  // an output written twice: the earlier scripts are shadowed
+  // an output written twice: the earlier scripts are shadowed (a switched-off script writes nothing)
   const shadowed = useMemo(() => {
     const s = new Set<string>()
     const last = new Map<string, string>()
     for (const x of sk.stmts) {
-      if (x.k !== 'chain' || x.chain.out === null) continue
+      if (x.k !== 'chain' || x.chain.out === null || x.disabled) continue
       const o = x.chain.out ?? 'o0'
       const prev = last.get(o)
       if (prev) s.add(prev)

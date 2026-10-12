@@ -10,6 +10,7 @@ import { deleteSel, duplicateSel } from './ops'
 import { Pip, SelectionBar, TopBar } from './ui/Bars'
 import { Palette } from './ui/Palette'
 import { Workspace } from './ui/Workspace'
+import { RevivedNote } from './ui/Chunk'
 
 export function App({ stage }: { stage: HTMLElement }) {
   useStore()
@@ -46,6 +47,7 @@ export function App({ stage }: { stage: HTMLElement }) {
           <Workspace />
           <div class="banners-wrap">
             <Banners />
+            <RevivedNote />
           </div>
           <Palette />
           <SelectionBar />

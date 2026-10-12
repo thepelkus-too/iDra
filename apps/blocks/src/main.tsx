@@ -11,14 +11,16 @@ import * as ops from './ops'
 import { CSS } from './styles'
 import { autoView, metaOf } from './view'
 import { doDrop, wsApi } from './ui/Workspace'
+import * as chunk from './ui/Chunk'
 
 kinds.isGen = (fn) => ctx.catalog.get(fn)?.type === 'src'
 kinds.texVar = (name) => ctx.store.sketch.stmts.some((s) => s.k === 'def' && s.name === name && (s.value.k === 'tex' || s.value.k === 'ref'))
 
 void boot({
-  autoView: (s) => autoView(s, ctx.catalog),
+  // a sketch Blocks has never seen: lay it out, and note any commented-out code the importer revived as switched off
+  autoView: (s) => (chunk.noteRevived(s), autoView(s, ctx.catalog)),
   hasView: (s) => !!metaOf(s),
   App,
   css: CSS,
-  expose: { thumbs, ui, metaNow, commit, applyDrop, doDrop, dragHooks, wsApi, edit, ops, help },
+  expose: { thumbs, ui, metaNow, commit, applyDrop, doDrop, dragHooks, wsApi, edit, ops, help, chunk, previewStats: () => chunk.blocksPreviewPool().stats },
 })

@@ -53,6 +53,9 @@ export const X0 = 40
 export const Y0 = 40
 
 const textW = (s: string, px = 8.6) => Math.ceil(s.length * px)
+/** the `//` and the eye at the end of a block (Chunk.tsx), and the `//` alone at the end of a statement block */
+export const TOOLS_W = 84
+export const SWITCH_W = 46
 
 /** Height of what sits in a texture socket. */
 export function socketH(v: Value, cat: Catalog = defaultCatalog): number {
@@ -99,7 +102,7 @@ function valueW(v: Value, label: string, cat: Catalog): number {
 
 export function callW(call: Call, cat: Catalog = defaultCatalog): number {
   const inputs = cat.inputs(call.fn)
-  let w = 54 + textW(call.fn, 9.6)
+  let w = 54 + textW(call.fn, 9.6) + TOOLS_W
   const n = Math.max(call.args.length, inputs.length)
   for (let i = 0; i < n; i++) w += valueW(call.args[i] ?? { k: 'default' }, inputs[i]?.name ?? '', cat) + 6
   if (!cat.get(call.fn)) w += 60
@@ -118,10 +121,10 @@ export function lineCount(s: string, max: number): number {
 export function scriptSize(s: Stmt, cat: Catalog = defaultCatalog, collapsed = false): { w: number; h: number } {
   switch (s.k) {
     case 'chain':
-      if (collapsed) return { w: Math.max(240, callW(s.chain.gen, cat)), h: HAT_H + CAP_H }
+      if (collapsed) return { w: Math.max(240, callW(s.chain.gen, cat) + 70), h: HAT_H + CAP_H }
       return { w: Math.max(chainW(s.chain, cat), 260), h: chainH(s.chain, cat) }
     case 'def': {
-      const w = 150 + textW(s.name, 9.6) + valueW(s.value, '', cat)
+      const w = 150 + textW(s.name, 9.6) + valueW(s.value, '', cat) + SWITCH_W
       const h = s.value.k === 'tex' ? socketH(s.value, cat) + ROW_PAD * 2 : BLOCK_H
       return { w, h }
     }
@@ -130,9 +133,9 @@ export function scriptSize(s: Stmt, cat: Catalog = defaultCatalog, collapsed = f
     case 'raw':
       return { w: 380, h: 44 + lineCount(s.code, 8) * 17 + 14 }
     case 'source':
-      return { w: 380, h: BLOCK_H }
+      return { w: 380 + SWITCH_W, h: BLOCK_H }
     default:
-      return { w: 300, h: BLOCK_H }
+      return { w: 300 + SWITCH_W, h: BLOCK_H }
   }
 }
 

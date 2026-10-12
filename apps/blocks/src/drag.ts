@@ -3,7 +3,7 @@
 // under the finger is "hot". A press that does not move is a tap.
 import type { Call, Value } from '@hydra-ipad/core'
 import { ui, type DragCat } from './doc'
-import { TAP_SLOP } from '@hydra-ipad/kit'
+import { LONG_MS, TAP_SLOP } from '@hydra-ipad/kit'
 import type { ArgRef } from './kit/model'
 import type { MathNode, MathPath } from './math'
 import type { XY } from './view'
@@ -124,20 +124,23 @@ let active = false
 export const isDragging = (): boolean => active
 
 /**
- * Wire a press on `el`: a tap calls `onTap`, a drag picks up `payload()` (computed when the drag starts).
- * Returns the pointerdown handler.
+ * Wire a press on `el`: a tap calls `onTap`, a drag picks up `payload()` (computed when the drag starts), and a press held
+ * still for LONG_MS then let go calls `onLong` (hold then move is still a drag, so a slow pick-up never turns into a menu).
+ * The block shows `.held` once the hold counts. Returns the pointerdown handler.
  */
-export function pressToDrag(payload: () => Payload | undefined, onTap?: (e: PointerEvent) => void) {
+export function pressToDrag(payload: () => Payload | undefined, onTap?: (e: PointerEvent) => void, onLong?: (el: HTMLElement) => void) {
   return (e: PointerEvent) => {
     if (e.pointerType === 'mouse' && e.button !== 0) return
     if (active) return
-    // text fields keep their own touches (selecting text, moving the caret)
-    if ((e.target as HTMLElement).closest?.('input, textarea, select, .cm-editor, .numslider')) return
+    // text fields keep their own touches (selecting text, moving the caret); so do a block's // and eye buttons
+    if ((e.target as HTMLElement).closest?.('input, textarea, select, .cm-editor, .numslider, .blk-tools')) return
     e.stopPropagation()
     const el = e.currentTarget as HTMLElement
     const x0 = e.clientX
     const y0 = e.clientY
     const id = e.pointerId
+    const t0 = e.timeStamp
+    const held = onLong ? setTimeout(() => el.classList.add('held'), LONG_MS) : undefined
     let ghost: HTMLElement | undefined
     let p: Payload | undefined
     let hot: Element | undefined
@@ -176,7 +179,10 @@ export function pressToDrag(payload: () => Payload | undefined, onTap?: (e: Poin
       const pl = p
       cleanup()
       if (!dragged) {
-        if (ev.type === 'pointerup' && onTap) onTap(ev)
+        if (ev.type !== 'pointerup') return
+        // the events' own timestamps decide, so a busy main thread can't turn a quick tap into a hold
+        if (onLong && ev.timeStamp - t0 >= LONG_MS) onLong(el)
+        else onTap?.(ev)
         return
       }
       if (ev.type !== 'pointerup' || !pl) return
@@ -186,6 +192,8 @@ export function pressToDrag(payload: () => Payload | undefined, onTap?: (e: Poin
       dragHooks.drop(pl, t, { x: Math.round(at.x), y: Math.round(at.y) })
     }
     const cleanup = () => {
+      clearTimeout(held)
+      el.classList.remove('held')
       window.removeEventListener('pointermove', move)
       window.removeEventListener('pointerup', up)
       window.removeEventListener('pointercancel', up)
