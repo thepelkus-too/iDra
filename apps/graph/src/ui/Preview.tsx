@@ -1,102 +1,71 @@
-// Pinned node previews: a small live view of the texture at one point of a chain. Each pin gets its own low-resolution
-// runtime (at most two at a time) that runs the whole sketch plus one extra cable from the pinned node into a spare output,
-// and shows only that output. The main preview is never touched, so a preview cannot change what the sketch renders.
-import { createRuntime, type Runtime, type Sketch } from '@hydra-ipad/core'
-import { useEffect, useRef } from 'preact/hooks'
-import { compileOf, graphOf, metaNow } from '../doc'
-import { ctx } from '../kit/ctx'
-import { toast } from '@hydra-ipad/kit'
-import { graphToIR, nodeById, outId, type Graph } from '../model'
-import { freeOutputs } from '../ops'
+// Node previews: the node's 👁 pins a thumbnail of "everything up to here" (its chain's generator and enabled modifiers up to
+// this node) above it; on a modifier, A/B turns that thumbnail into a before/after pair. The pictures come from the kit's
+// <PreviewPeek> and core's preview pool: a few small hidden runtimes, shared by all thumbnails (at most the pool's size run
+// at once; the others keep their last still). The main output is never touched, and nothing runs offscreen.
+import { PreviewPeek, toast } from '@hydra-ipad/kit'
+import { graphOf, metaNow, ui, useUi } from '../doc'
+import { ctx, useStore } from '../kit/ctx'
+import { nodeById } from '../model'
+import { previewSpecFor } from '../peek'
+import { graphPreviewPool } from './pool'
 
-export const MAX_PREVIEWS = 2
-const W = 192
-const H = 108
+export { previewSpecFor }
 
-/** The sketch a preview of `nodeId` runs: the compiled sketch, plus the node written to a spare output that is the only one shown. */
-export function previewSketch(sk: Sketch, nodeId: string, g: Graph = graphOf(sk)): { sketch: Sketch; out: string } | undefined {
-  const n = nodeById(g, nodeId)
-  if (!n) return undefined
-  if (n.kind === 'out') return { sketch: withRender(compileOf(sk).sketch, n.name as string), out: n.name as string }
-  if (n.kind !== 'call') return undefined
-  // o3 is the preview output unless the sketch already writes it and another output is free
-  const free = freeOutputs(g)
-  const o = free.includes('o3') ? 'o3' : (free[free.length - 1] ?? 'o3')
-  const g2: Graph = { nodes: g.nodes, edges: [...g.edges.filter((e) => !(e.to === outId(o) && e.port === 'in')), { from: nodeId, to: outId(o), port: 'in' }] }
-  if (!nodeById(g2, outId(o))) g2.nodes = [...g2.nodes, { id: outId(o), kind: 'out', name: o }]
-  const r = graphToIR(g2, sk, metaNow(sk))
-  if (r.errors.length) return undefined
-  return { sketch: withRender(r.sketch, o), out: o }
-}
-
-function withRender(sk: Sketch, o: string): Sketch {
-  return { ...sk, stmts: [...sk.stmts.filter((s) => s.k !== 'render'), { id: `preview-render`, k: 'render', target: o as 'o0' }], meta: {} }
-}
-
-// ---------------------------------------------------------------- the runtimes
-
-const live = new Map<string, { rt: Runtime; ready: boolean; last?: Sketch }>()
-let unsub: (() => void) | undefined
-let timer: ReturnType<typeof setTimeout> | undefined
-
-function runAll(): void {
-  clearTimeout(timer)
-  timer = setTimeout(() => {
-    const sk = ctx.store.sketch
-    for (const [id, p] of live) {
-      if (!p.ready) continue
-      const ps = previewSketch(sk, id)
-      if (!ps) continue
-      // the trust gate covers previews too: until the owner says yes, they run in safe mode like the main preview
-      void p.rt.run(ps.sketch, { safe: ctx.runner.trust.pending }).catch(() => {})
-    }
-  }, 250)
-}
-
-function attach(id: string, el: HTMLElement): () => void {
-  const rt = createRuntime(el, { audio: ctx.audio, catalog: ctx.catalog, width: W, height: H, precision: 'lowp', allowCamera: false })
-  const p = { rt, ready: false }
-  live.set(id, p)
-  void rt.ready.then(
-    () => {
-      p.ready = true
-      runAll()
-    },
-    () => {},
-  )
-  unsub ??= ctx.store.onChange(({ opts }) => {
-    if (!opts.view) runAll()
-  })
-  return () => {
-    rt.dispose()
-    live.delete(id)
-    if (!live.size) {
-      unsub?.()
-      unsub = undefined
-    }
-  }
-}
-
-export function PreviewSlot({ id }: { id: string }) {
-  const ref = useRef<HTMLDivElement>(null)
-  useEffect(() => (ref.current ? attach(id, ref.current) : undefined), [id])
-  return (
-    <div class="nthumb" data-testid="node-preview" aria-label="Live preview of this node" data-no-undo-tap>
-      <div class="nthumb-frame" ref={ref} />
-    </div>
-  )
-}
-
-/** Pin or unpin a preview on a node (at most two: the oldest is unpinned). */
+/** Pin or unpin a node's thumbnail. */
 export function togglePreview(id: string): void {
-  const meta = metaNow()
-  const cur = meta.previews ?? []
-  if (cur.includes(id)) return ctx.store.setView({ previews: cur.filter((x) => x !== id) })
+  const cur = metaNow().previews ?? []
+  if (cur.includes(id)) {
+    if (ui.state.ab === id) ui.set({ ab: undefined })
+    return ctx.store.setView({ previews: cur.filter((x) => x !== id) })
+  }
   const n = nodeById(graphOf(), id)
-  if (!n || (n.kind !== 'call' && n.kind !== 'out')) return void toast('Previews show a chain node or an output')
-  const next = [...cur, id].slice(-MAX_PREVIEWS)
-  if (cur.length >= MAX_PREVIEWS) toast(`At most ${MAX_PREVIEWS} previews: the oldest was unpinned`)
-  ctx.store.setView({ previews: next })
+  if (!n || !previewSpecFor(ctx.store.sketch, n)) return void toast(n?.kind === 'out' ? 'Nothing writes this output yet' : 'Previews show a chain node or an output')
+  ctx.store.setView({ previews: [...cur, id] })
 }
 
-export const previewStats = (): { active: number } => ({ active: live.size })
+/** A/B on a modifier: pin it if needed and show its before/after. */
+export function toggleAB(id: string): void {
+  if (ui.state.ab === id) return ui.set({ ab: undefined })
+  if (!(metaNow().previews ?? []).includes(id)) togglePreview(id)
+  ui.set({ ab: id })
+}
+
+/**
+ * The pinned thumbnails, each above its node. Drawn beside the cards rather than inside them, so a switched-off node's
+ * dimming does not dim its preview, and taps on a thumbnail never start a node drag.
+ */
+export function NodePeeks({ pos, hidden }: { pos: (id: string) => { x: number; y: number }; hidden: (id: string) => boolean }) {
+  useStore()
+  const st = useUi()
+  if (st.perform) return null
+  const sk = ctx.store.sketch
+  const g = graphOf(sk)
+  const ids = (metaNow(sk).previews ?? []).filter((id) => !hidden(id))
+  return (
+    <>
+      {ids.map((id) => {
+        const n = nodeById(g, id)
+        const p = n && previewSpecFor(sk, n, st.ab === id)
+        if (!n || !p) return null
+        const at = pos(id)
+        return (
+          <div key={id} class="gpeek" style={{ transform: `translate(${at.x}px,${at.y}px)` }} data-testid="node-preview" data-node-peek={id} data-no-undo-tap>
+            <div class="gpeek-in">
+            <PreviewPeek key={`${id}:${p.spec.kind}`} spec={p.spec} label={p.label} pool={graphPreviewPool()} />
+            <div class="gpeek-tools">
+              {p.mod && (
+                <button type="button" class={`btn sm ${st.ab === id ? 'on' : ''}`} data-testid="peek-ab" aria-pressed={st.ab === id} title="Before and after this node" onClick={() => toggleAB(id)}>
+                  A/B
+                </button>
+              )}
+              <button type="button" class="btn sm" data-testid="peek-close" aria-label="Unpin this preview" onClick={() => togglePreview(id)}>
+                ✕
+              </button>
+            </div>
+            </div>
+          </div>
+        )
+      })}
+    </>
+  )
+}

@@ -572,17 +572,17 @@ if (want('9')) await block('9', async () => {
   const { page, touch } = S
   await importAndOpen(page, S.base, 'osc(20, 0.1, 0.8)\n  .rotate(0.8)\n  .kaleid(4)\n  .out()\n', 'Extras')
   await waitForPicture(page)
-  await check('9a', 'bypass a node: it stays on the canvas, marked, and the code omits it; bypass again restores it', async () => {
+  await check('9a', 'switch a node off from the selection bar: it stays on the canvas, dimmed, and the code comments it out; on again restores it', async () => {
     await touch.tap('.canvas .node[data-fn=rotate] .nhead .ticon')
     await page.waitForSelector('[data-testid=selbar]')
-    await touch.tap('[data-testid=sel-bypass]')
+    await touch.tap('[data-testid=sel-off] .disable-toggle')
     await sleep(250)
-    assert.doesNotMatch(await codeOf(page), /rotate/)
-    assert.equal(await page.locator('.canvas .node.bypassed[data-fn=rotate]').count(), 1)
-    await shot(page, '09-bypass.png')
-    await touch.tap('[data-testid=sel-bypass]')
+    assert.match(await codeOf(page), /\n\s*\/\/ \.rotate\(0\.8\)\n/)
+    assert.equal(await page.locator('.canvas .node.is-disabled[data-fn=rotate]').count(), 1)
+    await touch.tap('[data-testid=sel-off] .disable-toggle')
     await sleep(250)
     assert.match(await codeOf(page), /\.rotate\(0\.8\)\s*\.kaleid\(4\)/)
+    await touch.tap('[data-testid=sel-clear]')
   })
   await check('9b', 'a node feeding two places is written twice (×2 badge); "bake" routes it through a free output', async () => {
     // a second chain reads kaleid's output: wire kaleid → a new blend
@@ -603,10 +603,10 @@ if (want('9')) await block('9', async () => {
     await shot(page, '09-bake.png')
     return b.replace(/\s+/g, ' ').trim()
   })
-  await check('9c', 'pin a live preview on a node (its own small runtime); the code panel highlights the selected node', async () => {
+  await check('9c', 'pin an "up to here" preview from the selection bar; the code panel highlights the selected node', async () => {
     await touch.tap('.canvas .node[data-fn=rotate] .nhead .ticon')
     await touch.tap('[data-testid=sel-preview]')
-    await page.waitForSelector('[data-testid=node-preview] iframe, [data-testid=node-preview] canvas', { timeout: 10000 })
+    await page.waitForSelector('[data-testid=node-preview] .preview-peek canvas', { timeout: 10000 })
     await touch.tap('[data-testid=code-toggle]')
     await page.waitForSelector('.cm-sel-node', { timeout: 5000 })
     const hl = await page.locator('.cm-sel-node').first().innerText()
@@ -700,6 +700,213 @@ if (want('10')) await block('10', async () => {
     return 'output behind the canvas in both orientations; keypad edit on the veil; switcher items on top'
   })
   assert.deepEqual(S.errors.filter((e) => !/Permissions policy/.test(e)), [], '10: no page errors')
+})
+
+// ============================================================================================================ 11. switching off and chunk previews (step 09)
+const peekState = (page, id) => page.evaluate((id) => document.querySelector(`[data-node-peek="${id}"] .preview-peek`)?.dataset.state ?? 'none', id)
+/** a peek's canvas has a picture that is not black */
+const peekLit = (page, id) => page.evaluate((id) => {
+  const c = document.querySelector(`[data-node-peek="${id}"] canvas`)
+  if (!c) return 0
+  const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data
+  let lit = 0
+  for (let i = 0; i < d.length; i += 4) if (d[i] + d[i + 1] + d[i + 2] > 30) lit++
+  return lit / (d.length / 4)
+}, id)
+const nodeOff = (fn) => `.canvas .node[data-fn=${fn}] [data-testid=node-off] .disable-toggle`
+
+if (want('11')) await block('11', async () => {
+  const S = await startS({ viewport: { width: 1180, height: 820 } })
+  const { page, touch } = S
+  const CODE = 'osc(20, 0.1, 0.8)\n  .rotate(0.8)\n  .kaleid(4)\n  .out()\n\nnoise(3).color(1, 0.5, 0.2).out(o1)\n'
+  const id = await importAndOpen(page, S.base, CODE, 'Off and previews')
+  await waitForPicture(page)
+  await page.evaluate(() => window.__graph.core.setPreviewMode('demand'))
+
+  await check('11a', 'switch rotate off with its // : dashed and dimmed, cables kept but carrying nothing; the export comments it out and leaves its siblings as they were', async () => {
+    const cablesBefore = await page.locator('.cables .cable').count()
+    await touch.tap(nodeOff('rotate'))
+    await sleep(300)
+    const code = await codeOf(page)
+    assert.equal(code, 'osc(20, 0.1, 0.8)\n  // .rotate(0.8)\n  .kaleid(4)\n  .out()\n\nnoise(3).color(1, 0.5, 0.2).out(o1)\n')
+    assert.equal(await page.locator('.canvas .node.is-disabled[data-fn=rotate]').count(), 1)
+    assert.equal(await page.locator('.canvas .node.is-disabled').count(), 1, 'only rotate is off')
+    assert.equal(await page.locator('.cables .cable').count(), cablesBefore, 'cables stay')
+    assert.equal(await page.locator('.cables .cable.off').count(), 2, 'its two cables carry nothing')
+    assert.equal(await page.getAttribute(nodeOff('rotate'), 'aria-pressed'), 'true')
+    await shot(page, '11-switched-off.png')
+    // the code panel shows the commented text
+    await touch.tap('[data-testid=code-toggle]')
+    await page.waitForSelector('.cm-content')
+    assert.match(await page.locator('.cm-content').innerText(), /\/\/ \.rotate\(0\.8\)/)
+    await shot(page, '11-switched-off-code.png')
+    await touch.tap('[data-testid=code-toggle]')
+    // what runs is osc → kaleid
+    const run = await page.evaluate(() => window.__graph.core.toCode(window.__graph.core.activeSketch(window.__graph.store.sketch)))
+    assert.doesNotMatch(run, /rotate/)
+    return 'export: "  // .rotate(0.8)" on its own line, kaleid and the noise chain unchanged'
+  })
+
+  await check('11b', 're-enable: the export is byte-identical to the import again', async () => {
+    await touch.tap(nodeOff('rotate'))
+    await sleep(300)
+    assert.equal(await codeOf(page), CODE)
+    assert.equal(await page.locator('.canvas .node.is-disabled').count(), 0)
+  })
+
+  await check('11c', "a generator's // switches its whole chain; the chain's nodes all look off; tapping any of them switches it back", async () => {
+    await touch.tap(nodeOff('noise'))
+    await sleep(300)
+    assert.match(await codeOf(page), /\n\/\/ noise\(3\)\.color\(1, 0\.5, 0\.2\)\.out\(o1\)\n$/)
+    assert.equal(await page.locator('.canvas .node.is-disabled').count(), 2)
+    await touch.tap(nodeOff('color'))
+    await sleep(300)
+    assert.equal(await codeOf(page), CODE)
+  })
+
+  await check('11d', "preview up to here: a node's 👁 pins a still of its chain up to that node (on demand), drawn by the shared pool (at most 2 runtimes)", async () => {
+    const rot = await nodeId(S, '[data-fn=rotate]')
+    await touch.tap('.canvas .node[data-fn=rotate] [data-testid=node-eye]')
+    await page.waitForSelector(`[data-node-peek="${rot}"] .preview-peek`, { timeout: 5000 })
+    await page.waitForFunction((id) => document.querySelector(`[data-node-peek="${id}"] .preview-peek`)?.dataset.state === 'paused', rot, { timeout: 30000 }).catch(() => {})
+    const lit = await peekLit(page, rot)
+    assert.ok(lit > 0.05, `the still has a picture (${lit})`)
+    assert.equal(await peekState(page, rot), 'paused', 'on demand: a still, then the runtime goes back to the pool')
+    const stats = await page.evaluate(() => ({ ...window.__graph.previewPool().stats }))
+    assert.ok(stats.maxRuntimes <= 2, JSON.stringify(stats))
+    // the main output is never touched: still one main runtime, still running
+    assert.equal(await page.evaluate(() => window.__graph.runner.status.phase), 'ok')
+    await shot(page, '11-preview-prefix.png')
+    return `still lit ${(lit * 100).toFixed(0)}%; pool ${JSON.stringify(stats)}`
+  })
+
+  await check('11e', 'A/B a modifier: the pinned preview turns into before/after; expanded, A and B switch', async () => {
+    // rotate is pinned already (11d); the floating output sits over the right-hand end of the chain
+    const rid = await nodeId(S, '[data-fn=rotate]')
+    await page.waitForSelector(`[data-node-peek="${rid}"] [data-testid=peek-ab]`, { timeout: 5000 })
+    await touch.tap(`[data-node-peek="${rid}"] [data-testid=peek-ab]`)
+    await sleep(200)
+    assert.equal(await page.getAttribute(`[data-node-peek="${rid}"] [data-testid=peek-ab]`, 'aria-pressed'), 'true')
+    await touch.tap(`[data-node-peek="${rid}"] .peek-pic`)
+    await page.waitForSelector(`[data-node-peek="${rid}"] .peek-ab`, { timeout: 5000 })
+    await page.waitForFunction((id) => document.querySelector(`[data-node-peek="${id}"] .preview-peek`)?.dataset.state === 'running', rid, { timeout: 30000 })
+    await sleep(800)
+    await touch.tap(`[data-node-peek="${rid}"] .peek-ab button:first-child`)
+    await sleep(500)
+    await shot(page, '11-preview-ab.png')
+    assert.equal(await page.getAttribute(`[data-node-peek="${rid}"] .peek-ab button:first-child`, 'aria-pressed'), 'true')
+    // fold it again: back to a still
+    await touch.tap(`[data-node-peek="${rid}"] .peek-pic`)
+    await page.waitForFunction((id) => document.querySelector(`[data-node-peek="${id}"] .preview-peek`)?.dataset.state === 'paused', rid, { timeout: 30000 })
+    const stats = await page.evaluate(() => ({ ...window.__graph.previewPool().stats }))
+    assert.ok(stats.maxRuntimes <= 2, JSON.stringify(stats))
+    return 'expanded: animated with A · before / B · after; folded: a still again'
+  })
+
+  await check('11f', 'previews follow the preference (⋯ → Node previews) and pause offscreen and in performance mode', async () => {
+    const rot = await nodeId(S, '[data-fn=rotate]')
+    // on demand → live
+    await touch.tap('[data-testid=more]')
+    await touch.tap('[data-testid=menu-previews]')
+    assert.equal(await page.evaluate(() => window.__graph.core.previewMode()), 'live')
+    await page.waitForFunction((id) => document.querySelector(`[data-node-peek="${id}"] .preview-peek`)?.dataset.state === 'running', rot, { timeout: 30000 })
+    // pan the node off screen: its preview pauses
+    for (let k = 0; k < 3; k++) await pan(S, -380, 0)
+    await page.waitForFunction((id) => document.querySelector(`[data-node-peek="${id}"] .preview-peek`)?.dataset.state === 'paused', rot, { timeout: 10000 })
+    await touch.tap('[data-testid=more]')
+    await touch.tap('[data-testid=menu-fit]')
+    await page.waitForFunction((id) => document.querySelector(`[data-node-peek="${id}"] .preview-peek`)?.dataset.state === 'running', rot, { timeout: 30000 })
+    // performance mode: the thumbnails go away (their previews close)
+    await touch.tap('[data-testid=perform]')
+    await sleep(300)
+    assert.equal(await page.locator('[data-testid=node-preview]').count(), 0)
+    await touch.tap('[data-testid=perform-exit]')
+    // live → off: nothing shown, nothing running
+    await touch.tap('[data-testid=more]')
+    await touch.tap('[data-testid=menu-previews]')
+    assert.equal(await page.evaluate(() => window.__graph.core.previewMode()), 'off')
+    await sleep(300)
+    assert.equal(await page.locator('.preview-peek').count(), 0)
+    await touch.tap('[data-testid=more]')
+    await touch.tap('[data-testid=menu-previews]')
+    assert.equal(await page.evaluate(() => window.__graph.core.previewMode()), 'demand')
+    return 'live: running while visible, paused when panned away; gone in performance mode; off hides them'
+  })
+
+  await check('11g', 'switch to Chain Stack and back on the same sketch with a node off: the flag and the code survive both ways', async () => {
+    await touch.tap(nodeOff('rotate'))
+    await sleep(300)
+    const code = await codeOf(page)
+    assert.match(code, /\/\/ \.rotate\(0\.8\)/)
+    await page.evaluate(() => window.__graph.lib.flush())
+    await touch.tap('.hi-switch > button')
+    await touch.tap('.hi-switch a:has-text("Chain Stack")')
+    await page.waitForURL(/\/stack\//, { timeout: 15000 })
+    await page.waitForFunction(() => !!window.__stack?.store?.sketch, null, { timeout: 15000 })
+    assert.equal(await page.evaluate(() => window.__stack.core.toCode(window.__stack.store.sketch)), code, 'Chain Stack reads the same code')
+    await sleep(800)
+    await page.click('.hi-switch > button')
+    await page.click('.hi-switch a:has-text("Patch Graph")')
+    await page.waitForURL(/\/graph\//, { timeout: 15000 })
+    await page.waitForFunction((id) => window.__graph?.store?.sketch?.id === id, id, { timeout: 15000 })
+    await sleep(500)
+    assert.equal(await codeOf(page), code)
+    assert.equal(await page.locator('.canvas .node.is-disabled[data-fn=rotate]').count(), 1)
+    await touch.tap(nodeOff('rotate'))
+    await sleep(300)
+    assert.equal(await codeOf(page), CODE)
+  })
+  assert.deepEqual(S.errors.filter((e) => !/Permissions policy/.test(e)), [], '11: no page errors')
+})
+
+if (want('12')) await block('12', async () => {
+  const S = await startS({ viewport: { width: 1180, height: 820 } })
+  const { page, touch } = S
+  await check('12a', 'an old sketch with a bypassed node (meta.graph.bypass) opens with it switched off in place; the old key is gone from the saved copy', async () => {
+    await page.goto(S.base + 'graph/')
+    await page.waitForFunction(() => !!window.__graph?.lib, null, { timeout: 15000 })
+    const id = await page.evaluate(async () => {
+      const lib = window.__graph.lib
+      const s = await lib.create('Old bypass', 'osc(20, 0.1, 0.8)\n  .rotate(0.8)\n  .out()\n')
+      const gen = s.stmts[0].chain.gen.id
+      await lib.put({ ...s, meta: { graph: { v: 1, pos: {}, bypass: { cOld: { call: { id: 'cOld', fn: 'kaleid', args: [{ k: 'num', v: 5 }] }, after: gen } } }, stack: { v: 1 } } }, { touch: false })
+      return s.id
+    })
+    await page.goto(S.base + 'graph/#/s/' + id)
+    await page.reload()
+    await page.waitForFunction((id) => window.__graph?.store?.sketch?.id === id, id, { timeout: 15000 })
+    await waitForPicture(page)
+    assert.equal(await codeOf(page), 'osc(20, 0.1, 0.8)\n  // .kaleid(5)\n  .rotate(0.8)\n  .out()\n')
+    assert.equal(await page.locator('.canvas .node.is-disabled[data-fn=kaleid]').count(), 1)
+    await page.evaluate(() => window.__graph.lib.flush())
+    const saved = await page.evaluate(async (id) => JSON.parse(JSON.stringify(await window.__graph.lib.get(id))), id)
+    assert.equal('bypass' in saved.meta.graph, false, 'meta.graph.bypass removed')
+    assert.deepEqual(saved.meta.stack, { v: 1 }, 'other apps untouched')
+    await shot(page, '12-migrated.png')
+    // and it switches on like any other
+    await touch.tap(nodeOff('kaleid'))
+    await sleep(300)
+    assert.equal(await codeOf(page), 'osc(20, 0.1, 0.8)\n  .kaleid(5)\n  .rotate(0.8)\n  .out()\n')
+  })
+  await check('12b', 'importing commented-out code: the revived chunks are switched-off nodes, with a one-time note', async () => {
+    const code = 'osc(20, 0.1, 0.8)\n  // .rotate(0.8)\n  .kaleid(4)\n  .out()\n\n// noise(3).out(o1)\n'
+    const id = await importAndOpen(page, S.base, code, 'Revived')
+    await page.waitForSelector('[data-testid=revived-note]', { timeout: 5000 })
+    const text = await page.locator('[data-testid=revived-note]').innerText()
+    assert.match(text, /2 commented-out chunks were revived as disabled/)
+    assert.equal(await page.locator('.canvas .node.is-disabled').count(), 2, 'rotate and noise')
+    assert.equal(await codeOf(page), code, 'the export is the import')
+    await shot(page, '12-revived.png')
+    await touch.tap('[data-testid=revived-dismiss]')
+    await sleep(500)
+    await page.evaluate(() => window.__graph.lib.flush())
+    await page.reload()
+    await page.waitForFunction((id) => window.__graph?.store?.sketch?.id === id, id, { timeout: 15000 })
+    await sleep(800)
+    assert.equal(await page.locator('[data-testid=revived-note]').count(), 0, 'dismissed for good')
+    return text.split(':')[0]
+  })
+  assert.deepEqual(S.errors.filter((e) => !/Permissions policy/.test(e)), [], '12: no page errors')
 })
 
 // ============================================================================================================ summary

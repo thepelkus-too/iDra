@@ -25,8 +25,10 @@ export interface GraphMeta extends CompileMeta {
   pos: Record<string, XY>
   /** display-only groups ("macro" nodes); flattened in the code */
   groups?: Array<{ id: string; ids: string[]; open?: boolean; name?: string }>
-  /** nodes with a pinned live thumbnail (at most two) */
+  /** nodes with a pinned "up to here" thumbnail */
   previews?: string[]
+  /** how many revived chunks (commented-out code the importer turned into switched-off nodes) the note was dismissed for */
+  revivedSeen?: number
   /** controls shown in performance mode: a call input or a modulator */
   pins?: Array<{ node: string; port: number }>
   /** pan/zoom */
@@ -202,15 +204,7 @@ export function layoutGraph(sketch: Sketch, g: Graph, cat: Catalog = defaultCata
     if (bandIds.length) my = maxY + GAP_BAND
   }
 
-  const lastOfChain = (c: { gen: { id: string }; mods: Array<{ id: string }> }): string => {
-    // follow the flow from the last call through bypassed nodes
-    let id = c.mods.length ? c.mods[c.mods.length - 1].id : c.gen.id
-    for (;;) {
-      const next = (flowOut.get(id) ?? []).find((t) => byId.get(t)?.kind === 'call' && byId.get(t)?.bypassed)
-      if (!next) return id
-      id = next
-    }
-  }
+  const lastOfChain = (c: { gen: { id: string }; mods: Array<{ id: string }> }): string => (c.mods.length ? c.mods[c.mods.length - 1].id : c.gen.id)
 
   for (const s of sketch.stmts) {
     switch (s.k) {
@@ -235,7 +229,7 @@ export function layoutGraph(sketch: Sketch, g: Graph, cat: Catalog = defaultCata
       }
     }
   }
-  // bypassed calls left unconnected, outputs only read, sources never initialised
+  // calls left unconnected, outputs only read, sources never initialised
   for (const n of g.nodes) if (n.kind === 'call' && !placed(n.id)) band(runTo(n.id), undefined)
   for (const n of g.nodes) if ((n.kind === 'out' || n.kind === 'src' || n.kind === 'def') && !placed(n.id)) column(n.id)
   for (const n of g.nodes) if (!placed(n.id)) column(n.id)
@@ -250,9 +244,9 @@ export function autoView(sketch: Sketch, cat: Catalog = defaultCatalog, keep: Pa
   for (const id of Object.keys(boxes).sort()) pos[id] = { x: boxes[id].x, y: boxes[id].y }
   const meta: GraphMeta = { v: 1, pos }
   if (keep.links && Object.keys(keep.links).length) meta.links = keep.links
-  if (keep.bypass && Object.keys(keep.bypass).length) meta.bypass = keep.bypass
   if (keep.groups?.length) meta.groups = keep.groups
   if (keep.previews?.length) meta.previews = keep.previews
+  if (keep.revivedSeen) meta.revivedSeen = keep.revivedSeen
   if (keep.pins?.length) meta.pins = keep.pins
   return meta
 }

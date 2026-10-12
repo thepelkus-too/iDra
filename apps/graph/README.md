@@ -27,15 +27,18 @@ the other way round.
 | **Ladder** | long-press a number (hold still ⅓ s), then without lifting: slide up or down to pick the step (1000 … 0.01), left or right to change the value by it (the step then stays put until you slide back to where you started); let go to keep it (one undo step), Esc to cancel. Hold still and let go: the Ladder tab |
 | **Pads** | in a number's Pad tab, **Bind to a pad**: the number becomes a hydra-motion knob played from a floating pad (hold, latch or trigger). ⇄ → **Pads** shows or hides them |
 | **Undo / redo** | two-finger tap / three-finger tap, the ↶ ↷ buttons, ⌘Z / ⇧⌘Z |
+| **Switch off / on** | tap a node's `//` (in its header, or in the selection bar). A generator's `//` switches its whole chain; a node inside a switched-off chain or argument switches that back on. Hold `//` for why, when it can't |
+| **Preview up to here** | tap a node's 👁: a thumbnail of its chain up to that node sits above it. Tap the thumbnail to enlarge it (it animates); tap again to fold. ✕ unpins |
+| **A/B** | on a modifier's thumbnail (or in the selection bar), **A/B** turns it into before/after this node; enlarge it and tap **A · before** / **B · after** |
 | **Keyboard** | ⌘D duplicate, ⌫ delete, ⌘K palette, ⌘A select all, ⌘Enter run, Esc clear |
 
 One finger on empty canvas pans rather than lassoes: on a tablet, panning is the thing you do constantly and selecting a
 rectangle the thing you do rarely, so the rectangle lives behind a toolbar toggle (and the Pencil).
 
 The selection bar at the bottom: **Duplicate**, **Delete** (a node in the middle of a chain is spliced out and the chain
-closes up), **Bypass** (the node stays, dimmed and dashed, and is left out of the code), **Group** (collapse a run of nodes
-into one macro card that expands on tap; display only, the code is flat), **👁 Preview** (pin a live view of the texture at
-that node), **Pin** (put the node's numbers on the performance screen) and **Bake** (see below).
+closes up), **`//`** (switch off or on, see below), **Group** (collapse a run of nodes into one macro card that expands on
+tap; display only, the code is flat), **👁 Preview** and **A/B** (see Previews), **Pin** (put the node's numbers on the
+performance screen) and **Bake** (see below). ⋯ → **Node previews** cycles the previews preference: on demand, live, off.
 
 The output floats as a picture-in-picture window (drag its top to move it, its corner to resize). ⛶ is performance mode: the
 visuals full screen with the pinned sliders on top. **Code** opens the code panel, read-only until you switch on Edit; the
@@ -61,7 +64,20 @@ structural edit is a graph operation followed by `graphToIR` and a commit. Posit
 * A node that feeds **more than one** place is written once per place (Hydra has no texture variables). The node shows
   "×2"; the copies keep stable ids in `meta.graph.links`, so the graph reads them back as one node. **Bake** writes such a
   node once into a free output and reads that output everywhere instead.
-* **Bypassed** nodes are stored whole in `meta.graph.bypass` with the node they follow, so they come back where they were.
+* A **switched-off** node is core's `disabled` flag (docs/IR.md, "Disabled nodes"): it stays where it is in its chain and
+  is written as commented-out code, `// .rotate(0.8)` on a line of its own, so vanilla Hydra skips it exactly as iDra does.
+  On the canvas it is dashed, dimmed and striped, still selectable, movable and editable; its cables stay but are drawn as
+  carrying nothing, and the chain passes through it. Switching off a generator switches off its chain statement (every
+  line `// `). A switched-off blend or modulate takes its texture argument with it, so those nodes look off too, as do
+  modulators feeding a switched-off node. A node written several times (fan-out) switches every copy. Two edits that would
+  put a `//` line where none can go are refused with the reason: a switched-off node becoming the start of a chain, and a
+  chain holding one being wired into a texture input (written on one line).
+* **Old sketches.** Before core had the flag, the graph "bypassed" nodes by leaving them out of the code and keeping them
+  in `meta.graph.bypass`. On first open each such node goes back after the call it followed, switched off, and the key is
+  removed (`src/migrate.ts`). A bypassed node whose neighbour is gone becomes a comment instead of being dropped.
+* **Commented-out code** in an imported sketch that core revives (`// .kaleid(4)` inside a chain, a `//`-commented
+  statement) shows as switched-off nodes, with a note "N commented-out chunks were revived as disabled" until you tap OK
+  (remembered in `meta.graph.revivedSeen`).
 * Comments are sticky notes; `setting`, `source`, `render` and raw JavaScript statements are small setup nodes in a column on
   the left. Nothing in a sketch is dropped: whatever the graph does not understand stays a raw JS node and is written back as
   it was.
@@ -70,11 +86,34 @@ structural edit is a graph operation followed by `graphToIR` and a commit. Posit
 
 ## Previews
 
-A pinned preview is a second, small (192×108, lowp) runtime that runs the whole sketch plus one extra cable from the pinned
-node into a spare output (`o3` unless the sketch writes it and another output is free) and shows only that output. The main
-preview is never touched. At most two previews at a time (pinning a third unpins the oldest), because each one renders the
-whole sketch again; on an iPad that is a real GPU cost. Previews follow the trust gate (safe mode until you say yes) and do
-not get camera access.
+A pinned thumbnail is the kit's `<PreviewPeek>` with core's `prefix` spec: the node's chain from its generator up to and
+including that node, switched-off modifiers left out (a switched-off node's own preview includes it, so you can see what
+switching it on would do). On an output node it is the last chain that writes that output. **A/B** on a modifier uses the
+`diff` spec, before and after that call. Pictures come from core's preview pool (docs/previews-runtime.md), shared by every
+thumbnail: at most two small hidden runtimes exist, whatever the number of pins. The main output is never touched (the
+old approach, a whole second runtime per pin drawing the node into a spare `o3`, is gone).
+
+* **The preference** (⋯ → Node previews, shared by every editor): *on demand* (default) shows a still, refreshed when the
+  chunk or its numbers change, and animates the one you enlarge; *live* animates visible thumbnails, as many at once as the
+  pool has runtimes (the others keep their last picture); *off* hides them.
+* A chunk that reads another output, `prev()` or a camera shows "≈": it is seen through a copy of the main picture,
+  refreshed about once a second.
+* Thumbnails pause when panned or zoomed off screen and close in performance mode. They follow the trust gate: until you
+  say yes, they say "Runs once you run the sketch".
+
+## Core change requests
+
+* **Preview pool: `update()` during `starting` abandons the run.** `start()` in `packages/core/src/preview.ts` compares
+  `h.plan !== plan` by object identity after awaiting the runtime, and `handle.update()` always makes a new plan object,
+  even when its key is unchanged. `<PreviewPeek>` calls `update()` right after opening, so the first preview of a cold pool
+  stays in `starting` and never draws. Fix: compare `h.plan?.key !== plan.key` in `start()` (three places). The graph
+  works around it in `src/ui/pool.ts` (drops updates that change nothing and holds others until the handle has left
+  `starting`); remove that wrapper once core is fixed. The Blocks editor found the same bug.
+* **Preview pool, live mode: thumbnails beyond the pool's size never get a first picture.** In live mode the newest
+  handles keep the runtimes, so a thumbnail opened together with two newer ones (three pins on page load) shows nothing
+  until one of them goes away. Suggestion: give waiting handles one still each, in turn, before animating the chosen ones.
+* **`PreviewPeek`: an `open` prop (or `defaultOpen`).** A/B would read better opening straight to the enlarged
+  before/after view; today it is one more tap.
 
 ## Known issues and limits
 
@@ -120,5 +159,39 @@ Modulator nodes make it a wire, which is the patcher's strength (you can see wha
 exactly become LFO nodes; everything else stays an Expression node with its original text, so nothing is rewritten behind the
 user's back.
 
+**Switching off in a graph (step 09).** Core's rule that a switched-off call is a `//` line *inside* its chain fits a
+graph well: the node stays where it was, the cables stay, and the chain visibly passes through it. The old bypass had to
+keep the node outside the code, in editor-only state, which is exactly what the vanilla-Hydra principle warns against;
+now the code says it. Two graph edits can't be expressed as Hydra comments (a switched-off node starting a chain, or one
+inside a texture argument, which is written on one line) and are refused with a sentence rather than silently
+re-enabling anything. What felt clumsy: the node header got crowded (name, 👁 and `//` share 212 px, so long names
+truncate sooner), and on a generator `//` means "the whole chain", which is right for Hydra but is a different reach from
+the same button on a modifier; the toggle's label says which. Enlarged thumbnails sit above their node and can run off
+the top of the canvas for nodes near the top edge (pan down a little). Not verified without an iPad: how the dimmed
+stripes read in sunlight, whether 28 px eye buttons are easy enough to hit with a finger, how two preview runtimes plus
+the main one behave under Safari's WebGL context limit, and battery cost in live mode.
+
 **What I would do next:** make "Group" produce a real reusable macro (it would need a core notion of user functions), give
 text editing on nodes a proper inline editor instead of the system prompt, and measure on a real iPad.
+
+## iPad checklist (switching off and previews)
+
+On the deployed site, Safari and the installed app, landscape and portrait:
+
+1. Open a sketch with a chain of three or more calls. Tap a modifier's `//`: it dims, stripes and dashes; its cables go
+   dotted; the output changes as if it were gone. Code: the line reads `// .name(…)`. Tap `//` again: the code is back
+   exactly as it was. Two-finger tap undoes and three-finger tap redoes the switch.
+2. Tap a generator's `//`: every node of the chain dims, and the code comments every line. Tap `//` on another node of
+   that chain: the whole chain comes back.
+3. Switch off a `blend(…)` or `modulate(…)`: the nodes of its texture argument dim too. Hold the `//` on one of those
+   nodes: a note explains why it can't switch alone, with a button for the whole thing.
+4. Delete the generator of a chain whose next node is switched off: the edit is refused with a sentence, nothing changes.
+5. Tap 👁 on a few nodes: thumbnails appear above them (a still each, on demand). Tap one: it enlarges and animates; tap
+   again: it folds. Pan them off screen and back. Drag a number on the chain: the stills follow.
+6. On a modifier's thumbnail, tap A/B, enlarge it, switch A · before and B · after. Check the "≈" badge on a node reading
+   `src(o0)` or `prev()`.
+7. ⋯ → Node previews: live (thumbnails animate; watch frame rate, heat and battery for a few minutes with three pins),
+   off (they disappear), on demand again. Enter and leave performance mode: no thumbnails there.
+8. Import a `.js` with commented-out chain calls (`// .kaleid(4)` on its own line): the note says how many were revived;
+   OK dismisses it for good. Switch to Chain Stack and back: the switched-off nodes and the code are unchanged.
+9. Open a sketch saved before this change with a bypassed node: it appears switched off in place.

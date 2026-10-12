@@ -19,13 +19,17 @@ export interface BootOptions {
   css: string
   /** extra handles for tests/e2e on window.__app */
   expose?: Record<string, unknown>
+  /** upgrade a stored sketch from an older version of this app (pure; the same sketch when there is nothing to do) */
+  migrate?: (s: Sketch) => Sketch
   /** called after a sketch is loaded (first open and hashchange) */
   onLoad?: (s: Sketch) => void
   starterCode?: string
 }
 
-export function withView(s: Sketch, o: Pick<BootOptions, 'autoView' | 'hasView'>): { sketch: Sketch; created: boolean } {
-  if (o.hasView(s)) return { sketch: s, created: false }
+export function withView(s0: Sketch, o: Pick<BootOptions, 'autoView' | 'hasView' | 'migrate'>): { sketch: Sketch; created: boolean } {
+  const s = o.migrate ? o.migrate(s0) : s0
+  // `created`: the stored copy is out of date (a new view, or a migration) and gets saved
+  if (o.hasView(s)) return { sketch: s, created: s !== s0 }
   return { sketch: withMeta(s, APP, o.autoView(s) as Record<string, unknown>), created: true }
 }
 

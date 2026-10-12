@@ -12,7 +12,7 @@ import { APP, autoView, layoutGraph, metaOf, sizeOf, type GraphMeta, type XY } f
 // ---------------------------------------------------------------- memoised per sketch
 
 let memoSketch: Sketch | undefined
-let memoKey: [unknown, unknown, unknown] = [undefined, undefined, undefined]
+let memoKey: [unknown, unknown] = [undefined, undefined]
 let memoGraph: Graph = { nodes: [], edges: [] }
 let memoCompile: CompileResult | undefined
 let memoBoxes: ReturnType<typeof layoutGraph> = {}
@@ -23,7 +23,7 @@ function refresh(sk: Sketch): void {
   const meta = metaOf(sk)
   memoBoxes = {}
   // a view-only change (a moved node, the camera) keeps the same graph objects, so node cards do not re-render
-  const key: typeof memoKey = [sk.stmts, meta?.links, meta?.bypass]
+  const key: typeof memoKey = [sk.stmts, meta?.links]
   if (key.every((k, i) => k === memoKey[i])) return
   memoKey = key
   memoGraph = irToGraph(sk, meta ?? {})
@@ -64,7 +64,7 @@ export function applyGraph(g: Graph, opts: CommitOpts & { placed?: Record<string
   const pos = { ...meta.pos, ...(opts.placed ?? {}) }
   // a node dropped where others are pushes them aside (to the right), so a splice never hides its neighbours
   for (const id of Object.keys(opts.placed ?? {})) if (!meta.pos[id]) makeRoom(g, id, pos)
-  const next = withMeta(r.sketch, APP, { ...meta, ...(opts.meta ?? {}), v: 1, pos, links: r.meta.links, bypass: r.meta.bypass })
+  const next = withMeta(r.sketch, APP, { ...meta, ...(opts.meta ?? {}), v: 1, pos, links: r.meta.links })
   const { placed: _p, meta: _m, ...commit } = opts
   void _p
   void _m
@@ -158,6 +158,8 @@ export interface UiState {
   palette: boolean
   /** bumps to ask the canvas to fit the content */
   fit: number
+  /** the pinned preview showing before/after (a modifier node) instead of "up to here" */
+  ab?: string
 }
 
 const listeners = new Set<() => void>()

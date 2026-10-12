@@ -11,7 +11,8 @@
 //   * outputs and sources are nodes: `out(o0)` is a cable into the o0 node, `src(o0)` a cable out of it, so feedback is a
 //     visible loop; any other cycle is rejected;
 //   * modulators (LFO, time, mouse, audio, steps, expression) are nodes wired into number inputs; they emit `fn`/`arr` values;
-//   * bypassed nodes stay on the canvas but are left out of the code (kept in `meta.graph.bypass`).
+//   * switched-off nodes are core's `disabled` flag: they stay in the chain, written as `// .rotate()` comments, and the
+//     compiler (and Hydra) skip them. `GNode.disabled` is display only: the node is off itself, or sits inside something off.
 // The sketch (IR) stays the single source of truth: the graph is rebuilt from it after every change.
 import {
   DEFAULT,
@@ -38,7 +39,8 @@ export interface GNode {
   kind: NodeKind
   /** call nodes: the call; argument slots fed by a cable hold DEFAULT here (the cable is the value) */
   call?: Call
-  bypassed?: boolean
+  /** display only: nothing of this node runs (it is switched off, or inside a switched-off statement or call) */
+  disabled?: boolean
   /** statement-backed nodes (def, comment, raw, setting, render, source); a def fed by a cable holds DEFAULT */
   stmt?: Stmt
   /** out / src nodes */
@@ -62,8 +64,6 @@ export interface Graph {
 export interface CompileMeta {
   /** copy call id → the node (call id) it duplicates */
   links?: Record<string, string>
-  /** bypassed calls: the whole call (with its texture arguments) and the call it follows */
-  bypass?: Record<string, { call: Call; after: string | null }>
 }
 
 export const outId = (o: string): string => `out:${o}`
@@ -77,7 +77,6 @@ export function irToGraph(sketch: Sketch, meta: CompileMeta = {}): Graph {
   const nodes = new Map<string, GNode>()
   const edges: GEdge[] = []
   const links = meta.links ?? {}
-  const bypass = meta.bypass ?? {}
   const defByName = new Map<string, string>()
   for (const s of sketch.stmts) if (s.k === 'def') defByName.set(s.name, s.id)
 
@@ -109,7 +108,7 @@ export function irToGraph(sketch: Sketch, meta: CompileMeta = {}): Graph {
     }
   }
 
-  const addCall = (c: Call, prev: string | undefined, bypassed = false): string => {
+  const addCall = (c: Call, prev: string | undefined): string => {
     // a linked copy that still matches its original collapses onto it (the original's cables already exist)
     const orig = links[c.id]
     const on = orig ? nodes.get(orig) : undefined
@@ -126,28 +125,16 @@ export function irToGraph(sketch: Sketch, meta: CompileMeta = {}): Graph {
         wires.push([from, i])
       }
     })
-    add({ id: c.id, kind: 'call', call: { ...c, args }, ...(bypassed ? { bypassed } : {}) })
+    add({ id: c.id, kind: 'call', call: { ...c, args } })
     if (prev) edge({ from: prev, to: c.id, port: 'in' })
     for (const [from, i] of wires) edge({ from, to: c.id, port: i })
     return c.id
   }
 
-  /** a chain's calls in flow order (bypassed calls re-inserted after the call they follow); returns the last node */
+  /** a chain's calls in flow order (switched-off ones included); returns the last node */
   const addChain = (chain: Chain): string => {
     let prev: string | undefined
-    const calls = [chain.gen, ...chain.mods]
-    const pending = Object.entries(bypass)
-    const insertBypassed = (after: string | null) => {
-      for (const [id, b] of pending) {
-        if (b.after !== after || nodes.has(id)) continue
-        prev = addCall(b.call, prev, true)
-        insertBypassed(id)
-      }
-    }
-    calls.forEach((c, k) => {
-      prev = addCall(c, prev)
-      if (k === 0 || prev === c.id) insertBypassed(c.id)
-    })
+    for (const c of [chain.gen, ...chain.mods]) prev = addCall(c, prev)
     return prev!
   }
 
@@ -175,11 +162,46 @@ export function irToGraph(sketch: Sketch, meta: CompileMeta = {}): Graph {
         add({ id: s.id, kind: s.k, stmt: s })
     }
   }
-  // bypassed calls whose neighbour disappeared (edited elsewhere) are still shown, unconnected: never silently dropped
-  for (const [id, b] of Object.entries(bypass)) if (!nodes.has(id)) addCall(b.call, undefined, true)
   // the four outputs are always there to be wired
   for (const o of OUT_NAMES) ensureOut(o)
-  return { nodes: [...nodes.values()], edges }
+  const off = offNodes(sketch, links)
+  const list = [...nodes.values()].map((n) => (off.has(n.id) ? { ...n, disabled: true } : n))
+  return { nodes: list, edges }
+}
+
+/**
+ * Nodes nothing of which runs: switched-off statements and calls, everything inside them (a switched-off blend takes its
+ * texture argument with it), and the modulators feeding them. A node written more than once (`links`) is off only when
+ * every copy is.
+ */
+export function offNodes(sketch: Sketch, links: Record<string, string> = {}): Set<string> {
+  const on = new Set<string>()
+  const seen = new Set<string>()
+  const mark = (id: string, off: boolean) => {
+    const n = links[id] ?? id
+    seen.add(n)
+    if (!off) on.add(n)
+  }
+  const call = (c: Call, off: boolean) => {
+    mark(c.id, off)
+    c.args.forEach((a, i) => {
+      if (a.k === 'tex') chain(a.chain, off)
+      else if (a.k === 'fn' || a.k === 'arr') mark(modId(links[c.id] ?? c.id, i), off)
+    })
+  }
+  const chain = (c: Chain, off: boolean) => {
+    call(c.gen, off || !!c.gen.disabled)
+    for (const m of c.mods) call(m, off || !!m.disabled)
+  }
+  for (const s of sketch.stmts) {
+    const off = !!s.disabled
+    if (s.k === 'chain') chain(s.chain, off)
+    else if (s.k === 'def') {
+      mark(s.id, off)
+      if (s.value.k === 'tex') chain(s.value.chain, off)
+    } else if (s.k === 'source' || s.k === 'setting' || s.k === 'render') mark(s.id, off)
+  }
+  return new Set([...seen].filter((id) => !on.has(id)))
 }
 
 /** Does call `c` (a copy) still say exactly what node `n` says? Texture arguments are compared as code. */
@@ -221,6 +243,15 @@ class CycleError extends Error {
   }
 }
 
+class OffError extends Error {
+  constructor(
+    public node: string,
+    message: string,
+  ) {
+    super(message)
+  }
+}
+
 export function graphToIR(g: Graph, prev: Sketch, prevMeta: CompileMeta = {}): CompileResult {
   const byId = new Map(g.nodes.map((n) => [n.id, n]))
   const inFlow = new Map<string, string>()
@@ -238,18 +269,22 @@ export function graphToIR(g: Graph, prev: Sketch, prevMeta: CompileMeta = {}): C
   // ---- previous objects to carry ids, `src` and `meta` over
   const prevChainByGen = new Map<string, Chain>()
   const prevCall = new Map<string, Call>()
-  const visitChain = (c: Chain) => {
+  // switched-off calls already where a new one may not go (only from hand-written IR): edits elsewhere still compile
+  const prevOffGen = new Set<string>()
+  const prevOffNested = new Set<string>()
+  const visitChain = (c: Chain, nested: boolean) => {
     prevChainByGen.set(c.gen.id, c)
+    if (c.gen.disabled) prevOffGen.add(c.gen.id)
     for (const call of [c.gen, ...c.mods]) {
       prevCall.set(call.id, call)
-      for (const a of call.args) if (a.k === 'tex') visitChain(a.chain)
+      if (nested && call.disabled) prevOffNested.add(call.id)
+      for (const a of call.args) if (a.k === 'tex') visitChain(a.chain, true)
     }
   }
   for (const s of prev.stmts) {
-    if (s.k === 'chain') visitChain(s.chain)
-    else if (s.k === 'def' && s.value.k === 'tex') visitChain(s.value.chain)
+    if (s.k === 'chain') visitChain(s.chain, false)
+    else if (s.k === 'def' && s.value.k === 'tex') visitChain(s.value.chain, false)
   }
-  for (const b of Object.values(prevMeta.bypass ?? {})) visitChain({ id: '', gen: b.call, mods: [] })
   const prevCopies = new Map<string, string[]>()
   for (const [copy, orig] of Object.entries(prevMeta.links ?? {})) prevCopies.set(orig, [...(prevCopies.get(orig) ?? []), copy])
 
@@ -257,18 +292,6 @@ export function graphToIR(g: Graph, prev: Sketch, prevMeta: CompileMeta = {}): C
   const dup: Record<string, number> = {}
   const emitted = new Map<string, number>()
   const errors: CompileError[] = []
-
-  /** non-bypassed upstream of a node along main inputs */
-  const upstream = (id: string | undefined): string | undefined => {
-    let cur = id
-    const seen = new Set<string>()
-    while (cur && byId.get(cur)?.bypassed) {
-      if (seen.has(cur)) throw new CycleError(cur)
-      seen.add(cur)
-      cur = inFlow.get(cur)
-    }
-    return cur
-  }
 
   const building = new Set<string>()
 
@@ -301,21 +324,30 @@ export function graphToIR(g: Graph, prev: Sketch, prevMeta: CompileMeta = {}): C
     const copy: Call = { id: copyId, fn: base.fn, args: reIdValues(args) }
     if (was?.src) copy.src = was.src
     if (base.meta) copy.meta = base.meta
+    if (base.disabled) copy.disabled = true
     return copy
   }
 
   /** the chain that ends at node `end` (walking main inputs up to its generator) */
-  const buildChain = (end: string): Chain => {
+  const buildChain = (end: string, nested = true): Chain => {
     const ids: string[] = []
     const seen = new Set<string>()
-    let cur = upstream(end)
+    let cur: string | undefined = end
     while (cur) {
       if (seen.has(cur)) throw new CycleError(cur)
       seen.add(cur)
       ids.unshift(cur)
-      cur = upstream(inFlow.get(cur))
+      cur = inFlow.get(cur)
     }
     if (ids.length === 0) throw new Error('empty chain')
+    // a switched-off call is a `// .call()` line of its own: it can't start a chain, nor sit inside a texture argument
+    // (written on one line), unless it already did in the code being edited
+    const first = byId.get(ids[0])!.call!
+    if (first.disabled && !prevOffGen.has(first.id)) throw new OffError(first.id, `A chain can't start with a switched-off node: switch ${first.fn} on first, or switch the whole chain off.`)
+    if (nested) for (const id of ids.slice(1)) {
+      const c = byId.get(id)!.call!
+      if (c.disabled && !prevOffNested.has(c.id)) throw new OffError(c.id, `${c.fn} is switched off, and a texture input is written on one line: switch it on first, or switch off the call taking it.`)
+    }
     const calls = ids.map(emitCall)
     const old = prevChainByGen.get(calls[0].id)
     const chain: Chain = old ? { ...old, gen: calls[0], mods: calls.slice(1) } : { id: newId('h'), gen: calls[0], mods: calls.slice(1) }
@@ -351,26 +383,9 @@ export function graphToIR(g: Graph, prev: Sketch, prevMeta: CompileMeta = {}): C
     if (to?.kind === 'out' && e.port === 'in' && from?.kind === 'call') ends.push({ node: e.from, out: to.name as OutName })
   }
   for (const n of g.nodes) {
-    if (n.kind !== 'call' || n.bypassed) continue
-    const used = (outs.get(n.id) ?? []).some((e) => {
-      const to = byId.get(e.to)
-      // a texture argument of a bypassed node is kept with that node (in meta), not promoted to a chain of its own
-      return !!to && (e.port !== 'in' || to.kind !== 'call' || !to.bypassed || hasLiveDownstream(e.to))
-    })
-    if (!used) ends.push({ node: n.id, out: null })
+    if (n.kind !== 'call') continue
+    if (!(outs.get(n.id) ?? []).some((e) => byId.has(e.to))) ends.push({ node: n.id, out: null })
   }
-  function hasLiveDownstream(id: string, seen = new Set<string>()): boolean {
-    if (seen.has(id)) return false
-    seen.add(id)
-    return (outs.get(id) ?? []).some((e) => {
-      const to = byId.get(e.to)
-      if (!to) return false
-      if (to.kind === 'call' && to.bypassed) return hasLiveDownstream(to.id, seen)
-      return true
-    })
-  }
-  // bypassed ends: a bypassed last node makes its upstream the end
-  for (const end of ends) end.node = upstream(end.node) ?? end.node
 
   // ---- match ends with previous chain statements (keeps ids, text and order)
   const prevChains = prev.stmts.filter((s): s is ChainStmt => s.k === 'chain')
@@ -428,7 +443,7 @@ export function graphToIR(g: Graph, prev: Sketch, prevMeta: CompileMeta = {}): C
           const from = inFlow.get(p.node.id)
           if (from) {
             const fromNode = byId.get(from)!
-            const value: Value = fromNode.kind === 'call' ? { k: 'tex', chain: buildChain(from) } : valueFrom(from)
+            const value: Value = fromNode.kind === 'call' ? { k: 'tex', chain: buildChain(from, false) } : valueFrom(from)
             stmts.push({ ...s, value } as Stmt)
             continue
           }
@@ -441,7 +456,7 @@ export function graphToIR(g: Graph, prev: Sketch, prevMeta: CompileMeta = {}): C
         stmts.push(s)
         if (!known.has(s.id)) touched.push(s.id)
       } else {
-        const chain = buildChain(p.end.node)
+        const chain = buildChain(p.end.node, false)
         const prevS = p.prev
         if (prevS) {
           const out = prevS.chain.out === undefined && p.end.out === 'o0' ? undefined : p.end.out
@@ -460,31 +475,13 @@ export function graphToIR(g: Graph, prev: Sketch, prevMeta: CompileMeta = {}): C
   } catch (e) {
     if (e instanceof CycleError) {
       errors.push({ message: 'This connection makes a loop. Loops must go through an output (o0–o3): write with out(), read back with src().', node: e.node })
-      return { sketch: prev, meta: { links: prevMeta.links ?? {}, bypass: prevMeta.bypass ?? {} }, dup: {}, errors }
+      return { sketch: prev, meta: { links: prevMeta.links ?? {} }, dup: {}, errors }
+    }
+    if (e instanceof OffError) {
+      errors.push({ message: e.message, node: e.node })
+      return { sketch: prev, meta: { links: prevMeta.links ?? {} }, dup: {}, errors }
     }
     throw e
-  }
-
-  // ---- bypassed calls: remember them whole, with what they follow (not counted as duplicates)
-  const dupMain = { ...dup }
-  const bypass: Record<string, { call: Call; after: string | null }> = {}
-  for (const n of g.nodes) {
-    if (n.kind !== 'call' || !n.bypassed) continue
-    let call: Call
-    try {
-      const args = n.call!.args.slice()
-      for (const [key, e] of argIn) {
-        const [nid, p] = splitKey(key)
-        if (nid !== n.id) continue
-        while (args.length <= p) args.push(DEFAULT)
-        args[p] = valueFrom(e.from)
-      }
-      call = { ...n.call!, args }
-    } catch {
-      call = n.call!
-    }
-    const up = inFlow.get(n.id)
-    bypass[n.id] = { call, after: up ?? null }
   }
 
   stmts = hoistDefs(stmts)
@@ -494,7 +491,7 @@ export function graphToIR(g: Graph, prev: Sketch, prevMeta: CompileMeta = {}): C
     if (predBefore.get(s.id) !== (i ? stmts[i - 1].id : '')) touched.push(s.id)
   })
   const sketch = respace({ ...prev, stmts }, touched)
-  return { sketch, meta: { links, bypass }, dup: dupMain, errors }
+  return { sketch, meta: { links }, dup, errors }
 }
 
 function splitKey(key: string): [string, number] {

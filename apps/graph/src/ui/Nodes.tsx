@@ -16,7 +16,8 @@ import { outId, type GNode, type Port } from '../model'
 import { setNodeArg, updateNode } from '../ops'
 import { HEAD, ROW, sizeOf } from '../view'
 import { openFnPicker } from './Palette'
-import { PreviewSlot } from './Preview'
+import { NodeOff } from './Off'
+import { togglePreview } from './Preview'
 
 export const TYPE_LABEL: Record<string, string> = { src: 'Source', coord: 'Geometry', color: 'Color', combine: 'Blend', combineCoord: 'Modulate', unknown: 'Unknown', plugin: 'Plugin' }
 export const TYPE_ICON: Record<string, string> = { src: '◉', coord: '⤢', color: '◐', combine: '⊕', combineCoord: '≈', unknown: '?', plugin: '✦' }
@@ -37,7 +38,7 @@ export interface NodeProps {
   dup: number
   error?: string
   shadowed?: boolean
-  /** a live preview of the texture at this node is pinned */
+  /** an "up to here" preview of this node is pinned */
   preview?: boolean
 }
 
@@ -98,7 +99,7 @@ function CallCard(p: NodeProps) {
   const targets = p.targets ? p.targets.split(',') : []
   return (
     <div
-      class={`node call t-${type} ${plugin ? 'plugin' : ''} ${p.selected ? 'sel' : ''} ${n.bypassed ? 'bypassed' : ''} ${p.error ? 'err' : ''} ${p.shadowed ? 'shadowed' : ''} ${!def ? 'unknown' : ''}`}
+      class={`node call t-${type} ${plugin ? 'plugin' : ''} ${p.selected ? 'sel' : ''} ${n.disabled ? 'is-disabled off' : ''} ${p.error ? 'err' : ''} ${p.shadowed ? 'shadowed' : ''} ${!def ? 'unknown' : ''}`}
       style={{ transform: `translate(${p.x}px,${p.y}px)`, width: `${s.w}px`, height: `${s.h}px` }}
       data-node={n.id}
       data-fn={call.fn}
@@ -125,11 +126,14 @@ function CallCard(p: NodeProps) {
             ×{p.dup}
           </button>
         )}
-        {n.bypassed && <span class="badge byp">bypassed</span>}
         {p.shadowed && <span class="badge shadow" title="a later chain writes the same output">shadowed</span>}
+        <span class="hgrow" />
+        <button type="button" class={`peye ${p.preview ? 'on' : ''}`} data-testid="node-eye" aria-pressed={!!p.preview} aria-label={`${p.preview ? 'Unpin' : 'Pin'} a preview up to ${call.fn}`} title="Preview everything up to here" onClick={(e) => (e.stopPropagation(), togglePreview(n.id))}>
+          👁
+        </button>
+        <NodeOff n={n} />
         <Port node={n.id} port="out" dir="out" />
       </div>
-      {p.preview && <PreviewSlot id={n.id} />}
       {p.error && <div class="nerr" role="alert">{p.error}</div>}
       <div class="nbody">
         {Array.from({ length: rows }, (_, i) => {
@@ -361,7 +365,7 @@ function ModCard(p: NodeProps) {
   const spec = valueToMod(n.value!) ?? defaultSpec('expr')
   const s = sizeOf(n, ctx.catalog)
   return (
-    <div class={`node mod ${p.selected ? 'sel' : ''}`} style={{ transform: `translate(${p.x}px,${p.y}px)`, width: `${s.w}px`, height: `${s.h}px` }} data-node={n.id} data-testid="node" data-kind="mod" data-mod={spec.kind}>
+    <div class={`node mod ${p.selected ? 'sel' : ''} ${n.disabled ? 'is-disabled off' : ''}`} style={{ transform: `translate(${p.x}px,${p.y}px)`, width: `${s.w}px`, height: `${s.h}px` }} data-node={n.id} data-testid="node" data-kind="mod" data-mod={spec.kind}>
       <div class="nhead" data-drag="1">
         <span class="ticon">{MOD_ICON[spec.kind]}</span>
         <button
@@ -401,7 +405,7 @@ function DefCard(p: NodeProps) {
   const spec = valueToMod(v)
   const targets = p.targets ? p.targets.split(',') : []
   return (
-    <div class={`node def ${p.selected ? 'sel' : ''}`} style={{ transform: `translate(${p.x}px,${p.y}px)`, width: `${s.w}px`, height: `${s.h}px` }} data-node={n.id} data-testid="node" data-kind="def">
+    <div class={`node def ${p.selected ? 'sel' : ''} ${n.disabled ? 'is-disabled off' : ''}`} style={{ transform: `translate(${p.x}px,${p.y}px)`, width: `${s.w}px`, height: `${s.h}px` }} data-node={n.id} data-testid="node" data-kind="def">
       <div class="nhead" data-drag="1">
         {(fed || v.k === 'default' || v.k === 'tex' || v.k === 'var') && <Port node={n.id} port="in" dir="in" ok={targets.includes('in')} />}
         <span class="ticon">𝑥</span>
@@ -415,6 +419,8 @@ function DefCard(p: NodeProps) {
           {st.name}
         </button>
         <span class="badge">used {uses}×</span>
+        <span class="hgrow" />
+        <NodeOff n={n} />
         <Port node={n.id} port="out" dir="out" />
       </div>
       {!fed && v.k === 'num' && (
@@ -512,10 +518,11 @@ function SetupCard(p: NodeProps) {
     )
   }
   return (
-    <div class={`node setup ${p.selected ? 'sel' : ''}`} style={{ transform: `translate(${p.x}px,${p.y}px)`, width: `${s.w}px`, height: `${s.h}px` }} data-node={n.id} data-testid="node" data-kind={st.k}>
+    <div class={`node setup ${p.selected ? 'sel' : ''} ${n.disabled ? 'is-disabled off' : ''}`} style={{ transform: `translate(${p.x}px,${p.y}px)`, width: `${s.w}px`, height: `${s.h}px` }} data-node={n.id} data-testid="node" data-kind={st.k}>
       <div class="nhead" data-drag="1">
         <b>{st.k === 'setting' ? st.name : st.k === 'render' ? 'render' : 'source'}</b>
         <small>setup</small>
+        <NodeOff n={n} />
       </div>
       <div class="nbody pad">{body}</div>
     </div>
