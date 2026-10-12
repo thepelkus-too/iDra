@@ -1,5 +1,5 @@
 // Top bar, chain strip, banners and the sheets (open another sketch, import, setup, menu).
-import { describe, detectMidi, mountAbout, mountSwitcher, newId, riskyParts, toCode, type CapItem, type LibraryEntry, type Stmt } from '@hydra-ipad/core'
+import { describe, detectMidi, previewMode, setPreviewMode, type PreviewMode, mountAbout, mountSwitcher, newId, riskyParts, toCode, type CapItem, type LibraryEntry, type Stmt } from '@hydra-ipad/core'
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks'
 import {
   copyCode,
@@ -21,6 +21,7 @@ import { focusNode } from '../nav'
 import { AudioMount } from './FnEditor'
 import { openMenu } from './Menu'
 import { addStatement } from './Rows'
+import { toggleTray, useTray } from './Tray'
 
 declare const __COMMIT__: string
 
@@ -29,6 +30,7 @@ declare const __COMMIT__: string
 export function TopBar({ mode, setMode, onToggleAudio }: { mode: 'blocks' | 'code'; setMode: (m: 'blocks' | 'code') => void; onToggleAudio: () => void }) {
   useStore()
   const bd = useBackdrop()
+  const tr = useTray()
   const store = ctx.store
   const sk = store.sketch
   const sw = useRef<HTMLSpanElement>(null)
@@ -84,6 +86,11 @@ export function TopBar({ mode, setMode, onToggleAudio }: { mode: 'blocks' | 'cod
           Code
         </button>
       </div>
+      {mode === 'blocks' && (
+        <button type="button" class={`icon ${tr.open ? 'on' : ''}`} data-testid="tray-toggle" aria-label="Operators" aria-pressed={tr.open} title="Operators: drag one into the stack" onClick={() => toggleTray()}>
+          ＋
+        </button>
+      )}
       <button type="button" class="icon" data-testid="undo" aria-label="Undo" title="Undo (⌘Z, or two-finger tap)" disabled={!store.canUndo} onClick={() => store.undo()}>
         ↶
       </button>
@@ -145,6 +152,7 @@ function openMoreMenu(el: HTMLElement) {
             },
           ]
         : []),
+      { label: `Previews: ${PREVIEW_LABEL[previewMode()]}`, hint: 'tap to change', run: () => setPreviewMode(NEXT_PREVIEW[previewMode()]), testid: 'menu-previews' },
       { label: appPrefs.get<boolean>('penPressure') ? 'Pencil pressure: on' : 'Pencil pressure: off', run: () => appPrefs.set('penPressure', !appPrefs.get<boolean>('penPressure')), hint: 'finer when pressing' },
       { label: 'About / Source', run: () => openAbout() },
     ],
@@ -233,6 +241,7 @@ export function ChainStrip() {
               <small>{it.gen}</small>
               {it.flag === 'shadowed' && <i class="tag">shadowed</i>}
               {it.flag === 'not-rendered' && <i class="tag">not rendered</i>}
+              {it.flag === 'off' && <i class="tag">off</i>}
             </button>
             {it.flag === 'not-rendered' && (
               <button
@@ -266,6 +275,9 @@ export function ChainStrip() {
 }
 
 // ---------------------------------------------------------------- add bar
+
+const PREVIEW_LABEL: Record<PreviewMode, string> = { demand: 'on demand', live: 'live', off: 'off' }
+const NEXT_PREVIEW: Record<PreviewMode, PreviewMode> = { demand: 'live', live: 'off', off: 'demand' }
 
 export function AddBar() {
   const press = (e: MouseEvent) =>
@@ -318,8 +330,19 @@ export function Banners() {
   const d = useMemo(() => describe(sk), [sk])
   const st = runner.status
   const errs = runner.currentErrors()
+  const revived = metaOf(sk)?.revived
   return (
     <div class="banners" data-testid="banners">
+      {!!revived && (
+        <div class="banner info" role="status" data-testid="revived-banner">
+          <span>
+            {revived} commented-out chunk{revived > 1 ? 's were' : ' was'} revived as disabled. <span class="sub">They show dimmed with <code>//</code>; switch one on with its toggle.</span>
+          </span>
+          <button type="button" class="btn" data-testid="revived-dismiss" onClick={() => ctx.store.setView({ revived: undefined })}>
+            Dismiss
+          </button>
+        </div>
+      )}
       {trust.pending && (
         <div class="banner trust" role="alert" data-testid="trust-banner">
           <div>

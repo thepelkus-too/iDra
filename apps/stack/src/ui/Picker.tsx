@@ -36,7 +36,7 @@ export function groupsFor(position: 'gen' | 'mod', cat = ctx.catalog): FnGroup[]
   return out.filter((g) => g.fns.length)
 }
 
-function Thumb({ name }: { name: string }) {
+export function Thumb({ name, size = 64 }: { name: string; size?: number }) {
   const [url, setUrl] = useState<string | undefined>(thumbs.peek(name))
   const [gone, setGone] = useState(thumbs.has(name) && !thumbs.peek(name))
   const el = useRef<HTMLSpanElement>(null)
@@ -71,9 +71,21 @@ function Thumb({ name }: { name: string }) {
   }, [name])
   return (
     <span class="thumb" ref={el} data-testid="thumb" data-ready={url ? '1' : '0'}>
-      {url ? <img src={url} alt="" width={64} height={64} draggable={false} /> : <span class="glyph">{gone ? 'ƒ' : '…'}</span>}
+      {url ? <img src={url} alt="" width={size} height={size} draggable={false} /> : <span class="glyph">{gone ? 'ƒ' : '…'}</span>}
     </span>
   )
+}
+
+/** The groups narrowed to names containing `q` (case-insensitive); empty groups are dropped. */
+export function filterGroups(groups: FnGroup[], q: string): FnGroup[] {
+  const term = q.trim().toLowerCase()
+  return groups.map((g) => ({ ...g, fns: term ? g.fns.filter((f) => f.name.toLowerCase().includes(term)) : g.fns })).filter((g) => g.fns.length)
+}
+
+/** A name the catalog does not know, typed as a search, that can still be used (a plugin that has not loaded yet). */
+export function customName(q: string): string | undefined {
+  const t = q.trim()
+  return /^[A-Za-z_$][\w$]*$/.test(t) && !ctx.catalog.has(t) ? t : undefined
 }
 
 export interface FnPickerProps {
@@ -89,9 +101,8 @@ export function FnPicker({ position, current, allowCustom, onPick, onClose }: Fn
   useCatalogVersion()
   const [q, setQ] = useState('')
   const groups = useMemo(() => groupsFor(position), [position, ctx.catalog.version])
-  const term = q.trim().toLowerCase()
-  const shown = groups.map((g) => ({ ...g, fns: term ? g.fns.filter((f) => f.name.toLowerCase().includes(term)) : g.fns })).filter((g) => g.fns.length)
-  const custom = allowCustom && /^[A-Za-z_$][\w$]*$/.test(q.trim()) && !ctx.catalog.has(q.trim()) ? q.trim() : undefined
+  const shown = filterGroups(groups, q)
+  const custom = allowCustom ? customName(q) : undefined
   return (
     <div class="picker" data-testid="fn-picker">
       <div class="picker-search">

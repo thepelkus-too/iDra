@@ -27,11 +27,9 @@ import { useHandle, useSwipe } from '../gestures'
 import {
   duplicateMod,
   duplicateStmt,
-  insertMod,
   insertStmt,
   moveMod,
   moveStmt,
-  newCall,
   newChainStmt,
   removeMod,
   removeStmt,
@@ -44,8 +42,13 @@ import {
   uniqueName,
   updateCall,
 } from '../model'
-import { closePopover, openNumberEditor, openPopover, simpleField, toast, usePress } from '@hydra-ipad/kit'
+import { DisableToggle, PreviewPeek, closePopover, disableAction, openNumberEditor, openPopover, simpleField, toast, usePress } from '@hydra-ipad/kit'
+import { onPreviewMode, previewMode, type PreviewSpec } from '@hydra-ipad/core'
+import { useEffect } from 'preact/hooks'
 import { focusNode } from '../nav'
+import { setPeek, stackPreviewPool, togglePeek, usePeek } from '../peek'
+import { setTray } from '../tray'
+import { openTrayAt } from './Tray'
 import type { RowProblem } from '../problems'
 import { ArgView, argInfoFor, type ArgInfo } from './ArgView'
 import { openMenu, type MenuItem } from './Menu'
@@ -81,6 +84,62 @@ function openFnPicker(anchor: Element, position: 'gen' | 'mod', current: string 
   openPopover(anchor, (close) => <FnPicker position={position} current={current} allowCustom={allowCustom} onPick={onPick} onClose={close} />, { width: 440, label: position === 'gen' ? 'Generators' : 'Functions' })
 }
 
+// ---------------------------------------------------------------- switching off, previews, the tray as a delete zone
+
+/** Switch node `id` off or on through the kit's rules (refusals and cascades are said in a toast), as one undo step. */
+export function toggleNode(id: string, what = ''): void {
+  const before = ctx.store.sketch
+  const act = disableAction(before, id, what)
+  const r = act.apply()
+  if (!r.sketch) {
+    if (r.instead) {
+      const alt = disableAction(before, r.instead)
+      if (alt.available) {
+        toast(r.note ?? '', { label: alt.pressed ? 'Switch the whole thing on' : 'Switch the whole thing off', run: () => toggleNode(r.instead!) })
+        return
+      }
+    }
+    toast(r.note ?? 'This can’t be switched off on its own.')
+    return
+  }
+  ctx.store.commit(r.sketch)
+  toast(r.note ?? (act.pressed ? `Switched on${what ? ` ${what}` : ''}` : `Switched off${what ? ` ${what}` : ''}; it stays in the code as a // comment`), { label: 'Undo', run: () => ctx.store.undo() })
+}
+
+/** Is the preview preference on? (off hides every eye and peek) */
+function usePreviewsOn(): boolean {
+  const [m, setM] = useState(previewMode())
+  useEffect(() => onPreviewMode(setM), [])
+  return m !== 'off'
+}
+
+/** Over the open tray's delete zone, with a margin so a reorder that drifts towards the tray doesn't delete by accident. */
+function overTray(x: number, y: number): boolean {
+  const el = document.querySelector<HTMLElement>('[data-testid=tray-delete]')
+  if (!el) return false
+  const r = el.getBoundingClientRect()
+  const m = 12
+  return x >= r.left + m && x <= r.right - m && y >= r.top + m && y <= r.bottom - m
+}
+
+/** Reorder options that also make the tray a delete zone: dropping the dragged row on it calls `del`. */
+function trayDeleteZone(del: () => void) {
+  return {
+    onStart: () => setTray({ rowDrag: true, rowOver: false }),
+    onDragOver: (x: number, y: number, release: boolean) => {
+      const over = overTray(x, y)
+      if (!release) {
+        setTray({ rowOver: over })
+        return false
+      }
+      setTray({ rowDrag: false, rowOver: false })
+      if (over) del()
+      return over
+    },
+    onEnd: () => setTray({ rowDrag: false, rowOver: false }),
+  }
+}
+
 // ---------------------------------------------------------------- call rows
 
 interface CallRowProps {
@@ -103,26 +162,44 @@ function CallRow({ call, chainId, index, count, stmtId, nested, depth, rows }: C
   const n = def ? Math.max(inputs.length, call.args.length) : call.args.length
   const modIndex = index - 1
   const selected = view.selection === call.id
+  const previews = usePreviewsOn()
+  const peek = usePeek()
+  const peekKind = peek?.callId === call.id ? peek.kind : undefined
+  // the gutter toggle: a modifier switches itself; the generator switches its whole statement (chain or def). Pockets have
+  // none: a call inside a texture argument is written on one line and switches with the call that takes it.
+  const toggleId = nested ? undefined : pos === 'gen' ? stmtId : call.id
+  const what = pos === 'gen' ? 'the chain' : `.${call.fn}`
+  const label = `${chainGen(view.sketch, chainId) ?? ''}${pos === 'mod' ? ` → ${call.fn}` : ''}`
 
   const del = () => {
     edit((s) => removeMod(s, chainId, call.id))
     toast(`Deleted .${call.fn}`, { label: 'Undo', run: () => ctx.store.undo() })
   }
-  const swipe = useSwipe({ enabled: pos === 'mod', onCommit: del })
+  const swipe = useSwipe({ enabled: pos === 'mod', onCommit: del, onRight: toggleId ? () => toggleNode(toggleId, what) : undefined })
 
   const openRowMenu = (el: HTMLElement) => {
     ctx.store.select(call.id)
     const items: MenuItem[] = []
+    if (toggleId) {
+      const act = disableAction(ctx.store.sketch, toggleId, what)
+      items.push({ label: act.pressed ? `Switch on ${what}` : `Switch off ${what}`, hint: '//', run: () => toggleNode(toggleId, what), testid: 'menu-disable' })
+    }
+    if (!nested && previews) {
+      items.push({ label: 'Preview up to here', run: () => setPeek({ callId: call.id, chainId, kind: 'prefix' }), testid: 'menu-peek' })
+      if (pos === 'mod') items.push({ label: 'What does this do? (A/B)', run: () => setPeek({ callId: call.id, chainId, kind: 'diff' }), testid: 'menu-ab' })
+    }
     if (pos === 'mod') {
-      items.push({ label: 'Duplicate', hint: '⌘D', run: () => edit((s) => duplicateMod(s, chainId, call.id)), testid: 'menu-duplicate' })
+      items.push({ label: 'Duplicate', hint: '⌘D', sep: items.length > 0, run: () => edit((s) => duplicateMod(s, chainId, call.id)), testid: 'menu-duplicate' })
       items.push({ label: 'Move up', disabled: modIndex === 0, run: () => edit((s) => moveMod(s, chainId, modIndex, modIndex - 1)) })
       items.push({ label: 'Move down', disabled: modIndex === count - 2, run: () => edit((s) => moveMod(s, chainId, modIndex, modIndex + 1)) })
     }
+    // insertion opens the operator tray with a fixed insertion point (the no-drag path)
     items.push({
       label: 'Insert modifier below…',
-      run: () => openFnPicker(el, 'mod', undefined, (name) => insertAt(chainId, pos === 'gen' ? 0 : modIndex + 1, name), true),
+      testid: 'menu-insert-below',
+      run: () => openTrayAt({ kind: 'gap', chainId, index: pos === 'gen' ? 0 : modIndex + 1 }, `Insert below ${pos === 'gen' ? '' : '.'}${call.fn}`),
     })
-    if (pos === 'mod') items.push({ label: 'Insert modifier above…', run: () => openFnPicker(el, 'mod', undefined, (name) => insertAt(chainId, modIndex, name), true) })
+    if (pos === 'mod') items.push({ label: 'Insert modifier above…', testid: 'menu-insert-above', run: () => openTrayAt({ kind: 'gap', chainId, index: modIndex }, `Insert above .${call.fn}`) })
     items.push({ label: pos === 'gen' ? 'Change generator…' : 'Change function…', run: () => openFnPicker(el, pos, call.fn, (name) => edit((s) => replaceFn(s, call.id, name, ctx.catalog)), !def) })
     if (pos === 'mod') items.push({ label: 'Delete', danger: true, sep: true, run: del, testid: 'menu-delete' })
     openMenu(el, items, `${pos === 'gen' ? '' : '.'}${call.fn}`)
@@ -135,6 +212,7 @@ function CallRow({ call, chainId, index, count, stmtId, nested, depth, rows }: C
       min: 1,
       max: count - 1,
       onMove: (from, to) => edit((s) => moveMod(s, chainId, from - 1, to - 1)),
+      ...trayDeleteZone(del),
     }),
     (_e, el) => openRowMenu(el),
   )
@@ -145,6 +223,8 @@ function CallRow({ call, chainId, index, count, stmtId, nested, depth, rows }: C
       ctx.store.select(call.id)
       openFnPicker(el, pos, call.fn, (name) => edit((s) => replaceFn(s, call.id, name, ctx.catalog)), !def)
     },
+    // long-press the name: the row menu (switch off, "what does this do?", insert above / below, …)
+    onLong: (_e, el) => openRowMenu(el),
     onDown: () => ctx.store.select(call.id),
   })
 
@@ -158,15 +238,19 @@ function CallRow({ call, chainId, index, count, stmtId, nested, depth, rows }: C
     args.push({ a, v: call.args[i], i })
   }
   const probs = view.problems.get(call.id)
+  const spec: PreviewSpec | undefined = peekKind === 'diff' ? { kind: 'diff', callId: call.id } : peekKind === 'prefix' ? { kind: 'prefix', chainId, upToCallId: call.id } : undefined
 
   return (
+    <>
     <div
-      class={`crow ${pos} ${selected ? 'selected' : ''} ${def ? '' : 'unknown'}`}
+      class={`crow ${pos} ${selected ? 'selected' : ''} ${def ? '' : 'unknown'} ${call.disabled ? 'is-disabled' : ''} ${toggleId ? 'has-toggle' : ''}`}
       data-call={call.id}
       data-fn={call.fn}
+      data-disabled={call.disabled ? '1' : undefined}
       data-testid={`row-${pos}`}
       {...swipe}
     >
+      {toggleId && <DisableToggle id={toggleId} what={what} class="row-toggle" sketch={view.sketch} onChange={(next) => ctx.store.commit(next)} />}
       <Dot list={probs} />
       <span class="tok fname" data-token="fname" role="button" tabIndex={0} aria-label={`${call.fn} function, tap to change`} data-testid="fname" {...press}>
         {pos === 'mod' ? '.' : ''}
@@ -185,6 +269,22 @@ function CallRow({ call, chainId, index, count, stmtId, nested, depth, rows }: C
         </button>
       )}
       <span class="p">)</span>
+      {!nested && previews && (
+        <button
+          type="button"
+          class={`eye ${peekKind ? 'on' : ''}`}
+          data-testid="eye"
+          aria-pressed={!!peekKind}
+          aria-label={peekKind ? 'Hide the preview' : 'Preview up to here'}
+          title="Preview up to here"
+          onClick={(e) => {
+            e.stopPropagation()
+            togglePeek({ callId: call.id, chainId, kind: peekKind === 'diff' ? 'diff' : 'prefix' })
+          }}
+        >
+          <EyeIcon />
+        </button>
+      )}
       <button
         type="button"
         class={`handle ${pos === 'gen' ? 'pinned' : ''}`}
@@ -194,15 +294,39 @@ function CallRow({ call, chainId, index, count, stmtId, nested, depth, rows }: C
       >
         {pos === 'gen' ? '⌖' : '⋮⋮'}
       </button>
-      {nested && null}
     </div>
+    {spec && previews && (
+      <div class="peek-row" data-reorder="skip" data-testid="peek-row" data-kind={spec.kind}>
+        <PreviewPeek key={`${spec.kind}:${call.id}`} spec={spec} pool={stackPreviewPool()} sketch={view.sketch} label={label} />
+        <button type="button" class="linkish" data-testid="peek-close" onClick={() => setPeek(undefined)}>
+          close
+        </button>
+      </div>
+    )}
+    </>
   )
 }
 
-function insertAt(chainId: string, index: number, name: string): void {
-  const c = newCall(name, ctx.catalog)
-  edit((s) => insertMod(s, chainId, index, c))
-  ctx.store.select(c.id)
+function chainGen(sketch: Sketch, chainId: string): string | undefined {
+  let out: string | undefined
+  const look = (c: Chain) => {
+    if (c.id === chainId) out = c.gen.fn
+    for (const m of [c.gen, ...c.mods]) for (const a of m.args) if (a.k === 'tex') look(a.chain)
+  }
+  for (const st of sketch.stmts) {
+    if (st.k === 'chain') look(st.chain)
+    else if (st.k === 'def' && st.value.k === 'tex') look(st.value.chain)
+  }
+  return out
+}
+
+function EyeIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+      <path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12z" fill="none" stroke="currentColor" stroke-width="1.7" />
+      <circle cx="12" cy="12" r="3" fill="currentColor" />
+    </svg>
+  )
 }
 
 function removeArg(s: Sketch, callId: string, i: number): Sketch {
@@ -238,18 +362,6 @@ function OutRow({ chain, stmtId }: { chain: Chain; stmtId: string }) {
 export function ChainView({ chain, stmtId, nested, depth }: { chain: Chain; stmtId?: string; nested: boolean; depth: number }) {
   const rows = useRef<HTMLDivElement>(null)
   const count = 1 + chain.mods.length
-  const add = (el: Element) =>
-    openFnPicker(
-      el,
-      'mod',
-      undefined,
-      (name) => {
-        const c = newCall(name, ctx.catalog)
-        edit((s) => insertMod(s, chain.id, chain.mods.length, c))
-        ctx.store.select(c.id)
-      },
-      true,
-    )
   return (
     <div class={`chain ${nested ? 'nested' : ''}`} data-chain={chain.id} data-depth={depth}>
       <div class="rows" ref={rows}>
@@ -258,11 +370,6 @@ export function ChainView({ chain, stmtId, nested, depth }: { chain: Chain; stmt
           <CallRow key={m.id} call={m} chainId={chain.id} index={i + 1} count={count} stmtId={stmtId} nested={nested} depth={depth} rows={rows} />
         ))}
         {!nested && stmtId && <OutRow chain={chain} stmtId={stmtId} />}
-        <div class="addrow" data-reorder="skip">
-          <button type="button" class="add" data-testid="add-mod" onClick={(e) => add(e.currentTarget as HTMLElement)}>
-            ＋ add
-          </button>
-        </div>
       </div>
     </div>
   )
@@ -276,11 +383,16 @@ function StmtShell({ stmt, index, total, children, cls = '' }: { stmt: Stmt; ind
   const selected = view.selectedStmt === stmt.id
   const openMenuFor = (el: HTMLElement) => {
     ctx.store.select(stmt.id)
-    const items: MenuItem[] = [
-      { label: 'Duplicate', hint: '⌘D', run: () => duplicateStatement(stmt.id), testid: 'stmt-duplicate' },
+    const items: MenuItem[] = []
+    const act = disableAction(ctx.store.sketch, stmt.id, stmtTitle(stmt))
+    if (act.check.kind === 'stmt' && (act.available || SWITCHABLE.has(stmt.k))) {
+      items.push({ label: act.pressed ? 'Switch on' : 'Switch off', hint: '//', run: () => toggleNode(stmt.id, stmtTitle(stmt)), testid: 'stmt-disable' })
+    }
+    items.push(
+      { label: 'Duplicate', hint: '⌘D', sep: items.length > 0, run: () => duplicateStatement(stmt.id), testid: 'stmt-duplicate' },
       { label: 'Move up', disabled: index === 0, run: () => edit((s) => moveStmt(s, stmt.id, index - 1)) },
       { label: 'Move down', disabled: index === total - 1, run: () => edit((s) => moveStmt(s, stmt.id, index + 1)) },
-    ]
+    )
     if (stmt.k === 'chain') {
       items.push({ label: 'Add a chain after this one', run: () => edit((s) => insertStmt(s, index + 1, newChainStmt(s))) })
     }
@@ -294,14 +406,16 @@ function StmtShell({ stmt, index, total, children, cls = '' }: { stmt: Stmt; ind
       min: 0,
       max: total - 1,
       onMove: (from, to) => edit((s) => moveStmt(s, s.stmts[from].id, to)),
+      ...trayDeleteZone(() => deleteStatement(stmt.id)),
     }),
     (_e, el) => openMenuFor(el),
   )
   return (
     <section
       ref={list as never}
-      class={`stmt k-${stmt.k} ${selected ? 'selected' : ''} ${cls}`}
+      class={`stmt k-${stmt.k} ${selected ? 'selected' : ''} ${stmt.disabled ? 'is-disabled' : ''} ${cls}`}
       data-stmt={stmt.id}
+      data-disabled={stmt.disabled ? '1' : undefined}
       data-testid={`stmt-${stmt.k}`}
       onPointerDown={(e) => {
         const t = e.target as HTMLElement
@@ -312,10 +426,20 @@ function StmtShell({ stmt, index, total, children, cls = '' }: { stmt: Stmt; ind
         <button type="button" class="handle stmt-handle" data-testid="stmt-handle" aria-label="Statement menu; hold and drag to reorder" {...handle}>
           ⠿
         </button>
+        {gutterToggle(stmt) && <DisableToggle id={stmt.id} what={stmtTitle(stmt)} class="stmt-toggle" sketch={view.sketch} onChange={(next) => ctx.store.commit(next)} />}
       </div>
       <div class="stmt-main">{children}</div>
     </section>
   )
+}
+
+const SWITCHABLE = new Set<Stmt['k']>(['chain', 'def', 'source', 'setting', 'render'])
+
+/** Statements whose `//` toggle sits in the gutter. A chain's (and a texture def's) is on its generator row instead. */
+function gutterToggle(s: Stmt): boolean {
+  if (s.k === 'chain') return false
+  if (s.k === 'def') return s.value.k !== 'tex'
+  return SWITCHABLE.has(s.k)
 }
 
 function stmtTitle(s: Stmt): string {

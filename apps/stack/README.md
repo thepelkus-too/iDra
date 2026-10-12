@@ -5,13 +5,16 @@ A text-shaped, touch-first editor for [Hydra](https://github.com/hydra-synth/hyd
 home, and someone who does not can learn the vocabulary by tapping.
 
 ```
-┌──────────────────────────────────────┐
-│ osc ( 20 , 0.1 , 0.8 )          ⌖   │   generator row (pinned first)
-│  .rotate ( 0.8 , 0 )            ⋮⋮  │   modifier row (long-press ⋮⋮ and drag; swipe left to delete)
-│  .modulate ( ┌ noise(3) ┐ , 0.1 ) ⋮⋮ │   a texture argument is an inline pocket holding a nested stack
-│  .out ( o0 )                         │   pinned last
-│  ＋ add                              │
-└──────────────────────────────────────┘
+┌───────────────────────────────────────────┬──────────────┐
+│ // osc ( 20 , 0.1 , 0.8 )          👁  ⌖  │ [ search   ] │  generator row (pinned first); its // switches the whole chain
+│ // .rotate ( 0.8 , 0 )             👁  ⋮⋮ │  RECENT      │  modifier row (long-press ⋮⋮ and drag; swipe left deletes, right switches off)
+│    ┌ peek: osc → rotate ┐                 │  ▣ .kaleid() │  the eye: "preview up to here", under the row
+│ // .kaleid ( 4 )  (dimmed: switched off)  │  GEOMETRY    │  a switched-off row stays in place, dimmed; in the code it is `// .kaleid(4)`
+│ ═══════════════ drop here ═══════════════ │  ▣ .pixelate │  ← dragging a chip from the tray opens a gap between rows
+│ // .modulate ( ┌ noise(3) ┐ , 0.1 ) 👁  ⋮⋮ │  ▣ .repeat() │  a texture argument is an inline pocket holding a nested stack
+│    .out ( o0 )                            │  …           │  pinned last
+└───────────────────────────────────────────┴──────────────┘
+                                         operator tray: beside the stack in landscape, along the bottom in portrait
 ```
 
 It is one of the four prototype editors on the shared core (`packages/core`): same IR, same library, same runtime. It touches
@@ -20,7 +23,7 @@ only `apps/stack/`; everything else comes from `@hydra-ipad/core`.
 ```
 npm run build:all                 # shell + every editor → dist/   (the app is served at /stack/)
 npm run dev --workspace=stack     # vite dev server
-npm test --workspace=stack        # 468 unit/UI tests (conversions, IR edits, autoView, reconcile, store, corpus rendering in jsdom)
+npm test --workspace=stack        # 513 unit/UI tests (conversions, IR edits, autoView, reconcile, store, tray drops, corpus rendering in jsdom)
 npm run typecheck --workspace=stack
 node apps/stack/e2e/acceptance.mjs [--skip-build] [--only=1,2,6]   # real Chromium, touch input, software WebGL → apps/stack/shots/
 ```
@@ -37,11 +40,20 @@ node apps/stack/e2e/acceptance.mjs [--skip-build] [--only=1,2,6]   # real Chromi
 | **long-press** a parameter (and let go without moving) | any argument | kind menu: *Number · Function · Array · Texture · Default* (for texture slots also **o / s** and **variable**), parameter name, catalog default, *Reset to default*. Conversions are sensible: number→array `[n]`, number→function `() => n`, function→number evaluates once (or takes the default), ref ⇄ `src(ref)` pocket. |
 | tap a **ƒ** chip | function value | chips (`time`, `mouse.x/y`, `Math.sin(time)`, `a.fft[0]`, `bpm`, …) insert into a one-line expression field; scale / offset scrubs wrap it as `() => expr * scale + offset`. `a.fft[n]` gets a **bin picker** and a **live meter**. Free text stays editable (autocorrect and smart quotes off). |
 | tap an **array** chip | array value | step strip: drag the bars, `＋ / −` steps, `fast`, `smooth`, `ease`, `offset`, and a playhead that follows `time × speed × bpm/60`. |
-| tap `⋮⋮` | modifier row | row menu: duplicate, move up/down, insert above/below, change function, delete. |
+| tap `⋮⋮` | modifier row | the row menu (as above). |
 | **long-press and drag** `⋮⋮` | modifier row | reorder (generator and `.out` are pinned). The list auto-scrolls at the edges. |
 | **swipe left** | free area of a modifier row (names and chips count as free; numbers scrub) | delete, with an Undo toast. |
 | tap / long-press-drag `⠿` | statement gutter | statement menu / reorder statements (defs must stay above their uses; the editor shows a red dot if you break that). |
-| `＋ add` | under a chain | add a modifier (comes with a `noise(3)` pocket when it needs a texture). |
+| ＋ | top bar | show / hide the **operator tray**: search, *Favourites* and *Recent*, then the same groups and thumbnails as the picker (Geometry · Color · Blend · Modulate · Plugins · Generators), one monospace `.name()` chip each. It sits beside the stack in landscape and along the bottom in portrait, and folds to a thin handle (tap it to open). |
+| **drag** a chip out of the tray | operator tray | move the finger across the tray (up in portrait, sideways in landscape; any mouse drag) and the chip follows: thin gaps open between rows (the target gap shows a line and the rows below part), the stack auto-scrolls at its edges. Drop between two rows to insert there; drop on a texture parameter (`o1`, a pocket, `＋ texture`) to make or extend a pocket (a generator replaces / starts the pocket, a modifier joins it; `o1` becomes `src(o1).mod()`); drop a generator between statements for a new chain. Release over the tray to cancel. Pointer Events, so Pencil works the same. |
+| **tap** a chip | operator tray | insert after the selected row (at the end of the active chain when nothing is selected; a generator starts a new chain after the selected statement). Hold still on a chip: add to / remove from favourites. |
+| type + **Enter** | tray search | insert the first match after the selected row (keyboard path). A name the catalog does not know can be used as is (*Use “name”*). |
+| **drag a row onto the tray** | `⋮⋮` / `⠿` reorder drag, tray open | the open tray turns into *Drop here to delete*; dropping deletes the row (or statement), with an Undo toast. |
+| `//` | gutter of each row | switch the row **off / on**. Off is ordinary commented-out code (`// .rotate(0.8)`, or `// ` before every line of a statement), so the export still runs in vanilla Hydra; the row stays where it is, dimmed and striped, and its numbers stay editable. On the generator row it switches the whole chain; settings, sources, `render()` and plain variables have it under `⠿`. Calls inside a pocket have none (that chain is written on one line): switch the call that takes it. A refusal (e.g. a variable still used) is said in a toast, with *Switch the whole thing off* when that helps. Also in the row menu and the statement menu. |
+| **swipe right** | free area of a row | switch it off / on, with an Undo toast. |
+| 👁 | right of each top-level row | **preview up to here**: a small live picture of the generator and the switched-on modifiers down to this row, under the row (one open at a time). Tap the picture to enlarge and animate it; ≈ marks an approximation (it reads another output, `prev()` or a camera, seen through a copy of the main output). Previews never touch the main output and run only once the sketch is trusted. |
+| **long-press** a function name | any row | the row menu: *Switch off*, *Preview up to here*, **What does this do? (A/B)** (before / after this modifier, A · B toggle on the enlarged peek), duplicate, move, *Insert modifier above / below…* (opens the tray at that point, filtered to modifiers), change function, delete. |
+| *Previews: on demand / live / off* | ⋯ menu | the shared preview preference (all editors): on demand shows a still that refreshes when the chunk changes, live animates every visible peek, off hides every eye. |
 | `＋ Add` | bottom | chain, variable (number / function / array / texture), source, bpm, speed, `render()`, comment, raw code. |
 | **two-finger tap** / **three-finger tap** | stack side | undo / redo (also the ↶ ↷ buttons). A touch over the preview belongs to the preview's own document. |
 | 🎲 | top bar | `randomSketch(seed)`; the seed is shown. **Long-press**: mutate the active chain (gentle / normal / bold), roll again, choose a seed, add a random chain. |
@@ -50,7 +62,7 @@ node apps/stack/e2e/acceptance.mjs [--skip-build] [--only=1,2,6]   # real Chromi
 | ◧ / ▣ | top bar | preview as a **panel** (beside the stack in landscape, on top in portrait) or as the **full background**: the live output fills the screen behind the stack and the code, like hydra.ojack.xyz, and the stack takes the whole area. The choice is shared with the other editors and survives reloads. While it is on, the swatch next to it sets how dark the backing behind text is (light · medium · strong). |
 | Apple Pencil | everywhere | Pointer Events: `pen` behaves like touch. *Pencil pressure* (⋯ menu, off by default) makes a hard press scrub 4× finer. |
 
-Chain strip (under the top bar): **Setup** (sources, bpm, speed, render), one chip per chain in source order labelled by output,
+Chain strip (under the top bar): **Setup** (sources, bpm, speed, render), one chip per chain in source order labelled by output (a switched-off chain is dashed and tagged *off*),
 `＋` for a new chain, and **One | All 4** for the render target. A chain without `.out()` is flagged *not rendered* with a one-tap
 **send to o0** (the first free output when o0 is taken); when two chains write the same output the earlier one is *shadowed*.
 
@@ -65,9 +77,13 @@ Any sketch in the shared library, including one imported from plain text, opens 
   error), tap to edit as text and *recognised text becomes blocks when you leave the field*;
 * unknown calls (a plugin that is not loaded) are generic rows with an editable name and arguments; they upgrade when the plugin
   registers (`catalog.subscribe`);
-* sources, `bpm`/`speed` and `render()` have their own rows and controls.
+* sources, `bpm`/`speed` and `render()` have their own rows and controls;
+* switched-off (disabled) statements and modifiers are rows like any other, dimmed and striped (the kit's `.is-disabled`). A sketch
+  whose commented-out code the importer revived says so once, on first open: *N commented-out chunks were revived as disabled*
+  (dismissible; `meta.stack.revived` holds the count until then).
 
-`meta.stack` holds view state only (`mode`, `active` chain, `renderMode`, the rows and strip as built). It is not in the undo history.
+`meta.stack` holds view state only (`mode`, `active` chain, `renderMode`, the rows and strip as built, the revived-note count).
+Switching off is in the code (`//`), never in `meta.stack`: Chain Stack never had a bypass / mute / solo flag, so there is nothing to migrate. It is not in the undo history.
 Other apps' `meta` is never touched (tested). The IR is the only source of truth: every edit is a new immutable `Sketch` handed to
 `library.autosave`.
 
@@ -83,7 +99,10 @@ Other apps' `meta` is never touched (tested). The IR is the only source of truth
 * `src/runner.ts` the runtime: trust gate (`riskyParts`, `library.needsTrust/approve`; safe-mode runs until the owner says yes), a
   "last good version" so a failing run puts the previous program back instead of a black or frozen preview, error collection,
   fast numeric path.
-* `src/ui/*` Preact components: `Scrub`, `Keypad`, `ArgView` (every value kind), `FnEditor`, `ArrEditor`, `Picker`, `Rows`, `Chrome`, `CodeView`.
+* `src/ui/*` Preact components: `Scrub`, `Keypad`, `ArgView` (every value kind), `FnEditor`, `ArrEditor`, `Picker`, `Tray`, `Rows`, `Chrome`, `CodeView`.
+* `src/tray.ts` where a tapped or dropped operator lands (`tapTarget`) and what the drop does to the IR (`dropOperator`: a gap,
+  a texture parameter, a new chain); pure and unit-tested. `src/drag.ts` the chip drag itself (ghost, gaps, parting rows,
+  auto-scroll). `src/peek.ts` which row's preview is open, and the preview pool the rows use (see Core change requests, 7).
 * `src/problems.ts` which row owns a problem: `validate()` already names nodes; thrown errors are attributed by name
   (`x is not defined / not a function`); everything else goes in the banner at the top of the stack.
 
@@ -108,7 +127,14 @@ Chromium with software WebGL (SwiftShader) and touch emulation through `Input.di
 | 4 | reorder, undo, redo | pass (long-press drag, buttons, two/three-finger taps, ⌘Z/⇧⌘Z) |
 | 5 | offline reload, sketches persist | pass (shell loaded once; `context.setOffline(true)`; reload; the frame bundle comes from the shell's cache) |
 | 6 | corpus: 33 sketches, nothing hidden, export identical, one edit = one line | pass for all 33 (incl. `24-broken` and `33-crlf`); `initScreen()` sketches log a console permissions-policy line from the sandboxed frame |
-| 7 | switch to the harness and back | pass: same sketch and code; `meta.stack`, `meta.graph`, `meta.rack` unchanged |
+| 7 | switch to the harness and back | pass: same sketch and code (including a switched-off `// .kaleid(4)`, still a disabled row when back); `meta.stack`, `meta.graph`, `meta.rack` unchanged |
+| 13a | switch off with `//` and with a swipe right; export comments that line only; switch back on (byte-identical); the generator's `//` comments the whole chain; undo | pass |
+| 13b | the eye: a peek under the row renders from the preview pool without re-running the main runtime; *Previews: off* hides every eye | pass (software WebGL: one still frame on demand) |
+| 13c | A/B a modifier from the long-press menu; the A · before / B · after toggle | pass |
+| 13d | drag a chip from the tray into a gap (the line shows and rows part while dragging); a generator dropped on a pocket replaces its generator | pass |
+| 13e | no-drag paths: long-press → *Insert above* opens the tray filtered to modifiers; search + Enter inserts after the selected row; dragging a row onto the tray deletes it, with undo | pass |
+| 13f | reorder by the handle and swipe-left delete still work next to drag-in | pass |
+| 13g | importing commented-out code: revived chunks are disabled rows; the one-time note is dismissible and stays dismissed | pass (no old bypass flag exists in `meta.stack`, so there is no migration to test) |
 
 Plus checks for the strip flags, setup sheet, dice and mutate, open / import / export, raw editing, error attribution and the
 last-good-frame fallback, the trust gate, the audio chip meter, the picker with thumbnails and plugins, unknown calls, six layouts
@@ -124,7 +150,11 @@ banners, statement reordering, thumbnails (160×90) and completion.
 | ![built by touch, landscape](shots/01-landscape-built.jpg) | ![portrait, preview on top](shots/01-portrait-built.jpg) |
 | ![kind menu](shots/03-kind-menu.jpg) | ![array step strip](shots/03-array-editor.jpg) |
 | ![function editor](shots/03-function-editor.jpg) | ![code view](shots/03-code-view.jpg) |
-| ![audio chip: bin picker and meter](shots/09-audio-chip.jpg) | ![function picker with thumbnails](shots/09-picker.jpg) |
+| ![audio chip: bin picker and meter](shots/09-audio-chip.jpg) | ![operator tray with thumbnails](shots/09-tray.jpg) |
+| ![dragging an operator in: the gap opens](shots/13-drag-in.jpg) | ![a row dragged onto the tray: delete zone](shots/13-drag-out.jpg) |
+| ![a switched-off modifier](shots/13-disabled-row.jpg) | ![a switched-off chain](shots/13-disabled-chain.jpg) |
+| ![preview up to here](shots/13-peek-prefix.jpg) | ![A/B: before and after a modifier](shots/13-peek-ab.jpg) |
+| ![revived commented-out code](shots/13-revived.jpg) | ![tray in portrait](shots/01-portrait-tray.jpg) |
 | ![chain strip flags](shots/08-strip-flags.jpg) | ![trust gate](shots/09-trust-gate.jpg) |
 | ![error: last good frame](shots/09-error-last-good-frame.jpg) | ![Slide Over, 320 pt](shots/10-layout-slide-over-320.jpg) |
 | ![full background, blocks](shots/12-backdrop-landscape-blocks.jpg) | ![full background, code](shots/12-backdrop-portrait-code.jpg) |
@@ -155,6 +185,66 @@ banners, statement reordering, thumbnails (160×90) and completion.
 4. Node attribution for runtime errors: `toRunnable` could return ids by line/column so thrown errors map to rows without guessing from the message.
 5. A cheap clock for the array playhead (`rt.clock()` returning time, speed, bpm) instead of polling `rt.time()`.
 6. Frame `allow="display-capture"` (or a quieter failure) for `initScreen()` sketches.
+7. **Preview pool: a handle can stay in `starting` for ever.** `createPreviewPool`'s `start()` compares `h.plan !== plan` by
+   identity after `await s.rt.ready`, and every `handle.update()` makes a new plan object (same `key`). `PreviewPeek` calls
+   `update()` right after `open()`, so the first preview in a cold pool never runs (stats: `runs 0, frames 0`). Fix: compare
+   `h.plan?.key !== plan.key` (three places). Until then `src/peek.ts` wraps the pool so `update()` waits while a handle is
+   `starting` (the blocks editor hit the same bug).
+8. **Keep the import report.** `library.create(name, code)` drops `importText`'s report, so an editor can't tell commented-out
+   code the importer revived from chunks someone switched off in another editor. Chain Stack counts disabled nodes on its
+   first open of a sketch instead; storing `report.revived` (or the whole report) with the entry would make the note exact.
+9. **`canDisable` for calls in a pocket could offer `instead` as a cascade**, so a single tap can switch the call that takes
+   the pocket without a second step; today the stack shows no toggle in pockets and points to the row menu of the outer call.
+
+## Step 09: switching off, previews and drag-in, in retrospect
+
+Again: none of this was held on an iPad. It was driven with emulated touch (CDP) at 1180×820 and 820×1180 in Chromium with
+software WebGL.
+
+**What felt right.** `//` in the gutter reads exactly like what it does: the dimmed row next to it *is* `// .rotate(0.8)`, and
+the export says the same thing, so there is nothing new to learn and nothing hidden in `meta`. Swiping right to switch off pairs
+naturally with swiping left to delete. The eye under a row answers "what does the chain look like at this point?" without
+leaving the stack, and *What does this do?* with its A/B toggle is the quickest way I found to understand an unfamiliar
+modifier. Dragging a chip into a gap is direct: the line and the parting rows say where it will land before you let go.
+
+**Did drag-in make the stack feel too much like blocks?** Somewhat, and less than I feared. What keeps it code-shaped: the
+chips are monospace `.name()` text, a drop inserts one line and nothing snaps or nests visually beyond the pockets that were
+already there, and values are never dropped into slots (only operators into gaps or texture parameters). What pulls it
+towards blocks: the tray is a palette, and once it is open it is tempting to build by dragging rather than by reading the
+code. Changes I would make: keep the tray closed by default (it is) and open it from a gap (*insert here*) rather than from
+the top bar; show the chip's code in the ghost while dragging (`.kaleid(4)` with defaults, not `.kaleid()`); and drop the
+thumbnails on small screens, where they make it look like a block palette.
+
+**What was clumsy.**
+1. *Row width.* Every top-level row now carries a `//` toggle on the left and an eye plus a handle on the right (≈ 120 pt).
+   At 45 % width a three-argument `osc` wraps; with the side tray open the stack takes 58 % so it does not get worse, but in
+   Split View it will. The eye could move into the long-press menu on narrow layouts.
+2. *Starting a chip drag.* A drag has to begin across the tray's scroll direction (up in portrait, sideways in landscape);
+   a diagonal start scrolls the tray instead. It works but is invisible; a short hold that "lifts" the chip would be clearer.
+3. *Dragging a row to the tray to delete it* works, but the row only follows the finger vertically (reorder keeps it in its
+   column), so you drop "the finger" on the tray, not the row. Swipe-left is still the better delete.
+4. *Pockets.* Calls in a pocket have no `//` (core refuses them, rightly) and no eye, to keep pockets readable; that is a gap
+   in "every row" that users will notice.
+5. *Previews in software WebGL* show one still frame on demand after ≈ 1–3 s; on a GPU it should be much quicker, but I could
+   not measure it. The first peek waits for a preview runtime to boot.
+6. *A switched-off chain draws nothing*, so with one chain the main preview goes black. That is honest (it is what Hydra
+   does) but surprising; the strip chip says *off*, the stack row is dimmed.
+
+### iPad checklist (step 09, Chain Stack)
+
+- [ ] `//` toggles respond to a finger and to Pencil; a switched-off row is clearly dimmed but readable in both orientations and in the full-background preview.
+- [ ] Swipe right on a row's name switches it off/on; swipe left still deletes; neither fires while scrolling the stack vertically.
+- [ ] The generator's `//` switches the whole chain; the strip chip shows *off*; switching on restores the exact text (check Code view).
+- [ ] The eye opens a peek under the row within a second or two; tapping it enlarges and animates; scrolling it offscreen stops it (watch battery / heat with *Previews: live*).
+- [ ] Long-press a modifier's name → *What does this do?*: A/B toggle shows before and after.
+- [ ] *Previews: off* in ⋯ hides every eye; *on demand* brings them back.
+- [ ] The ＋ in the top bar opens the tray beside the stack (landscape) and along the bottom (portrait); its handle folds and reopens it; the on-screen keyboard does not cover the search field in portrait.
+- [ ] Dragging a chip up (portrait) or sideways (landscape) lifts it out of the tray; dragging along the tray scrolls it instead; the stack auto-scrolls near its top and bottom edges while dragging.
+- [ ] Drop between two rows, on `o1` / a pocket, and (a generator) between statements; release over the tray cancels.
+- [ ] Drag a row by `⋮⋮` onto the tray: *Drop here to delete* shows, the row is deleted, Undo brings it back.
+- [ ] Long-press a name → *Insert modifier above…* opens the tray filtered to modifiers; a hardware keyboard can type in the search and press Enter.
+- [ ] Import a sketch with commented-out code: the note says how many chunks were revived; Dismiss sticks after a reload.
+- [ ] Apple Pencil: drag-in, swipe and the toggles work with the Pencil exactly as with a finger.
 
 ## What felt clumsy on touch, and what I would change
 

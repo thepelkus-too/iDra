@@ -46,6 +46,8 @@ button:focus-visible,.tok:focus-visible,input:focus-visible,textarea:focus-visib
 .chipbtn.on{border-color:var(--hi-accent);background:rgba(90,200,200,.14)}
 .chipbtn.shadowed{opacity:.65;text-decoration:line-through}
 .chipbtn.shadowed .tag,.chipbtn .tag{text-decoration:none;display:inline-block}
+.chipbtn.off{opacity:.55;border-style:dashed}
+.chipbtn.off .tag{color:var(--hi-dim);border-color:var(--hi-line)}
 .chipbtn.not-rendered{border-style:dashed;border-color:var(--warn)}
 .chipbtn .tag{font-style:normal;font-size:11px;color:var(--warn);border:1px solid var(--warn);border-radius:6px;padding:0 4px}
 .chipbtn.act{border-color:var(--hi-accent);color:var(--hi-accent)}
@@ -106,7 +108,6 @@ button:focus-visible,.tok:focus-visible,input:focus-visible,textarea:focus-visib
 .crow.swiping[data-swipe=commit]{background:rgba(229,100,95,.28)}
 .crow.dragging{background:var(--hi-panel);box-shadow:0 8px 24px rgba(0,0,0,.5);border:1px solid var(--hi-accent)}
 .crow .handle{position:absolute;right:0;top:4px}
-.crow:not(.out):not(.plain){padding-right:42px}
 .crow.plain{padding-right:6px}
 .crow.unknown .fname{color:var(--warn)}
 .p{color:var(--c-p);padding:0 1px}
@@ -156,6 +157,76 @@ button:focus-visible,.tok:focus-visible,input:focus-visible,textarea:focus-visib
 .pocket .addrow{padding:0 0 0 6px}
 .pocket .add{min-height:44px;font-size:13px}
 .pocket-menu{position:absolute;right:2px;bottom:2px;min-width:44px;min-height:44px;width:44px;height:44px;padding:0;border-radius:10px;font-size:16px;background:rgba(0,0,0,.35);color:var(--hi-dim);z-index:1}
+
+/* ---- switched off (the kit's .is-disabled dims and stripes), the // toggle, the eye, the peek under a row */
+.crow.has-toggle{padding-left:0}
+/* (doubled classes: the kit's .disable-toggle rules come later in the sheet) */
+.disable-toggle.row-toggle,.disable-toggle.stmt-toggle{min-width:40px;width:40px;min-height:44px;height:44px;padding:0;border:0;border-radius:8px;font-size:13px;flex:0 0 auto;background:transparent}
+.disable-toggle.row-toggle.off,.disable-toggle.stmt-toggle.off{border:1px solid var(--hi-accent)}
+.crow.gen .row-toggle:not(.off){color:#4d596e}
+.stmt.is-disabled .crow.gen .row-toggle{color:var(--hi-accent)}
+.crow:not(.out):not(.plain){padding-right:78px}
+.pocket .crow:not(.out):not(.plain){padding-right:42px}
+.eye{position:absolute;right:40px;top:4px;width:36px;min-width:36px;height:44px;padding:0;border:0;background:transparent;color:#5d687c;display:inline-flex;align-items:center;justify-content:center}
+.eye.on{color:var(--hi-accent)}
+.peek-row{display:flex;align-items:flex-end;gap:8px;padding:4px 0 8px 40px;transition:transform .14s ease}
+.peek-row .preview-peek{flex:0 0 auto}
+
+.crow.swiping[data-swipe-dir=right][data-swipe=pending]{background:rgba(90,200,200,.1)}
+.crow.swiping[data-swipe-dir=right][data-swipe=commit]{background:rgba(90,200,200,.26)}
+
+/* ---- the operator tray (bottom in portrait, beside the stack in landscape) */
+.stack-mid{flex:1;min-height:0;display:flex;position:relative}
+.stack-mid.tray-bottom{flex-direction:column}
+.stack-mid>.scroll{flex:1;min-height:0;min-width:0}
+.tray{position:relative;background:var(--hi-panel);display:flex;flex-direction:column;min-width:0;min-height:0}
+.tray.bottom.open{border-top:1px solid var(--hi-line);flex:0 0 auto;max-height:46%}
+.tray.side.open{border-left:1px solid var(--hi-line);flex:0 0 144px;width:144px}
+/* the side tray takes room from the preview, not from the rows */
+.app.land.tray-open .body{grid-template-columns:58% minmax(0,1fr)}
+.tray.closed{position:absolute;z-index:4;background:transparent}
+.tray.bottom.closed{left:50%;bottom:0;transform:translateX(-50%)}
+.tray.side.closed{right:0;top:50%;transform:translateY(-50%)}
+.tray-handle{border:0;background:transparent;padding:0;display:flex;align-items:center;justify-content:center}
+.tray.bottom .tray-handle{width:96px;height:44px}
+.tray.side .tray-handle{width:24px;min-width:24px;height:96px}
+.tray-handle i{display:block;border-radius:999px;background:#56627a}
+.tray.bottom .tray-handle i{width:44px;height:5px}
+.tray.side .tray-handle i{width:5px;height:44px}
+.tray-head{display:flex;gap:4px;padding:6px 6px 4px;align-items:center}
+.tray-head input{flex:1;min-width:0;min-height:44px;border-radius:10px;border:1px solid var(--hi-line);background:var(--hi-bg);padding:0 10px;font-size:16px}
+.tray-close{width:44px;padding:0;font-size:18px;flex:0 0 auto}
+.tray-target{display:flex;align-items:center;justify-content:space-between;gap:6px;padding:0 8px 4px;font:12.5px var(--mono);color:var(--hi-accent)}
+.tray-scroll{min-height:0;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;scrollbar-width:thin}
+.tray.bottom .tray-scroll{display:flex;gap:10px;overflow-x:auto;overflow-y:hidden;padding:0 6px 6px}
+.tray.side .tray-scroll{flex:1;overflow-y:auto;overflow-x:hidden;padding:0 6px 10px}
+.tray-group h5{margin:4px 2px;font:600 10.5px system-ui;letter-spacing:.06em;text-transform:uppercase;color:var(--hi-dim);white-space:nowrap}
+.tray.bottom .tray-group .ops{display:grid;grid-auto-flow:column;grid-template-rows:repeat(2,44px);gap:4px}
+.tray.side .tray-group .ops{display:flex;flex-direction:column;gap:4px}
+.op{display:flex;align-items:center;gap:6px;min-height:44px;padding:0 8px 0 4px;border-radius:10px;white-space:nowrap;justify-content:flex-start;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+.tray.bottom .op{touch-action:pan-x}
+.tray.side .op{touch-action:pan-y}
+.op code{font:13px var(--mono);color:var(--c-fn)}
+.op.gen code{color:#9fd8ff}
+.op small{font-size:10px;color:var(--hi-dim)}
+.op .thumb{width:28px;height:28px;border-radius:5px;flex:0 0 auto}
+.op .thumb img{width:28px;height:28px}
+.op .thumb .glyph{font-size:12px}
+.op.custom{font:13px var(--mono);flex:0 0 auto;align-self:flex-start}
+.tray .empty{padding:8px;font-size:13px}
+.tray-delete{position:absolute;z-index:5;display:flex;align-items:center;justify-content:center;border:2px dashed var(--bad);border-radius:12px;background:rgba(40,16,18,.92);color:var(--bad);font-weight:600;font-size:14px;pointer-events:none}
+.tray.open .tray-delete{inset:4px}
+.tray.rowover .tray-delete{background:rgba(120,30,30,.95);color:#fff}
+
+/* ---- dragging an operator in: the ghost, the insertion line, rows parting, a texture parameter lighting up */
+.drag-ghost{position:fixed;left:0;top:0;z-index:2000;pointer-events:none;font:600 15px var(--mono);color:var(--c-fn);background:var(--hi-panel);border:1px solid var(--hi-accent);border-radius:10px;padding:8px 12px;box-shadow:0 10px 26px rgba(0,0,0,.55);white-space:nowrap}
+.drag-ghost.nowhere{opacity:.6;border-style:dashed}
+.drop-line{position:fixed;left:0;top:0;z-index:1999;pointer-events:none;height:4px;border-radius:4px;background:var(--hi-accent);box-shadow:0 0 0 3px rgba(90,200,200,.25);display:none}
+.chip-dragging .chain .rows>*,.chip-dragging .stack-list>.stmt{transition:transform .14s ease}
+.texslot{display:contents}
+.drop-on{outline:2px solid var(--hi-accent);outline-offset:1px;background:rgba(90,200,200,.14)!important}
+.chip-dragging,.chip-dragging *{cursor:grabbing}
+.app.backdrop .tray.open{background:var(--hi-veil)}
 
 /* ---- other rows */
 .defrow{display:flex;flex-wrap:wrap;align-items:center;min-height:52px;font:16px var(--mono);padding-left:4px}

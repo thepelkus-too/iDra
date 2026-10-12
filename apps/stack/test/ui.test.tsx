@@ -7,7 +7,8 @@ import { describe, enableAll, importText, toCode, type Sketch } from '@hydra-ipa
 import { corpus } from '@hydra-ipad/core/corpus'
 import { ctx } from '../src/ctx'
 import { Store } from '../src/store'
-import { StatementList } from '../src/ui/Rows'
+import { StatementList, toggleNode } from '../src/ui/Rows'
+import { setPeek } from '../src/peek'
 import { makeViewState } from '../src/viewstate'
 
 const host = document.createElement('div')
@@ -15,7 +16,7 @@ document.body.appendChild(host)
 
 function mount(sketch: Sketch) {
   ctx.store = new Store(sketch)
-  ctx.runner = { run() {}, track() {}, setLive() {}, rt: {} } as never
+  ctx.runner = { run() {}, track() {}, setLive() {}, rt: undefined, trust: { pending: true, parts: [] } } as never
   act(() => render(<StatementList view={makeViewState(sketch, [], undefined)} />, host))
   return host
 }
@@ -92,5 +93,66 @@ suite('rows for the odd cases', () => {
     const el = mount(importText(broken.code).sketch)
     expect(el.querySelectorAll('[data-testid=raw-row]').length).toBe(1)
     expect(el.querySelector('[data-testid=raw-status]')?.getAttribute('data-state')).toBe('error')
+  })
+})
+
+suite('switching off and previews', () => {
+  test('every top-level row has a // toggle; pockets do not; the generator’s switches the chain', () => {
+    const el = mount(importText('osc(5)\n  .rotate(1)\n  .modulate(noise(3))\n  .out()\nbpm = 90\n').sketch)
+    expect(el.querySelectorAll('.crow[data-call] > .row-toggle').length).toBe(3)
+    expect(el.querySelector('.pocket .row-toggle')).toBeNull()
+    expect(el.querySelector('[data-testid=stmt-setting] .stmt-toggle')).toBeTruthy()
+    expect(el.querySelector('[data-testid=stmt-chain] .stmt-toggle')).toBeNull()
+    expect(el.querySelector('[data-testid=add-mod]')).toBeNull()
+  })
+
+  test('a disabled modifier and a disabled statement are shown in place, dimmed, with the toggle pressed', () => {
+    const sketch = importText('osc(5)\n  // .rotate(1)\n  .out()\n// noise(3).out(o1)\n').sketch
+    const el = mount(sketch)
+    const row = el.querySelector('[data-fn=rotate]')!
+    expect(row.classList.contains('is-disabled')).toBe(true)
+    expect(row.querySelector('.row-toggle')?.getAttribute('aria-pressed')).toBe('true')
+    const st = el.querySelectorAll('.stack-list > .stmt')[1]
+    expect(st.classList.contains('is-disabled')).toBe(true)
+    expect(st.querySelector('.crow.gen .row-toggle')?.getAttribute('aria-pressed')).toBe('true')
+  })
+
+  test('toggleNode switches a modifier off and on as one undo step each; the text is commented, siblings unchanged', () => {
+    const code = 'osc(5)\n  .rotate(1)\n  .kaleid(4)\n  .out()\n'
+    const sketch = importText(code).sketch
+    mount(sketch)
+    const rot = (sketch.stmts[0] as Extract<Sketch['stmts'][0], { k: 'chain' }>).chain.mods[0]
+    act(() => toggleNode(rot.id, '.rotate'))
+    expect(toCode(ctx.store.sketch)).toBe('osc(5)\n  // .rotate(1)\n  .kaleid(4)\n  .out()\n')
+    act(() => toggleNode(rot.id, '.rotate'))
+    expect(toCode(ctx.store.sketch)).toBe(code)
+    act(() => void ctx.store.undo())
+    expect(toCode(ctx.store.sketch)).toBe('osc(5)\n  // .rotate(1)\n  .kaleid(4)\n  .out()\n')
+  })
+
+  test('a refused switch (a call inside a pocket) changes nothing', () => {
+    const sketch = importText('osc().modulate(noise(3).rotate(1)).out()\n').sketch
+    mount(sketch)
+    const inner = (sketch.stmts[0] as Extract<Sketch['stmts'][0], { k: 'chain' }>).chain.mods[0].args[0]
+    if (inner.k !== 'tex') throw new Error('pocket expected')
+    act(() => toggleNode(inner.chain.mods[0].id))
+    expect(ctx.store.sketch).toBe(sketch)
+  })
+
+  test('an eye on every top-level row opens the peek under that row (one at a time)', () => {
+    const el = mount(importText('osc(5)\n  .rotate(1)\n  .kaleid(4)\n  .out()\n').sketch)
+    expect(el.querySelectorAll('.crow[data-call] > [data-testid=eye]').length).toBe(3)
+    act(() => (el.querySelector('[data-fn=rotate] [data-testid=eye]') as HTMLButtonElement).click())
+    expect(el.querySelectorAll('[data-testid=peek-row]').length).toBe(1)
+    expect(el.querySelector('[data-fn=rotate] + [data-testid=peek-row]')).toBeTruthy()
+    act(() => (el.querySelector('[data-fn=kaleid] [data-testid=eye]') as HTMLButtonElement).click())
+    expect(el.querySelectorAll('[data-testid=peek-row]').length).toBe(1)
+    expect(el.querySelector('[data-fn=kaleid] + [data-testid=peek-row]')).toBeTruthy()
+    act(() => setPeek(undefined))
+  })
+
+  test('texture parameters are marked as drop targets', () => {
+    const el = mount(importText('osc().modulate(o1).blend(noise(3)).out()\n').sketch)
+    expect(el.querySelectorAll('[data-tex-call]').length).toBe(2)
   })
 })
