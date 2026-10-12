@@ -1,10 +1,13 @@
 import { boot } from './kit/boot'
 import { ctx } from './kit/ctx'
 import { App } from './App'
-import { commit, fader, metaNow, recallScene, setValue, storeScene, ui } from './doc'
+import { disabledNodes } from '@hydra-ipad/core'
+import { audition, commit, fader, metaNow, recallScene, setValue, storeScene, toggleOff, ui } from './doc'
 import { dragHooks } from './drag'
 import * as fade from './fade'
 import * as ops from './ops'
+import { migrateBypass } from './ops'
+import { liveActivity } from './previews'
 import * as panel from './panel'
 import { parseKey } from './refs'
 import { CSS } from './styles'
@@ -25,11 +28,17 @@ void boot({
   hasView: (s) => !!metaOf(s),
   App,
   css: CSS,
-  onLoad: () => {
+  migrate: migrateBypass,
+  onLoad: (s, { created }) => {
+    ctx.runner.onLive = liveActivity
     fader.cancel()
-    ui.set({ sel: undefined, armed: undefined, fading: undefined })
+    if (ui.state.audition) audition(undefined)
+    // a sketch this editor has never opened: say once if commented-out code in it came back as switched-off chunks
+    const d = disabledNodes(s)
+    const revived = created ? d.stmts.length + d.calls.length : 0
+    ui.set({ sel: undefined, armed: undefined, fading: undefined, revived: revived || undefined })
     // stored scenes, pins, locks and the fade length are not edits: undo leaves them as they are
     ctx.store.keepOnUndo = ['scenes', 'pins', 'frozen', 'fade', 'open']
   },
-  expose: { ui, metaNow, commit, setValue, recallScene, storeScene, fader, fade, ops, panel, layoutOf, dragHooks },
+  expose: { ui, metaNow, commit, setValue, recallScene, storeScene, toggleOff, audition, fader, fade, ops, panel, layoutOf, dragHooks },
 })

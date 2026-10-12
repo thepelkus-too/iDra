@@ -369,16 +369,16 @@ if (want('2') || want('3') || want('4') || want('5') || want('10') || want('11')
     return 'output behind the rack in both orientations; keypad edit on the veil; switcher items on top'
   })
 
-  if (want('12')) await check('12', 'bypass keeps a module in place out of the code; an unknown call is a grey module that upgrades when its plugin loads; the Mouse XY pad drives mouse; a locked lane ignores the dice', async () => {
-    await importAndOpen(page, S.base, 'osc(10).myPluginFx(0.3, 2).kaleid(4).out()\nnoise(3).out(o1)\n', 'Extras')
+  if (want('12')) await check('12', 'the // switch keeps a module in place, commented out in the code; an unknown call is a grey module that upgrades when its plugin loads; the Mouse XY pad drives mouse; a locked lane ignores the dice', async () => {
+    await importAndOpen(page, S.base, 'osc(10).myPluginFx(0.3, 2).kaleid(5).out()\nnoise(3).out(o1)\n', 'Extras')
     await waitForPicture(page).catch(() => {})
     const kal = await callId(S, 'kaleid')
     const card = `[data-testid=module][data-call="${kal}"]`
-    await tap(S, `${card} [data-testid=bypass]`)
-    await page.waitForSelector(`[data-testid=bypassed][data-call="${kal}"]`)
-    assert.equal(await codeOf(page), 'osc(10).myPluginFx(0.3, 2).out()\nnoise(3).out(o1)\n')
-    await tap(S, `[data-testid=bypassed][data-call="${kal}"] [data-testid=unbypass]`)
-    await page.waitForFunction(() => /kaleid\(4\)/.test(window.__rack.core.toCode(window.__rack.store.sketch)))
+    await tap(S, `${card} .disable-toggle`)
+    await page.waitForSelector(`${card}.is-disabled`)
+    assert.equal(await codeOf(page), 'osc(10).myPluginFx(0.3, 2)\n  // .kaleid(5)\n  .out()\nnoise(3).out(o1)\n')
+    await tap(S, `${card} .disable-toggle`)
+    await page.waitForFunction(() => window.__rack.core.toCode(window.__rack.store.sketch) === 'osc(10).myPluginFx(0.3, 2).kaleid(5).out()\nnoise(3).out(o1)\n')
     assert.equal(await page.locator('.module.unknown[data-fn=myPluginFx] [data-drop=knob]').count(), 2)
     await shot(page, '12-unknown.png')
     await page.evaluate(() => window.__rack.ctx.catalog.refresh([{ name: 'myPluginFx', type: 'color', origin: 'plugin:test', inputs: [{ name: 'amount', type: 'float', default: 0.5 }, { name: 'steps', type: 'float', default: 1 }], glsl: 'return _c0;' }]))
@@ -390,7 +390,7 @@ if (want('2') || want('3') || want('4') || want('5') || want('10') || want('11')
     assert.ok(await page.isVisible('[data-testid=fn-picker] h4:has-text("Plugins")'))
     await page.keyboard.press('Escape')
     await sleep(150)
-    assert.equal(await codeOf(page), 'osc(10).myPluginFx(0.3, 2).kaleid(4).out()\nnoise(3).out(o1)\n')
+    assert.equal(await codeOf(page), 'osc(10).myPluginFx(0.3, 2).kaleid(5).out()\nnoise(3).out(o1)\n')
     // the Mouse XY pad: Hydra's mouse follows the finger
     const pad = await touch.center(await reach(S, '[data-testid=mouse-pad]'))
     await touch.drag({ x: pad.box.x + 4, y: pad.box.y + 4 }, pad.box.width - 8, pad.box.height - 8, { steps: 8, release: false })
@@ -409,7 +409,7 @@ if (want('2') || want('3') || want('4') || want('5') || want('10') || want('11')
     // (the preview reports an error here: myPluginFx was only registered in the editor's catalog, not loaded in the frame)
     await sleep(800)
     await shot(page, '12-dice.png')
-    return `bypass round trip exact; grey → plugin module; mouse ${Math.round(mouse.x)},${Math.round(mouse.y)}; dice skipped the locked lane`
+    return `// switch round trip exact; grey → plugin module; mouse ${Math.round(mouse.x)},${Math.round(mouse.y)}; dice skipped the locked lane`
   })
   assert.deepEqual(S.errors.filter((e) => !/Permissions policy/.test(e)), [], 'rack block: no page errors')
 })
@@ -547,14 +547,222 @@ if (want('8')) await block('8', async () => {
   await shot(page, '08-corpus-last.png')
 })
 
+// ============================================================================================================ 13–14. switching off, previews
+const peekPixels = (S, sel) => S.page.evaluate((sel) => {
+  const c = document.querySelector(sel)
+  if (!c) return null
+  const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data
+  let lit = 0
+  let sum = 0
+  for (let i = 0; i < d.length; i += 4) {
+    const v = d[i] + d[i + 1] + d[i + 2]
+    sum += v
+    if (v > 40) lit++
+  }
+  return { lit: lit / (d.length / 4), mean: sum / (d.length / 4), sample: Array.from(d.slice(0, 4096)) }
+}, sel)
+const pixDiff = (a, b) => {
+  let x = 0
+  for (let i = 0; i < a.length; i++) x += Math.abs(a[i] - b[i])
+  return x / a.length
+}
+
+if (want('13') || want('14')) await block('13', async () => {
+  const S = await startS({ viewport: { width: 1180, height: 820 } })
+  const { page, touch } = S
+  const SRC = 'osc(20, 0.1, 0.8).rotate(0.8).kaleid(5).out()\nnoise(3).color(0.3, 0.6, 1).out(o1)\n'
+
+  if (want('13')) await check('13a', 'switch a module off by touch: the export comments it out, siblings untouched, still visible and adjustable; switch it on: byte-identical; recompile cost measured', async () => {
+    await importAndOpen(page, S.base, SRC, 'Switch off')
+    await waitForPicture(page)
+    await page.waitForFunction(() => window.__rack.runner.status.phase === 'ok', null, { timeout: 15000 })
+    await sleep(1200)
+    const kal = await callId(S, 'kaleid')
+    const card = `[data-testid=module][data-call="${kal}"]`
+    const s0 = await page.evaluate(() => ({ ...window.__rack.runner.rt.stats }))
+    // rAF gaps for 1.5 s around the toggle (software GL: only the worst gap is meaningful)
+    const rec = page.evaluate(() => new Promise((res) => {
+      const d = []
+      let last = performance.now()
+      const t0 = last
+      const f = (t) => {
+        d.push(t - last)
+        last = t
+        if (t - t0 < 1500) requestAnimationFrame(f)
+        else res(d)
+      }
+      requestAnimationFrame(f)
+    }))
+    await sleep(400)
+    const tTap = Date.now()
+    await tap(S, `${card} .disable-toggle`)
+    await page.waitForFunction(() => window.__rack.runner.status.phase === 'ok' && window.__rack.runner.runs > 0, null, { timeout: 10000 })
+    const gaps = await rec
+    const runMs = await page.evaluate(() => window.__rack.runner.status.ms)
+    const tDone = Date.now() - tTap
+    const s1 = await page.evaluate(() => ({ ...window.__rack.runner.rt.stats }))
+    const off = await codeOf(page)
+    assert.equal(off, 'osc(20, 0.1, 0.8).rotate(0.8)\n  // .kaleid(5)\n  .out()\nnoise(3).color(0.3, 0.6, 1).out(o1)\n')
+    assert.ok(await page.isVisible(`${card}.is-disabled`), 'the module is still there, greyed')
+    // knobs stay adjustable while it is off; the value waits in the comment
+    await keypad(S, knob(kal, 0), '7')
+    assert.match(await codeOf(page), /\/\/ \.kaleid\(7\)/)
+    await shot(page, '13-switched-off.png')
+    await tap(S, `${card} .disable-toggle`)
+    await page.waitForFunction(() => /\.rotate\(0\.8\)\.kaleid\(7\)\.out\(\)/.test(window.__rack.core.toCode(window.__rack.store.sketch)))
+    await keypad(S, knob(kal, 0), '5')
+    assert.equal(await codeOf(page), SRC, 'switched back on: byte-identical')
+    const worst = Math.max(...gaps)
+    notes.push(`Switching a module off recompiles once (${s1.recompiles - s0.recompiles} recompile, run ${runMs?.toFixed(0)} ms, ${tDone} ms from tap to picture); worst frame gap around it ${worst.toFixed(0)} ms in software GL.`)
+    return `${s1.recompiles - s0.recompiles} recompile per toggle, run ${runMs?.toFixed(0)} ms, worst frame gap ${worst.toFixed(0)} ms (software GL)`
+  })
+
+  if (want('13')) await check('13b', 'each module previews the chain up to it (on demand: a still; tap animates); A/B before/after a modifier from its menu', async () => {
+    await importAndOpen(page, S.base, SRC, 'Previews')
+    await waitForPicture(page)
+    const rot = await callId(S, 'rotate')
+    const kal = await callId(S, 'kaleid')
+    const peek = (id) => `[data-testid=module][data-call="${id}"] .preview-peek`
+    await reach(S, peek(kal))
+    await page.waitForFunction((sel) => /paused|running/.test(document.querySelector(sel)?.dataset.state ?? ''), peek(kal), { timeout: 30000 })
+    await sleep(300)
+    const still = await peekPixels(S, `${peek(kal)} canvas`)
+    assert.ok(still && still.lit > 0.05, `the still has a picture (${(still?.lit * 100).toFixed(0)}% lit)`)
+    const nPeeks = await page.locator('[data-testid=module] .preview-peek').count()
+    await tap(S, `${peek(rot)} .peek-pic`)
+    await page.waitForFunction((sel) => document.querySelector(sel)?.classList.contains('open') && document.querySelector(sel)?.dataset.state === 'running', peek(rot), { timeout: 30000 })
+    await shot(page, '13-peek.png')
+    await tap(S, `${peek(rot)} .peek-pic`)
+    // A/B from the module menu
+    await tap(S, `[data-testid=module][data-call="${kal}"] [data-testid=module-more]`)
+    await tap(S, '[data-testid=menu-ab]')
+    await page.waitForSelector('[data-testid=diff-peek] .preview-peek.open')
+    await page.waitForFunction(() => document.querySelector('[data-testid=diff-peek] .preview-peek')?.dataset.state === 'running', null, { timeout: 30000 })
+    await sleep(600)
+    const b = await peekPixels(S, '[data-testid=diff-peek] canvas')
+    await touch.tap('[data-testid=diff-peek] .peek-ab button:first-child')
+    await sleep(600)
+    const a = await peekPixels(S, '[data-testid=diff-peek] canvas')
+    assert.equal(await page.getAttribute('[data-testid=diff-peek] .peek-ab button:first-child', 'aria-pressed'), 'true')
+    const d = pixDiff(a.sample, b.sample)
+    assert.ok(d > 3, `before and after differ (${d.toFixed(1)})`)
+    await shot(page, '13-ab.png')
+    await page.keyboard.press('Escape')
+    const stats = await page.evaluate(() => window.__rack.core && document.querySelectorAll('[data-preview-pool] iframe').length)
+    assert.ok(stats <= 2, `at most two preview runtimes (${stats})`)
+    // performance mode takes the previews off the surface (nothing left running behind it)
+    await tap(S, '[data-testid=perform]')
+    await page.waitForSelector('.pip.perform')
+    assert.equal(await page.locator('[data-testid=module] .preview-peek').count(), 0, 'no module previews while performing')
+    await touch.tap('[data-testid=perform-exit]')
+    return `${nPeeks} module previews; still ${(still.lit * 100).toFixed(0)}% lit; A/B differ by ${d.toFixed(1)}; ≤${stats} preview runtimes`
+  })
+
+  if (want('13')) await check('13c', 'scenes store on/off with the values (a different on/off swaps in at the end of the fade); a pinned // plays in performance mode; audition a lane full screen without touching the sketch', async () => {
+    await importAndOpen(page, S.base, 'bpm = 120\n' + SRC, 'Scenes off')
+    await waitForPicture(page)
+    const kal = await callId(S, 'kaleid')
+    const card = `[data-testid=module][data-call="${kal}"]`
+    await hold(S, '[data-testid=scene-1]', 900)
+    await tap(S, `${card} .disable-toggle`)
+    await page.waitForSelector(`${card}.is-disabled`)
+    await hold(S, '[data-testid=scene-2]', 900)
+    const offCode = await codeOf(page)
+    await tap(S, '[data-testid=scene-1]')
+    await sleep(700)
+    assert.equal(await codeOf(page), offCode, 'mid-fade: the structure has not swapped yet')
+    await page.waitForFunction(() => !window.__rack.ui.state.fading, null, { timeout: 6000 })
+    assert.equal(await codeOf(page), 'bpm = 120\n' + SRC, 'landed on scene 1: kaleid on again')
+    await tap(S, '[data-testid=scene-2]')
+    await page.waitForFunction(() => !window.__rack.ui.state.fading, null, { timeout: 6000 })
+    assert.equal(await codeOf(page), offCode, 'scene 2 brings the switched-off state back')
+    // pin kaleid's switch, play it in performance mode
+    await tap(S, `${card} [data-testid=module-more]`)
+    await tap(S, '[data-testid=menu-pin-off]')
+    await tap(S, '[data-testid=perform]')
+    await page.waitForSelector('.pip.perform')
+    await touch.tap(`[data-testid="pin-off-${kal}"]`)
+    await page.waitForFunction(() => /\.kaleid\(5\)\.out\(\)/.test(window.__rack.core.toCode(window.__rack.store.sketch)))
+    await shot(page, '13-perform-switch.png')
+    await touch.tap('[data-testid=perform-exit]')
+    await page.waitForSelector('.pip:not(.perform)')
+    // audition o1
+    const before = await page.evaluate(() => JSON.stringify(window.__rack.store.sketch.stmts))
+    const r0 = await page.evaluate(() => window.__rack.runner.runs)
+    await tap(S, '[data-testid=audition-o1]')
+    await page.waitForSelector('.pip.perform [data-testid=audition-tag]')
+    await page.waitForFunction((r0) => window.__rack.runner.runs > r0 && window.__rack.runner.status.phase === 'ok', r0, { timeout: 10000 })
+    await sleep(800)
+    const shown = await page.evaluate(async () => window.__rack.runner.rt.screenshot())
+    await shot(page, '13-audition.png')
+    assert.equal(await page.evaluate(() => JSON.stringify(window.__rack.store.sketch.stmts)), before, 'the sketch is unchanged')
+    await touch.tap('[data-testid=audition-exit]')
+    await page.waitForSelector('.pip:not(.perform)')
+    await page.waitForFunction(() => window.__rack.runner.status.phase === 'ok', null, { timeout: 10000 })
+    await sleep(800)
+    const back = await page.evaluate(async () => window.__rack.runner.rt.screenshot())
+    assert.notEqual(shown, back, 'the audition showed a different picture (o1) from the sketch (o0)')
+    assert.equal(await page.evaluate(() => window.__rack.store.canUndo && window.__rack.store.past.length >= 0), true)
+    return 'scene recall swapped on/off at the end of the fade; pinned // toggled in performance mode; audition left the sketch alone'
+  })
+
+  if (want('14')) await check('14', 'an old sketch with a bypassed module opens with it switched off in the code and meta.rack.bypass gone; imported commented-out code comes back disabled with a one-time note', async () => {
+    await page.goto(S.base + 'rack/')
+    await page.waitForFunction(() => !!window.__rack?.lib, null, { timeout: 15000 })
+    const id = await page.evaluate(async () => {
+      const lib = window.__rack.lib
+      const s = await lib.create('Old bypass', 'osc(20, 0.1, 0.8).rotate(0.8).out()\n')
+      const ch = s.stmts[0].chain
+      const kal = { id: 'c-oldkal', fn: 'kaleid', args: [{ k: 'num', v: 5 }] }
+      await lib.put({ ...s, meta: { rack: { v: 1, fade: 4, bypass: [{ chain: ch.id, after: ch.mods[0].id, call: kal }] } } }, { touch: false })
+      return s.id
+    })
+    await page.goto(S.base + 'rack/#/s/' + id)
+    await page.reload()
+    await page.waitForFunction((id) => window.__rack?.store?.sketch?.id === id, id, { timeout: 15000 })
+    await page.waitForSelector('[data-testid=module][data-call="c-oldkal"].is-disabled')
+    assert.equal(await codeOf(page), 'osc(20, 0.1, 0.8).rotate(0.8)\n  // .kaleid(5)\n  .out()\n')
+    await sleep(500)
+    await page.evaluate(() => window.__rack.lib.flush())
+    const saved = await page.evaluate(async (id) => JSON.parse(JSON.stringify(await window.__rack.lib.get(id))), id)
+    assert.ok(!('bypass' in saved.meta.rack), 'the old key is removed from the saved sketch')
+    assert.equal(saved.meta.rack.fade, 4)
+    assert.equal(await page.locator('[data-testid=revived-note]').count(), 0, 'no revived note for a sketch the rack had seen')
+    // switch it on: an ordinary module again
+    await tap(S, '[data-testid=module][data-call="c-oldkal"] .disable-toggle')
+    await page.waitForFunction(() => window.__rack.core.toCode(window.__rack.store.sketch) === 'osc(20, 0.1, 0.8).rotate(0.8).kaleid(5).out()\n')
+    // importing code with commented-out chunks
+    // as the rack's own import does: add to the library, then open it by its route (no reload)
+    const rid = await page.evaluate(async () => {
+      const s = await window.__rack.lib.create('Revived', 'osc(20, 0.1, 0.8)\n  // .rotate(0.8)\n  .out()\n\n// noise(3).out(o1)\n')
+      location.hash = '#/s/' + s.id
+      return s.id
+    })
+    await page.waitForFunction((id) => window.__rack.store.sketch.id === id, rid, { timeout: 15000 })
+    await page.waitForSelector('[data-testid=revived-note]')
+    assert.match(await page.textContent('[data-testid=revived-note]'), /2 commented-out chunks were revived as disabled/)
+    assert.equal(await page.locator('.module.is-disabled').count(), 1)
+    assert.equal(await page.locator('.lanerow.is-disabled').count(), 1)
+    await shot(page, '14-revived.png')
+    await tap(S, '[data-testid=revived-dismiss]')
+    await page.waitForSelector('[data-testid=revived-note]', { state: 'detached' })
+    await page.reload()
+    await page.waitForFunction(() => !!window.__rack?.store?.sketch, null, { timeout: 15000 })
+    await sleep(500)
+    assert.equal(await page.locator('[data-testid=revived-note]').count(), 0, 'shown once')
+    return 'bypass → // kaleid, key removed and saved; 2 revived chunks noted once'
+  })
+  assert.deepEqual(S.errors.filter((e) => !/Permissions policy/.test(e)), [], '13: no page errors')
+})
+
 // ============================================================================================================ 9. switch editors and back
 if (want('9')) await block('9', async () => {
   const S = await startS()
   const { page, touch } = S
-  await check('9', 'switch to the harness and back: same sketch, same code, meta.rack (with its scenes) intact, other apps\' meta untouched', async () => {
+  await check('9', 'switch to the harness and back with a switched-off module: same sketch, same code, meta.rack (with its scenes) intact, other apps\' meta untouched', async () => {
     await page.goto(S.base + 'rack/')
     await page.waitForFunction(() => !!window.__rack?.lib, null, { timeout: 15000 })
-    const code = '// a sketch with neighbours\nconst amt = 0.3\nosc(20, 0.1, 0.8)\n  .rotate(0.8)\n  .modulate(noise(3), amt)\n  .out()\n'
+    const code = '// a sketch with neighbours\nconst amt = 0.3\nosc(20, 0.1, 0.8)\n  .rotate(0.8)\n  // .kaleid(5)\n  .modulate(noise(3), amt)\n  .out()\n'
     const id = await page.evaluate(async ({ code }) => {
       const lib = window.__rack.lib
       const s = await lib.create('Switch test', code)
@@ -590,6 +798,7 @@ if (want('9')) await block('9', async () => {
     assert.deepEqual(after.meta.stack, { v: 1, mode: 'code' }, 'meta.stack untouched')
     assert.deepEqual(after.meta.graph, { v: 1, pos: { x: { x: 1, y: 2 } } }, 'meta.graph untouched')
     assert.ok(await page.isVisible('[data-testid=scene-5].full'), 'the scene is there after the round trip')
+    assert.equal(await page.locator('[data-testid=module][data-fn=kaleid].is-disabled').count(), 1, 'the switched-off module is still off')
     return `meta keys: ${Object.keys(after.meta).sort().join(', ')}`
   })
   assert.deepEqual(S.errors, [], '9: no page errors')

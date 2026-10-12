@@ -19,14 +19,17 @@ export interface BootOptions {
   css: string
   /** extra handles for tests/e2e on window.__app */
   expose?: Record<string, unknown>
-  /** called after a sketch is loaded (first open and hashchange) */
-  onLoad?: (s: Sketch) => void
+  /** called after a sketch is loaded (first open and hashchange); `created`: this app had never seen it */
+  onLoad?: (s: Sketch, info: { created: boolean }) => void
+  /** bring view state saved by an older version of the app up to date (pure; return the sketch itself when nothing changes) */
+  migrate?: (s: Sketch) => Sketch
   starterCode?: string
 }
 
-export function withView(s: Sketch, o: Pick<BootOptions, 'autoView' | 'hasView'>): { sketch: Sketch; created: boolean } {
-  if (o.hasView(s)) return { sketch: s, created: false }
-  return { sketch: withMeta(s, APP, o.autoView(s) as Record<string, unknown>), created: true }
+export function withView(s0: Sketch, o: Pick<BootOptions, 'autoView' | 'hasView' | 'migrate'>): { sketch: Sketch; created: boolean; changed: boolean } {
+  const s = o.migrate ? o.migrate(s0) : s0
+  if (o.hasView(s)) return { sketch: s, created: false, changed: s !== s0 }
+  return { sketch: withMeta(s, APP, o.autoView(s) as Record<string, unknown>), created: true, changed: true }
 }
 
 export async function boot(o: BootOptions): Promise<void> {
@@ -43,7 +46,7 @@ export async function boot(o: BootOptions): Promise<void> {
   if (!picked) picked = await lib.create('Untitled', o.starterCode ?? 'osc(20, 0.1, 0.8).out()\n')
   if (location.hash !== routeHash(picked.id)) history.replaceState(null, '', routeHash(picked.id))
   const first = withView(picked, o)
-  if (first.created) void lib.put(first.sketch, { touch: false })
+  if (first.changed) void lib.put(first.sketch, { touch: false })
 
   const stage = document.createElement('div')
   stage.className = 'stage'
@@ -66,8 +69,10 @@ export async function boot(o: BootOptions): Promise<void> {
     clearTimeout(thumbTimer)
     thumbTimer = setTimeout(async () => {
       const sid = store.sketch.id
+      // not while the output shows something other than the sketch (a lane audition)
+      if (runner.view) return scheduleThumb(ms)
       const t = await runner.thumbnail(160)
-      if (t && sid === store.sketch.id && runner.status.phase === 'ok') await lib.setThumbnail(sid, t)
+      if (t && sid === store.sketch.id && runner.status.phase === 'ok' && !runner.view) await lib.setThumbnail(sid, t)
     }, ms)
   }
   store.onChange(({ sketch, opts }) => {
@@ -92,10 +97,10 @@ export async function boot(o: BootOptions): Promise<void> {
 
   async function load(s: Sketch) {
     const v = withView(s, o)
-    if (v.created) void lib.put(v.sketch, { touch: false })
+    if (v.changed) void lib.put(v.sketch, { touch: false })
     runner.resetTrust()
     store.load(v.sketch)
-    o.onLoad?.(v.sketch)
+    o.onLoad?.(v.sketch, { created: v.created })
     runner.run(true, v.sketch)
     scheduleThumb(2500)
   }
@@ -121,7 +126,7 @@ export async function boot(o: BootOptions): Promise<void> {
   const handles = { store, runner, backdrop, lib, audio: ctx.audio, ctx, core, ...(o.expose ?? {}) }
   ;(window as unknown as Record<string, unknown>).__app = handles
   ;(window as unknown as Record<string, unknown>)[`__${APP}`] = handles
-  o.onLoad?.(first.sketch)
+  o.onLoad?.(first.sketch, { created: first.created })
 
   await runner.start()
   runner.run(true, first.sketch)

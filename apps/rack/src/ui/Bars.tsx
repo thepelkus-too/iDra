@@ -1,19 +1,20 @@
 // The chrome around the rack: the top bar (tempo with tap, speed, freeze, hush, code, perform), the mixer (what is on
 // screen, the routing matrix, lane chips to drag onto jacks), the mod bay, the scene column, the floating output and the
 // performance overlay with pinned controls.
-import { OUT_NAMES, type OutName } from '@hydra-ipad/core'
+import { OUT_NAMES, locate, previewMode, setPreviewMode, type OutName, type PreviewMode } from '@hydra-ipad/core'
 import { useEffect, useRef, useState } from 'preact/hooks'
-import { fadeTo, metaNow, recallScene, setView, storeScene, ui, useUi } from '../doc'
+import { audition, fadeTo, metaNow, recallScene, setView, storeScene, toggleOff, ui, useUi } from '../doc'
 import { pressToDrag } from '../drag'
 import { BackdropButtons, Meter, Switcher, SketchName, UndoRedo, openMoreMenu } from '../kit/Chrome'
 import { codeBridge } from '../kit/CodeDrawer'
 import { ctx, useRunner, useStore } from '../kit/ctx'
-import { livePads, LONG_MS, NumSlider, PadStrip, toast } from '@hydra-ipad/kit'
+import { PADS_PIN, parsePin, pinExists } from '../pins'
+import { rackPreviewPool } from '../previews'
+import { disableAction, livePads, LONG_MS, NumSlider, PadStrip, PreviewPeek, toast } from '@hydra-ipad/kit'
 import { LFO_KINDS, MOD_ICON, MOD_LABEL, type ModKind } from '../kit/mods'
 import { commit } from '../doc'
 import { mutateLanes, routeLane, unrouteLane } from '../ops'
 import { appPrefs } from '../prefs'
-import { parseKey, refInfo } from '../refs'
 import { readsOf } from '../view'
 import { MousePad } from './Controls'
 import { Knob, togglePin } from './Knob'
@@ -93,6 +94,7 @@ export function TopBar() {
           openMoreMenu(e.currentTarget as HTMLElement, [
             { label: 'Morph every unlocked lane to random (8 beats)', run: morphAll, testid: 'menu-morph' },
             { label: st.bay ? 'Hide the mod bay' : 'Show the mod bay', run: () => ui.set({ bay: !st.bay }) },
+            { label: `Module previews: ${PREVIEW_LABEL[previewMode()]}`, hint: 'tap to change', run: cyclePreviews, testid: 'menu-previews' },
           ])
         }
       >
@@ -100,6 +102,16 @@ export function TopBar() {
       </button>
     </header>
   )
+}
+
+const PREVIEW_LABEL: Record<PreviewMode, string> = { off: 'off', demand: 'on demand', live: 'live' }
+const PREVIEW_NEXT: Record<PreviewMode, PreviewMode> = { demand: 'live', live: 'off', off: 'demand' }
+
+/** The previews preference is shared by every editor (core's `idra.previews`): on demand → live → off. */
+export function cyclePreviews(): void {
+  const next = PREVIEW_NEXT[previewMode()]
+  setPreviewMode(next)
+  toast(next === 'live' ? 'Previews: live (every visible module animates; costs battery)' : next === 'off' ? 'Previews: off' : 'Previews: on demand (a still; tap one to animate it)')
 }
 
 export function morphAll(): void {
@@ -330,11 +342,21 @@ export function Pip({ stage }: { stage: HTMLElement }) {
   }, [stage])
   const drag = useRef<{ id: number; x0: number; y0: number; b0: PipBox; resize: boolean } | null>(null)
   const save = (nb: PipBox) => appPrefs.set('pip', nb)
-  const style = st.perform ? {} : { width: `${b.w}px`, height: `${(b.w * 9) / 16}px`, top: `${b.y}px`, ...(b.x < 0 ? { right: `${-b.x}px` } : { left: `${b.x}px` }) }
+  const full = st.perform || !!st.audition
+  const style = full ? {} : { width: `${b.w}px`, height: `${(b.w * 9) / 16}px`, top: `${b.y}px`, ...(b.x < 0 ? { right: `${-b.x}px` } : { left: `${b.x}px` }) }
   return (
-    <div class={`pip ${st.perform ? 'perform' : ''}`} style={style} data-testid="pip" data-hi-backdrop={st.perform ? undefined : 'stage'}>
+    <div class={`pip ${full ? 'perform' : ''}`} style={style} data-testid="pip" data-hi-backdrop={full ? undefined : 'stage'}>
       <div class="stage-slot" ref={slot} data-testid="stage-slot" />
-      {st.perform ? (
+      {st.audition ? (
+        <div class="perform-ui audition-ui">
+          <span class="pill audition-tag" data-testid="audition-tag">
+            Auditioning {st.audition.toUpperCase()} · the sketch is unchanged
+          </span>
+          <button type="button" class="btn exit" data-testid="audition-exit" onClick={() => audition(undefined)}>
+            Back
+          </button>
+        </div>
+      ) : st.perform ? (
         <PinBar />
       ) : (
         <>
@@ -390,15 +412,14 @@ export function Pip({ stage }: { stage: HTMLElement }) {
   )
 }
 
-/** The pin key of the kit's pad strip (a pinnable element, not a knob). */
-export const PADS_PIN = 'kit:pads'
+export { PADS_PIN }
 
 /** Performance mode: up to eight pinned controls float translucent along the bottom edge; scenes stay on the right; the
  * sketch's pads (when pinned) sit bottom left. */
 function PinBar() {
   useStore()
   const st = useUi()
-  const pins = (metaNow().pins ?? []).filter((k) => k !== PADS_PIN && refInfo(ctx.store.sketch, parseKey(k), ctx.catalog).exists)
+  const pins = (metaNow().pins ?? []).filter((k) => k !== PADS_PIN && pinExists(ctx.store.sketch, k, ctx.catalog))
   const hasPads = livePads(ctx.store.sketch).length > 0
   const padsPinned = (metaNow().pins ?? []).includes(PADS_PIN)
   return (
@@ -417,7 +438,7 @@ function PinBar() {
         </div>
       )}
       <div class="pins" data-testid="pins">
-        {pins.length ? pins.map((k) => <Knob key={k} r={parseKey(k)} />) : <small class="nopins">Long-press any knob and choose “Pin to performance” to bring it here.</small>}
+        {pins.length ? pins.map((k) => <Pinned key={k} k={k} />) : <small class="nopins">Long-press any knob and choose “Pin to performance” to bring it here.</small>}
       </div>
       <div class="pscenes">
         {SLOTS.filter((s) => metaNow().scenes?.[s]).map((s) => (
@@ -428,4 +449,35 @@ function PinBar() {
       </div>
     </div>
   )
+}
+
+/** One pinned control: a knob, a module's on/off switch or a module's preview (previews and switches stay off the
+ * performance surface unless pinned). */
+function Pinned({ k }: { k: string }) {
+  const p = parsePin(k)
+  const sk = ctx.store.sketch
+  if (p.t === 'knob') return <Knob r={p.ref} />
+  if (p.t === 'off') {
+    const a = disableAction(sk, p.id)
+    const name = nameOf(p.id)
+    return (
+      <button type="button" class={`btn pin-off ${a.pressed ? 'off' : ''}`} data-testid={`pin-off-${p.id}`} aria-pressed={a.pressed} aria-label={`${a.label} ${name}`} onClick={() => toggleOff(p.id, name)}>
+        <b>//</b>
+        <small>{name}</small>
+      </button>
+    )
+  }
+  if (p.t === 'peek') return <PreviewPeek pool={rackPreviewPool()} spec={{ kind: 'prefix', chainId: p.chainId, upToCallId: p.callId }} label={`up to ${nameOf(p.callId)}`} class="pin-peek" />
+  return null
+}
+
+/** A short name for a statement or call: the function, or the lane a chain draws to. */
+function nameOf(id: string): string {
+  const at = locate(ctx.store.sketch, id)
+  if (!at) return '?'
+  if (at.call) return at.call.fn
+  const s = at.stmt
+  if (s.k === 'chain') return s.chain.out ? `${s.chain.gen.fn}→${s.chain.out}` : s.chain.gen.fn
+  if (s.k === 'def') return s.name
+  return s.k
 }

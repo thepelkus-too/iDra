@@ -1,17 +1,20 @@
-// A module is one Hydra call: a title bar (tap the name to swap the function, keeping inputs whose names match; bypass;
-// dice; ⋯) over a panel of controls generated from the catalog. Texture inputs are patch jacks that take a lane, a source,
-// a picture variable or a mini-module (a nested chain that opens in place into a sub-rack, two levels deep at most).
-import { makeChain, tex, type Call, type Chain, type FnDef, type FnType, type InputDef, type Value } from '@hydra-ipad/core'
-import { commit, metaNow, setValue, setView, ui, useUi } from '../doc'
+// A module is one Hydra call: a title bar (tap the name to swap the function, keeping inputs whose names match; the `//`
+// switch; dice; ⋯), a small preview of the chain up to here, and a panel of controls generated from the catalog. Texture
+// inputs are patch jacks that take a lane, a source, a picture variable or a mini-module (a nested chain that opens in
+// place into a sub-rack, two levels deep at most). A switched-off module stays where it is, greyed out, knobs working.
+import { canDisable, makeChain, tex, type Call, type Chain, type FnDef, type FnType, type InputDef, type Value } from '@hydra-ipad/core'
+import { useEffect, useRef } from 'preact/hooks'
+import { commit, metaNow, setValue, setView, toggleOff, ui, useUi } from '../doc'
 import { ctx } from '../kit/ctx'
 import { openMenu, type MenuItem } from '../kit/Menu'
 import { duplicateMod, getArg, moveMod, newCall, removeMod, replaceFn, setArg, updateCall } from '../kit/model'
-import { closePopover, openPopover, toast } from '@hydra-ipad/kit'
-import { addModule, bypass, liveBypass, randomizeCall, swapFn, unbypass } from '../ops'
+import { closePopover, DisableToggle, openPopover, PreviewPeek, toast } from '@hydra-ipad/kit'
+import { addModule, randomizeCall, swapFn } from '../ops'
 import { panelOf } from '../panel'
-import type { Bypassed } from '../view'
+import { offPin, peekPin } from '../pins'
+import { rackPreviewPool } from '../previews'
 import { Rgba, VecField, XYPad } from './Controls'
-import { Knob } from './Knob'
+import { Knob, togglePin } from './Knob'
 
 // ---------------------------------------------------------------- function picker
 
@@ -66,27 +69,16 @@ export const MOD_TYPES: FnType[] = ['coord', 'color', 'combine', 'combineCoord']
 
 // ---------------------------------------------------------------- a chain as a row of modules
 
-export function ChainRow({ chain, depth = 0, testid }: { chain: Chain; depth?: number; testid?: string }) {
-  const by = liveBypass(ctx.store.sketch, metaNow()).filter((b) => b.chain === chain.id)
-  const ghostsAfter = (id: string | null) => by.filter((b) => b.after === id)
-  const anchored = new Set([null, chain.gen.id, ...chain.mods.map((m) => m.id)])
-  const orphans = by.filter((b) => b.after !== null && !anchored.has(b.after))
+/**
+ * `owner`: the statement whose chain this is (a lane row, an unplugged chain or a picture variable), so the generator's
+ * switch turns the whole statement off; nested chains (mini-modules) have none.
+ */
+export function ChainRow({ chain, depth = 0, testid, owner }: { chain: Chain; depth?: number; testid?: string; owner?: string }) {
   return (
     <div class={`chainrow d${depth}`} data-chain={chain.id} data-testid={testid}>
-      <Module call={chain.gen} chain={chain} index={-1} depth={depth} />
-      {ghostsAfter(null).map((b) => (
-        <Ghost key={b.call.id} b={b} />
-      ))}
+      <Module call={chain.gen} chain={chain} index={-1} depth={depth} owner={owner} />
       {chain.mods.map((m, i) => (
-        <>
-          <Module key={m.id} call={m} chain={chain} index={i} depth={depth} />
-          {ghostsAfter(m.id).map((b) => (
-            <Ghost key={b.call.id} b={b} />
-          ))}
-        </>
-      ))}
-      {orphans.map((b) => (
-        <Ghost key={b.call.id} b={b} />
+        <Module key={m.id} call={m} chain={chain} index={i} depth={depth} />
       ))}
       <button
         type="button"
@@ -107,37 +99,31 @@ export function ChainRow({ chain, depth = 0, testid }: { chain: Chain; depth?: n
   )
 }
 
-/** A bypassed module: out of the code, kept in place (dimmed) so bypassing again puts it back where it was. */
-function Ghost({ b }: { b: Bypassed }) {
+/** Before / after one module, in a popover (opened at once, so A/B is one tap away). */
+export function openDiff(anchor: Element, call: Call): void {
+  openPopover(anchor, () => <DiffPeek callId={call.id} label={call.fn} />, { width: 290, label: `What ${call.fn} does` })
+}
+
+function DiffPeek({ callId, label }: { callId: string; label: string }) {
+  const box = useRef<HTMLDivElement>(null)
+  // the kit's peek starts folded; a before/after is only useful open
+  useEffect(() => box.current?.querySelector<HTMLButtonElement>('.peek-pic[aria-expanded=false]')?.click(), [])
   return (
-    <div class="module ghost" data-testid="bypassed" data-call={b.call.id} data-fn={b.call.fn}>
-      <div class="mhead">
-        <b class="mname">{b.call.fn}</b>
-        <button
-          type="button"
-          class="icon sm on"
-          data-testid="unbypass"
-          aria-label="Put back"
-          title="Bypassed: tap to put it back"
-          onClick={() => {
-            const r = unbypass(ctx.store.sketch, metaNow(), b.call.id)
-            commit(r.sketch, { bypass: r.bypass })
-          }}
-        >
-          ⏻
-        </button>
-      </div>
-      <div class="mbody">
-        <small>bypassed · not in the code</small>
-      </div>
+    <div class="diffpeek" ref={box} data-testid="diff-peek">
+      <div class="menu-title">What {label} does</div>
+      <PreviewPeek pool={rackPreviewPool()} spec={{ kind: 'diff', callId }} label={label} />
     </div>
   )
 }
 
 // ---------------------------------------------------------------- a module
 
-export function Module({ call, chain, index, depth }: { call: Call; chain: Chain; index: number; depth: number }) {
+export function Module({ call, chain, index, depth, owner }: { call: Call; chain: Chain; index: number; depth: number; owner?: string }) {
   const st = useUi()
+  // the generator's switch is its statement's (a chain starts with its generator); everything else switches itself
+  const offId = index < 0 && owner ? owner : call.id
+  const offWhat = index < 0 && owner ? 'the whole row' : call.fn
+  const off = canDisable(ctx.store.sketch, offId)
   const known = ctx.catalog.get(call.fn)
   const isGen = index < 0
   const controls = panelOf(call.fn, call.args.length, ctx.catalog)
@@ -152,13 +138,18 @@ export function Module({ call, chain, index, depth }: { call: Call; chain: Chain
     openFnPicker(el, isGen ? ['src'] : [known.type], (fn) => commit(swapFn(ctx.store.sketch, call.id, fn, ctx.catalog)), `Swap ${call.fn} for…`, call.fn)
   }
   const menu = (el: Element) => {
+    const pins = metaNow().pins ?? []
     const items: MenuItem[] = [
       { label: 'Randomise its knobs', run: () => commit(randomizeCall(ctx.store.sketch, call.id, ctx.catalog, Math.random)), testid: 'menu-dice' },
       { label: 'Swap function…', run: () => swap(el) },
+      { label: off.disabled ? `Switch on ${offWhat}` : `Switch off ${offWhat}`, hint: '//', sep: true, run: () => toggleOff(offId, offWhat), testid: 'menu-off' },
+      ...(isGen ? [] : [{ label: 'Before / after…', hint: 'A/B', run: () => openDiff(el, call), testid: 'menu-ab' }]),
+      { label: pins.includes(offPin(offId)) ? 'Unpin the switch from performance' : 'Pin the switch to performance', run: () => togglePin(offPin(offId)), testid: 'menu-pin-off' },
+      { label: pins.includes(peekPin(chain.id, call.id)) ? 'Unpin the preview from performance' : 'Pin the preview to performance', run: () => togglePin(peekPin(chain.id, call.id)), testid: 'menu-pin-peek' },
     ]
     if (!isGen) {
       items.push(
-        { label: 'Move left', disabled: index === 0, run: () => commit(moveMod(ctx.store.sketch, chain.id, index, index - 1)) },
+        { label: 'Move left', sep: true, disabled: index === 0, run: () => commit(moveMod(ctx.store.sketch, chain.id, index, index - 1)) },
         { label: 'Move right', disabled: index === chain.mods.length - 1, run: () => commit(moveMod(ctx.store.sketch, chain.id, index, index + 1)) },
         { label: 'Duplicate', run: () => commit(duplicateMod(ctx.store.sketch, chain.id, call.id)) },
         {
@@ -179,7 +170,7 @@ export function Module({ call, chain, index, depth }: { call: Call; chain: Chain
   }
   return (
     <div
-      class={`module ${cls} ${sel ? 'sel' : ''} ${isGen ? 'gen' : ''}`}
+      class={`module ${cls} ${sel ? 'sel' : ''} ${isGen ? 'gen' : ''} ${call.disabled ? 'is-disabled' : ''}`}
       data-testid="module"
       data-call={call.id}
       data-fn={call.fn}
@@ -201,21 +192,7 @@ export function Module({ call, chain, index, depth }: { call: Call; chain: Chain
         >
           {call.fn}
         </button>
-        {!isGen && (
-          <button
-            type="button"
-            class="icon sm"
-            data-testid="bypass"
-            aria-label="Bypass"
-            title="Bypass: take it out of the code, keep it here"
-            onClick={() => {
-              const r = bypass(ctx.store.sketch, metaNow(), chain.id, call.id)
-              commit(r.sketch, { bypass: r.bypass })
-            }}
-          >
-            ⏻
-          </button>
-        )}
+        <DisableToggle id={offId} what={offWhat} onChange={(next) => commit(next)} class="moff" />
         <button type="button" class="icon sm" data-testid="module-dice" aria-label="Randomise" title="Random values for this module" onClick={() => commit(randomizeCall(ctx.store.sketch, call.id, ctx.catalog, Math.random))}>
           ⚄
         </button>
@@ -223,6 +200,7 @@ export function Module({ call, chain, index, depth }: { call: Call; chain: Chain
           ⋯
         </button>
       </div>
+      {!st.perform && !st.audition && <PreviewPeek pool={rackPreviewPool()} spec={{ kind: 'prefix', chainId: chain.id, upToCallId: call.id }} label={`up to ${call.fn}`} class="mpeek" />}
       <div class="mbody">
         {controls.map((c) => {
           switch (c.t) {

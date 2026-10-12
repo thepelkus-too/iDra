@@ -66,6 +66,11 @@ export class Runner {
   size: () => { width: number; height: number } = () => ({ width: 960, height: 540 })
   /** called after every (re)start once the runtime is ready (the backdrop re-applies its resolution) */
   onStarted?: () => void
+  /**
+   * What the runtime shows instead of the sketch itself, while set (the rack's lane audition adds a `render()`); the trust
+   * decision is still taken on the sketch. Set it with `setView`.
+   */
+  view?: (s: Sketch) => Sketch
 
   constructor(private stage: HTMLElement) {}
 
@@ -186,6 +191,13 @@ export class Runner {
 
   // ---------------------------------------------------------------- running
 
+  /** Show `view(sketch)` instead of the sketch (undefined: the sketch again) and run. */
+  setView(view?: (s: Sketch) => Sketch): void {
+    this.view = view
+    this.run(true)
+    this.emit()
+  }
+
   /** Remember the latest sketch without running it (a numeric drag already pushed live values). */
   track(sketch: Sketch): void {
     this.sketch = sketch
@@ -231,7 +243,7 @@ export class Runner {
     const t0 = performance.now()
     let r
     try {
-      r = await this.rt.run(sketch, { safe, force })
+      r = await this.rt.run(this.view ? this.view(sketch) : sketch, { safe, force })
     } catch (e) {
       r = { ok: false, recompiled: true, error: String((e as Error)?.message ?? e), skipped: [], ms: performance.now() - t0 }
     }
@@ -256,8 +268,12 @@ export class Runner {
     this.emit()
   }
 
+  /** called on every live push (the rack holds its preview stills while numbers move) */
+  onLive?: () => void
+
   /** Fast path for a dragged number: instant, no recompile. */
   setLive(id: string, value: number): void {
+    this.onLive?.()
     this.rt?.setLive(id, value)
   }
 

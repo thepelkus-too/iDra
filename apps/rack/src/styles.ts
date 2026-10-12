@@ -74,7 +74,12 @@ export const CSS = `
 .module.plugin{--k-c:var(--k-plugin)}
 .module.unknown{--k-c:#777;background:#2a2a2a;filter:saturate(0)}
 .module.sel{box-shadow:0 0 0 2px var(--hi-accent)}
-.module.ghost{opacity:.45;border-style:dashed;min-width:90px}
+.module .moff{min-width:36px;min-height:40px;padding:0 4px;border-color:transparent;font-size:13px}
+.module .moff.off{border-color:var(--hi-accent)}
+.mpeek{margin:2px 8px 0;align-self:flex-start}
+.mpeek:not(.open) .peek-pic{width:96px;height:54px}
+.lanerow .tag.off{left:auto;right:80px;background:#2a2d33;color:var(--hi-dim)}
+.diffpeek{display:flex;flex-direction:column;gap:6px;padding:4px}
 .mhead{display:flex;align-items:center;gap:2px;padding:2px 2px 0 6px}
 .mhead .ticon{color:var(--k-c);font-size:13px;width:16px}
 .mname{flex:1;border:0;background:transparent;font:600 14px var(--mono);text-align:left;padding:0 6px;min-width:0;color:var(--hi-text)}
@@ -207,6 +212,10 @@ body.dragging-lane .jack{outline:1px dashed var(--c-ref)}
 .pip.perform{position:fixed;inset:0;border:0;border-radius:0;z-index:40}
 .perform-ui{position:absolute;inset:0;pointer-events:none}
 .perform-ui>*{pointer-events:auto}
+.pins .pin-off{display:flex;flex-direction:column;align-items:center;justify-content:center;min-width:64px;min-height:64px;border-radius:14px;background:rgba(0,0,0,.4);font-family:var(--mono)}
+.pins .pin-off small{font-size:10px;color:var(--hi-dim);max-width:72px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pins .pin-off.off{color:var(--hi-accent);border-color:var(--hi-accent);opacity:.7}
+.audition-ui .audition-tag{position:absolute;left:max(12px,env(safe-area-inset-left));top:max(12px,env(safe-area-inset-top));background:rgba(0,0,0,.55)}
 .perform-ui .exit{position:absolute;right:max(12px,env(safe-area-inset-right));top:max(12px,env(safe-area-inset-top));background:rgba(0,0,0,.55)}
 .pins{position:absolute;left:50%;transform:translateX(-50%);bottom:max(14px,env(safe-area-inset-bottom));display:flex;gap:8px;padding:8px 10px;border-radius:18px;background:rgba(0,0,0,.35);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);max-width:calc(100% - 24px);overflow-x:auto}
 .pins .knob{opacity:.88}

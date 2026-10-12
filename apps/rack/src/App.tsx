@@ -1,6 +1,6 @@
 // The page: top bar, the mixer, the rack of lanes and trays, the scene column, the mod bay, the code drawer, the floating
 // output (or performance mode) and the footer with About / Source.
-import { ui, useUi, recallScene, storeScene } from './doc'
+import { audition, ui, useUi, recallScene, storeScene } from './doc'
 import { Banners, FooterAbout } from './kit/Chrome'
 import { CodeDrawer, codeBridge } from './kit/CodeDrawer'
 import { ctx, history, useCatalogVersion, useRunner, useStore } from './kit/ctx'
@@ -25,7 +25,8 @@ export function App({ stage }: { stage: HTMLElement }) {
       if (!mod && k === 'p') return ui.set({ perform: !ui.state.perform }), true
       if (!mod && k === ' ') return freeze(), true
       if (!mod && k === 'escape') {
-        if (ui.state.perform) ui.set({ perform: false })
+        if (ui.state.audition) audition(undefined)
+        else if (ui.state.perform) ui.set({ perform: false })
         else ui.select(undefined)
         ui.set({ armed: undefined })
         closeAllOverlays()
@@ -44,6 +45,18 @@ export function App({ stage }: { stage: HTMLElement }) {
         <div class="rack-col">
           <div class="banners-wrap">
             <Banners />
+            {!!st.revived && (
+              <div class="banners">
+                <div class="banner info" role="status" data-testid="revived-note">
+                  <span>
+                    {st.revived} commented-out chunk{st.revived > 1 ? 's were' : ' was'} revived as disabled. They stay in the code as <code>//</code> comments; tap a module's <code>//</code> to switch it on.
+                  </span>
+                  <button type="button" class="btn" data-testid="revived-dismiss" onClick={() => ui.set({ revived: undefined })}>
+                    OK
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
           <Rack />
         </div>

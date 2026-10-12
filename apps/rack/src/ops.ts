@@ -1,5 +1,4 @@
-// Rack edits as pure functions of the sketch (and the rack's view state where a module lives outside the code, as bypass
-// does). The UI commits each result as one undo step.
+// Rack edits as pure functions of the sketch. The UI commits each result as one undo step.
 import {
   DEFAULT,
   OUT_NAMES,
@@ -19,7 +18,7 @@ import {
 } from '@hydra-ipad/core'
 import { findCallDeep, findChain, insertStmt, newCall, removeMod, setArg, updateCall, updateChain, type ArgRef } from './kit/model'
 import { defaultSpec, modToValue, valueToMod, type ModKind, type ModSpec } from './kit/mods'
-import { laneOf, layoutOf, type Bypassed, type RackMeta } from './view'
+import { APP, laneOf, layoutOf, type Bypassed, type RackMeta } from './view'
 
 // ---------------------------------------------------------------- modules
 
@@ -51,31 +50,30 @@ export function swapFn(sk: Sketch, callId: string, fn: string, cat: Catalog): Sk
   })
 }
 
-/** Take a module out of the code but keep it in place on the rack (dimmed), so bypass again puts it back where it was. */
-export function bypass(sk: Sketch, meta: RackMeta, chainId: string, callId: string): { sketch: Sketch; bypass: Bypassed[] } {
-  const chain = findChain(sk, chainId)
-  const i = chain?.mods.findIndex((m) => m.id === callId) ?? -1
-  if (!chain || i < 0) return { sketch: sk, bypass: meta.bypass ?? [] }
-  const entry: Bypassed = { chain: chainId, after: i > 0 ? chain.mods[i - 1].id : null, call: chain.mods[i] }
-  // modules bypassed after this one hang off it: re-anchor them to what it followed
-  const rest = (meta.bypass ?? []).map((b) => (b.chain === chainId && b.after === callId ? { ...b, after: entry.after } : b))
-  return { sketch: removeMod(sk, chainId, callId), bypass: [...rest, entry] }
-}
-
-export function unbypass(sk: Sketch, meta: RackMeta, callId: string): { sketch: Sketch; bypass: Bypassed[] } {
-  const list = meta.bypass ?? []
-  const b = list.find((x) => x.call.id === callId)
-  if (!b) return { sketch: sk, bypass: list }
-  const chain = findChain(sk, b.chain)
-  const rest = list.filter((x) => x !== b)
-  if (!chain) return { sketch: sk, bypass: rest }
-  const at = b.after === null ? 0 : chain.mods.findIndex((m) => m.id === b.after) + 1
-  return { sketch: updateChain(sk, b.chain, (c) => ({ ...c, mods: [...c.mods.slice(0, at), b.call, ...c.mods.slice(at)] })), bypass: rest }
-}
-
-/** Bypassed modules whose chain is gone are dropped from the view (they were never in the code). */
-export function liveBypass(sk: Sketch, meta: RackMeta): Bypassed[] {
-  return (meta.bypass ?? []).filter((b) => !!findChain(sk, b.chain))
+/**
+ * Sketches saved before modules could be switched off in the code kept a bypassed module in `meta.rack.bypass` (out of
+ * the code, with where it sat). On first open each one goes back into its chain where it was, switched off (`disabled`,
+ * a `//` line in the code), and the old key is removed. Entries whose chain is gone are dropped (they were never in the
+ * code). Returns the sketch unchanged when there is nothing to migrate.
+ */
+export function migrateBypass(sk: Sketch): Sketch {
+  const meta = sk.meta?.[APP] as (RackMeta & { bypass?: Bypassed[] }) | undefined
+  if (!meta || !('bypass' in meta)) return sk
+  let next = sk
+  // as if each were put back with the old ⏻ in list order: that is exact when a module was bypassed after its neighbour
+  // (the old code re-anchored the neighbour's entry); the old view state does not record enough to do better
+  for (const b of meta.bypass ?? []) {
+    const chain = findChain(next, b.chain)
+    if (!chain || chain.mods.some((m) => m.id === b.call.id)) continue
+    const j = b.after === null ? 0 : chain.mods.findIndex((m) => m.id === b.after) + 1
+    // an anchor that is gone: the old rack showed it at the end of the row
+    const at = b.after !== null && j === 0 ? chain.mods.length : j
+    const call: Call = { ...b.call, disabled: true }
+    next = updateChain(next, b.chain, (c) => ({ ...c, mods: [...c.mods.slice(0, at), call, ...c.mods.slice(at)] }))
+  }
+  const { bypass: _b, ...rest } = meta
+  void _b
+  return { ...next, meta: { ...next.meta, [APP]: rest } }
 }
 
 // ---------------------------------------------------------------- modulation
@@ -126,10 +124,15 @@ function getValue(sk: Sketch, ref: ArgRef): Value | undefined {
 
 // ---------------------------------------------------------------- lanes and routing
 
-/** The chain you see in a lane (its last writer). */
+/** The chain you see in a lane (its last switched-on writer). */
 export function activeChain(sk: Sketch, lane: OutName): Extract<Stmt, { k: 'chain' }> | undefined {
-  const rows = layoutOf(sk).lanes[lane]
+  const rows = layoutOf(sk).lanes[lane].filter((r) => !r.stmt.disabled)
   return rows[rows.length - 1]?.stmt
+}
+
+/** The sketch the main runtime shows while a lane is auditioned: the same statements with `render(lane)` at the end. */
+export function auditionSketch(sk: Sketch, lane: OutName): Sketch {
+  return { ...sk, stmts: [...sk.stmts, { id: `audition-${lane}`, k: 'render', target: lane }] }
 }
 
 /**
