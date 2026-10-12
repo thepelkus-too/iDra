@@ -72,7 +72,8 @@ button.on,.btn.on{border-color:var(--hi-accent);color:var(--hi-accent);backgroun
 .node.call .nhead{height:41px}
 .nhead b{font:600 15px var(--mono)}
 .nhead small{color:var(--hi-dim);font-size:11px;margin-left:auto}
-.ticon{color:var(--tc);font-size:15px;width:16px;text-align:center}
+.ticon{flex:none;color:var(--tc);font-size:15px;width:16px;text-align:center}
+.nhead .badge{flex:none}
 .fname{min-height:36px;min-width:0;padding:0 6px;border:0;background:transparent;font:600 15px var(--mono);color:var(--tc);text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:0 1 auto}
 .badge{font-size:11px;border-radius:6px;padding:1px 5px;border:1px solid var(--hi-line);color:var(--hi-dim);white-space:nowrap;min-height:0;min-width:0}
 .badge.dup{color:var(--warn);border-color:var(--warn);min-height:30px;padding:0 6px}
