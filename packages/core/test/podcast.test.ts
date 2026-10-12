@@ -149,7 +149,7 @@ describe('resolveAudioUrl', () => {
     const r = await resolveAudioUrl('https://feeds.example/show', { fetch, proxy: null })
     expect(r.kind).toBe('feed')
     if (r.kind === 'feed') expect(r.feed.episodes).toHaveLength(4)
-    expect((fetch.mock.calls[0] as unknown[])[1]).toMatchObject({ mode: 'cors', credentials: 'omit' })
+    expect((fetch.mock.calls[0] as unknown[])[1]).toMatchObject({ mode: 'cors', credentials: 'same-origin' })
   })
   test('audio recognised by Content-Type', async () => {
     const r = await resolveAudioUrl('https://radio.example/live', { fetch: async () => res('xx', 'audio/mpeg'), proxy: null })
@@ -208,6 +208,10 @@ describe('resolveAudioUrl', () => {
     }
     // a radio stream without CORS: the feeds-only proxy refuses it, and it is tried as a stream as before
     expect(await resolveAudioUrl('https://radio.example/live', { fetch, proxy: '/api/feed?url=' })).toMatchObject({ kind: 'blocked', looksLikeFeed: false })
+    const r2 = await resolveAudioUrl('https://radio.example/live', { fetch, proxy: '/api/feed?url=' })
+    expect(r2.kind === 'blocked' && r2.message).toMatch(/feed proxy couldn’t read it either: it answered 415/)
+    // the site's own proxy may need the deployment's cookies (Vercel preview protection)
+    expect(fetch.mock.calls.find(([u]) => String(u).startsWith('/api/feed'))?.[1]).toMatchObject({ credentials: 'same-origin' })
   })
   test('feeds over the size cap are refused', async () => {
     const r = await resolveAudioUrl('https://feeds.example/show', { fetch: async () => res(RSS, 'application/xml'), proxy: null, maxFeedBytes: 100 })

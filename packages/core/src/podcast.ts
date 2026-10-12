@@ -310,7 +310,9 @@ export async function resolveAudioUrl(raw: string, opts: { fetch?: FetchLike; pr
     const ac = typeof AbortController !== 'undefined' ? new AbortController() : undefined
     const t = setTimeout(() => ac?.abort(), opts.timeoutMs ?? FEED_LIMITS.timeoutMs)
     try {
-      return await f(target, { mode: 'cors', credentials: 'omit', redirect: 'follow', signal: ac?.signal })
+      // 'same-origin': the site's own /api/feed proxy gets the deployment's cookies (Vercel preview protection needs them);
+      // a cross-origin feed host still gets none
+      return await f(target, { mode: 'cors', credentials: 'same-origin', redirect: 'follow', signal: ac?.signal })
     } finally {
       clearTimeout(t)
     }
@@ -334,14 +336,14 @@ export async function resolveAudioUrl(raw: string, opts: { fetch?: FetchLike; pr
         res = await attempt(proxiedUrl(proxy, url))
         viaProxy = true
       } catch {
-        return blocked(url)
+        return blocked(url, 0)
       }
     } else return blocked(url)
   }
   if (!res.ok) {
     void res.body?.cancel?.().catch(() => {})
     // the proxy only passes feeds: anything else it refuses is treated like the CORS refusal (radio may still play)
-    if (viaProxy) return blocked(url)
+    if (viaProxy) return blocked(url, res.status)
     return { kind: 'error', code: 'http', message: `The server answered ${res.status}${res.statusText ? ` ${res.statusText}` : ''}.` }
   }
   const type = (res.headers.get('content-type') ?? '').toLowerCase()
@@ -365,9 +367,10 @@ export async function resolveAudioUrl(raw: string, opts: { fetch?: FetchLike; pr
   }
 }
 
-function blocked(url: string): UrlResolution {
+function blocked(url: string, proxyStatus?: number): UrlResolution {
   const looksLikeFeed = looksLikeFeedUrl(url)
-  return { kind: 'blocked', url, looksLikeFeed, message: looksLikeFeed ? FEED_BLOCKED_TEXT : 'The host doesn’t let web pages read this link (no CORS headers). Trying it as an audio stream: it may play without driving visuals.' }
+  const proxyNote = proxyStatus === undefined ? '' : ` (The feed proxy couldn’t read it either: ${proxyStatus ? `it answered ${proxyStatus}` : 'it could not be reached'}.)`
+  return { kind: 'blocked', url, looksLikeFeed, message: (looksLikeFeed ? FEED_BLOCKED_TEXT : 'The host doesn’t let web pages read this link (no CORS headers). Trying it as an audio stream: it may play without driving visuals.') + proxyNote }
 }
 
 // ------------------------------------------------------------------ recent feeds and positions (this device only)
