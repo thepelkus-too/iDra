@@ -12,9 +12,11 @@ export interface SwipeConfig {
   onCommit: () => void
   /** swiping is disabled for pinned rows */
   enabled?: boolean
+  /** a swipe to the right (switch the row off / on); without it only leftward swipes count */
+  onRight?: () => void
 }
 
-/** Horizontal swipe on a row's free area. Tokens (data-token) and handles keep their own gestures. */
+/** Horizontal swipe on a row's free area (left deletes, right calls `onRight`). Tokens (data-token) and handles keep their own gestures. */
 export function useSwipe(cfg: SwipeConfig) {
   const c = useRef(cfg)
   c.current = cfg
@@ -26,10 +28,11 @@ export function useSwipe(cfg: SwipeConfig) {
       el.style.opacity = ''
       el.classList.remove('swiping')
       el.removeAttribute('data-swipe')
+      el.removeAttribute('data-swipe-dir')
     }
     return {
       onPointerDown(e: PointerEvent) {
-        if (c.current.enabled === false) return
+        if (c.current.enabled === false && !c.current.onRight) return
         if (e.pointerType === 'mouse' && e.button !== 0) return
         const t = e.target as HTMLElement
         if (t.closest('[data-scrub],button,input,textarea,select,.handle')) return
@@ -57,17 +60,21 @@ export function useSwipe(cfg: SwipeConfig) {
             return
           } else return
         }
-        s.dx = Math.min(0, dx)
+        s.dx = Math.max(c.current.enabled === false ? 0 : -Infinity, Math.min(c.current.onRight ? 140 : 0, dx))
         s.el.style.transform = `translateX(${s.dx}px)`
-        s.el.style.opacity = String(Math.max(0.35, 1 + s.dx / 400))
+        if (s.dx < 0) s.el.style.opacity = String(Math.max(0.35, 1 + s.dx / 400))
         s.el.setAttribute('data-swipe', Math.abs(s.dx) >= (c.current.threshold ?? 90) ? 'commit' : 'pending')
+        s.el.setAttribute('data-swipe-dir', s.dx > 0 ? 'right' : 'left')
       },
       onPointerUp(e: PointerEvent) {
         if (!s || s.id !== e.pointerId) return
         const cur = s
         s = null
         if (!cur.active) return
-        if (-cur.dx >= (c.current.threshold ?? 90)) {
+        if (cur.dx >= (c.current.threshold ?? 90) && c.current.onRight) {
+          reset(cur.el)
+          c.current.onRight()
+        } else if (-cur.dx >= (c.current.threshold ?? 90)) {
           cur.el.style.transition = 'transform .15s ease, opacity .15s ease'
           cur.el.style.transform = 'translateX(-110%)'
           cur.el.style.opacity = '0'
@@ -98,6 +105,9 @@ export interface ReorderOptions {
   max: number
   onMove: (from: number, to: number) => void
   onEnd?: () => void
+  /** called while dragging (the pointer position) and once more on release; returning true on release takes the drop (no move) */
+  onDragOver?: (x: number, y: number, release: boolean) => boolean
+  onStart?: () => void
 }
 
 /**
@@ -173,6 +183,7 @@ export function startReorder(e: PointerEvent, o: ReorderOptions): void {
     if (ev.pointerId !== e.pointerId) return
     lastY = ev.clientY
     apply()
+    o.onDragOver?.(ev.clientX, ev.clientY, false)
   }
   const finish = (ev: PointerEvent | null, cancel: boolean) => {
     if (done) return
@@ -192,7 +203,8 @@ export function startReorder(e: PointerEvent, o: ReorderOptions): void {
     } catch {
       /* ignore */
     }
-    if (!cancel && ev && target !== o.index) o.onMove(o.index, target)
+    const taken = !cancel && ev ? !!o.onDragOver?.(ev.clientX, ev.clientY, true) : false
+    if (!taken && !cancel && ev && target !== o.index) o.onMove(o.index, target)
     o.onEnd?.()
   }
   const up = (ev: PointerEvent) => finish(ev, false)
@@ -202,6 +214,7 @@ export function startReorder(e: PointerEvent, o: ReorderOptions): void {
   handle.addEventListener('pointercancel', cancelH)
   raf = requestAnimationFrame(autoscroll)
   apply()
+  o.onStart?.()
 }
 
 function findScroller(el: HTMLElement): HTMLElement | null {
@@ -231,7 +244,15 @@ export function useHandle(getOptions: () => Omit<ReorderOptions, 'container' | '
       const container = o.container()
       if (!container) return
       s.started = true
-      startReorder(s.ev, { ...o, container, handle: s.el, onEnd: () => void (s = null) })
+      startReorder(s.ev, {
+        ...o,
+        container,
+        handle: s.el,
+        onEnd: () => {
+          s = null
+          o.onEnd?.()
+        },
+      })
     }
     return {
       onPointerDown(e: PointerEvent) {

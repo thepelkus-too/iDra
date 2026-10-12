@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest'
 import { describe as describeSketch, enableAll, importText, toCode, withMeta, walkCalls, type Sketch } from '@hydra-ipad/core'
 import { corpus } from '@hydra-ipad/core/corpus'
-import { APP, autoView, defaultActive, metaOf, reconcile, rowKind, stripOf } from '../src/view'
+import { APP, autoView, defaultActive, firstView, metaOf, reconcile, rowKind, stripOf } from '../src/view'
 
 describe('autoView over the corpus', () => {
   for (const entry of corpus) {
@@ -22,8 +22,14 @@ describe('autoView over the corpus', () => {
       })
 
       test('the strip lists the chains in source order, flags not-rendered and shadowed', () => {
-        expect(view.chains.map((c) => c.id)).toEqual(d.chains.map((c) => c.stmtId))
+        // every chain statement, switched-off ones too (flagged `off`; describe() leaves them out)
+        expect(view.chains.map((c) => c.id)).toEqual(describeSketch(enableAll(sketch)).chains.map((c) => c.stmtId))
         for (const c of view.chains) {
+          const st = sketch.stmts.find((x) => x.id === c.id)!
+          if (st.disabled) {
+            expect(c.flag).toBe('off')
+            continue
+          }
           const f = d.chains.find((x) => x.stmtId === c.id)!
           expect(c.flag).toBe(!f.rendered ? 'not-rendered' : f.shadowed ? 'shadowed' : undefined)
           expect(c.label).toBe(f.out ?? '—')
@@ -117,5 +123,13 @@ describe('reconcile after a text edit', () => {
     const r = reconcile(prev, edited)
     const ids = [...walkCalls(r)].map((x) => x.call.id)
     expect(new Set(ids).size).toBe(ids.length)
+  })
+})
+
+describe('first open', () => {
+  test('a sketch with revived (commented-out) chunks gets a count for the one-time note; others none', () => {
+    const v = (code: string) => (firstView(importText(code).sketch) as { revived?: number }).revived
+    expect(v('osc()\n  // .rotate(1)\n  .out()\n// noise().out(o1)\n')).toBe(2)
+    expect(v('osc().out()\n// just a note\n')).toBeUndefined()
   })
 })

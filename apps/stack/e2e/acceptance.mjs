@@ -64,6 +64,25 @@ async function keypad(S, locator, text) {
   await S.touch.tap('[data-testid=kp-ok]')
   await sleep(200)
 }
+/** bring a tray chip into view (search narrows the tray to it) */
+async function chip(S, fn) {
+  await S.page.fill('[data-testid=tray-search]', fn)
+  await sleep(150)
+  return S.page.locator(`[data-tray] [data-pick=${fn}]`).first()
+}
+/** drag a tray chip with one finger and drop it `dy` px below the centre of `target`; returns the code afterwards */
+async function dragChip(S, fn, target, dy = 0, { before } = {}) {
+  const c = await S.touch.center(await chip(S, fn))
+  const t = await S.touch.center(target)
+  const N = 18
+  const path = Array.from({ length: N }, (_, i) => ({ x: c.x + ((t.x - c.x) * (i + 1)) / N, y: c.y + ((t.y + dy - c.y) * (i + 1)) / N }))
+  await S.touch.drag(c, 0, 0, { path, release: false, stepMs: 22 })
+  await sleep(120)
+  if (before) await before()
+  await S.touch.raw('touchEnd', [])
+  await sleep(350)
+  return codeOf(S.page)
+}
 const canon = (S, code) => S.page.evaluate((code) => {
   const { importText, canonicalSketch } = window.__stack.core
   return JSON.stringify(canonicalSketch(importText(code).sketch))
@@ -99,18 +118,18 @@ for (const [label, vp] of want('1') ? [['landscape', { width: 1180, height: 820 
     await keypad(S, nums.nth(0), '20')
     await keypad(S, nums.nth(1), '0.1')
     await keypad(S, nums.nth(2), '0.8')
-    // + add → rotate
-    await touch.tap('[data-testid=add-mod]')
-    await page.waitForSelector('[data-testid=fn-picker]')
-    await shot(page, `01-${label}-picker.png`)
-    await page.fill('[data-testid=fn-search]', 'rotate')
-    await touch.tap('[data-pick=rotate]')
-    await sleep(300)
+    // the operator tray: drag rotate out of it, under the generator
+    await touch.tap('[data-testid=tray-toggle]')
+    await page.waitForSelector('[data-tray] [data-pick=rotate]')
+    await shot(page, `01-${label}-tray.png`)
+    await dragChip(S, 'rotate', '[data-testid=row-gen]', 18)
+    await page.waitForSelector('[data-fn=rotate]')
     await keypad(S, page.locator('[data-fn=rotate] [role=spinbutton]').first(), '0.8')
-    // + add → modulate (comes with a noise(3) pocket), then amount 0.1
-    await touch.tap('[data-testid=add-mod]')
-    await page.fill('[data-testid=fn-search]', 'modulate')
-    await touch.tap('[data-pick=modulate]')
+    // modulate (comes with a noise(3) pocket): a tap on the chip inserts after the selected row (rotate), then amount 0.1
+    await touch.tap('[data-fn=rotate] [data-testid=fname]')
+    await page.keyboard.press('Escape')
+    await chip(S, 'modulate')
+    await touch.tap(`[data-tray] [data-pick=modulate]`)
     await sleep(300)
     await keypad(S, page.locator('[data-fn=modulate]').locator(':scope > [role=spinbutton]').first(), '0.1')
     await waitForPicture(page)
@@ -411,7 +430,8 @@ if (want('6')) await block('6', async () => {
         await sleep(250)
         const facts = await page.evaluate(() => {
           const sk = window.__stack.store.sketch
-          const d = window.__stack.core.describe(sk)
+          // the stack and the strip show every statement, switched on or off; describe() only counts what runs
+          const d = window.__stack.core.describe(window.__stack.core.enableAll(sk))
           const q = (s) => document.querySelectorAll(s).length
           return {
             stmts: sk.stmts.length, rows: q('[data-testid=stack-list] > .stmt'),
@@ -503,7 +523,8 @@ if (want('7')) await block('7', async () => {
   await check('7', 'switch to the harness and back: same sketch, same code, meta.stack intact, other apps\' meta untouched', async () => {
     await page.goto(S.base + 'stack/')
     await page.waitForFunction(() => !!window.__stack?.lib, null, { timeout: 15000 })
-    const code = '// a sketch with a neighbour\nconst amt = 0.3\nosc(20, 0.1, 0.8)\n  .rotate(0.8)\n  .modulate(noise(3), amt)\n  .out()\n'
+    // a switched-off modifier (commented out) travels with the sketch: the harness shows the same text, the stack the same disabled row
+    const code = '// a sketch with a neighbour\nconst amt = 0.3\nosc(20, 0.1, 0.8)\n  .rotate(0.8)\n  // .kaleid(4)\n  .modulate(noise(3), amt)\n  .out()\n'
     const id = await page.evaluate(async ({ code }) => {
       const lib = window.__stack.lib
       const s = await lib.create('Switch test', code)
@@ -538,6 +559,7 @@ if (want('7')) await block('7', async () => {
     await page.waitForFunction((id) => window.__stack?.store?.sketch?.id === id, id, { timeout: 15000 })
     const after = await read()
     assert.equal(await codeOf(page), code)
+    assert.equal(await page.locator('[data-fn=kaleid].is-disabled').count(), 1, 'the disabled row is still disabled')
     assert.deepEqual(after.meta.stack, before.meta.stack, 'meta.stack intact')
     assert.deepEqual(after.meta.graph, before.meta.graph, 'meta.graph untouched')
     assert.deepEqual(after.meta.rack, before.meta.rack, 'meta.rack untouched')
@@ -734,9 +756,9 @@ if (want('9')) await block('9', async () => {
     const good = await brightness()
     assert.ok(good > 20, `good frame brightness ${good}`)
     // add a call to a function that does not exist (a plugin that is not loaded): runtime throws "… is not a function"
-    await touch.tap('[data-testid=add-mod]')
-    await page.fill('[data-testid=fn-search]', 'nothere')
-    await touch.tap('text=Use “nothere” as the name')
+    if (!(await page.locator('[data-testid=tray-search]').count())) await touch.tap('[data-testid=tray-toggle]')
+    await page.fill('[data-testid=tray-search]', 'nothere')
+    await touch.tap('[data-testid=op-custom]')
     await page.waitForFunction(() => window.__stack.runner.status.phase === 'error', null, { timeout: 15000 })
     await sleep(1200)
     assert.ok(await page.locator('[data-testid=error-banner]').count(), 'error banner')
@@ -811,27 +833,29 @@ if (want('9')) await block('9', async () => {
   })
 
   await open('osc(20, 0.1, 0.8).myfx(0.5).out()\n', 'Unknown', 'any')
-  await check('9d', 'function picker: grouped, searchable, live thumbnails; plugin functions appear under "Plugins" and an unknown call upgrades when the plugin loads', async () => {
+  await check('9d', 'function picker and operator tray: grouped, searchable, live thumbnails; plugin functions appear under "Plugins" and an unknown call upgrades when the plugin loads', async () => {
     const row = page.locator('[data-fn=myfx]')
     assert.ok(await row.evaluate((e) => e.classList.contains('unknown')), 'generic row for an unknown call')
-    await touch.tap('[data-testid=add-mod]')
+    // tapping a function name opens the picker for that slot (same groups, same thumbnails as the tray)
+    await touch.tap('[data-fn=osc] [data-testid=fname]')
     await page.waitForSelector('[data-testid=fn-picker]')
-    const groups = await page.locator('[data-testid=fn-picker] [data-group]').evaluateAll((els) => els.map((e) => e.dataset.group))
-    assert.deepEqual(groups, ['Geometry', 'Color', 'Blend', 'Modulate'])
-    // thumbnails render one by one in the background (software WebGL: slow)
-    await page.waitForFunction(() => document.querySelectorAll('[data-testid=thumb][data-ready="1"]').length >= 3, null, { timeout: 60000 })
-    const made = await page.locator('[data-testid=thumb][data-ready="1"]').count()
-    await shot(page, '09-picker.png')
+    assert.deepEqual(await page.locator('[data-testid=fn-picker] [data-group]').evaluateAll((els) => els.map((e) => e.dataset.group)), ['Generators'])
     await page.keyboard.press('Escape')
+    if (!(await page.locator('[data-testid=tray-search]').count())) await touch.tap('[data-testid=tray-toggle]')
+    await page.fill('[data-testid=tray-search]', '')
+    const groups = await page.locator('[data-tray] [data-group]').evaluateAll((els) => els.map((e) => e.dataset.group).filter((g) => g !== 'Recent' && g !== 'Favourites'))
+    assert.deepEqual(groups, ['Geometry', 'Color', 'Blend', 'Modulate', 'Generators'])
+    // thumbnails render one by one in the background (software WebGL: slow)
+    await page.waitForFunction(() => document.querySelectorAll('[data-tray] [data-testid=thumb][data-ready="1"]').length >= 3, null, { timeout: 60000 })
+    const made = await page.locator('[data-tray] [data-testid=thumb][data-ready="1"]').count()
+    await shot(page, '09-tray.png')
     // a plugin registers a function
     await page.evaluate(() => window.__stack.core.catalog.refresh([{ name: 'myfx', type: 'color', inputs: [{ name: 'amount', type: 'float', default: 1 }], origin: 'plugin:demo' }]))
     await sleep(300)
     assert.equal(await row.evaluate((e) => e.classList.contains('unknown')), false, 'upgraded to a known row')
-    await touch.tap('[data-testid=add-mod]')
-    await page.waitForSelector('[data-group="Plugins"]')
-    assert.ok(await page.locator('[data-group="Plugins"] [data-pick=myfx]').count())
-    await shot(page, '09-picker-plugins.png')
-    await page.keyboard.press('Escape')
+    await page.waitForSelector('[data-tray] [data-group="Plugins"]')
+    assert.ok(await page.locator('[data-tray] [data-group="Plugins"] [data-pick=myfx]').count())
+    await shot(page, '09-tray-plugins.png')
     return `${made}+ thumbnails rendered; Plugins group present`
   })
 
@@ -1182,6 +1206,175 @@ if (want('12')) await block('12', async () => {
     assert.ok(g2.pane[2] < 1180 * 0.7, `panel beside the stack again: ${g2.pane}`)
   })
   assert.deepEqual(S.errors.filter((e) => !/Permissions policy/.test(e)), [], '12: no page errors')
+})
+
+// ============================================================================================================ 13. switching off, previews, drag-in
+const peekReady = (page) => page.waitForFunction(() => /^(paused|running)$/.test(document.querySelector('.preview-peek')?.dataset.state ?? ''), null, { timeout: 45000 })
+if (want('13')) await block('13', async () => {
+  const S = await startS()
+  const { page, touch } = S
+  const SRC13 = 'osc(20, 0.1, 0.8)\n  .rotate(0.8)\n  .kaleid(4)\n  .modulate(noise(3), 0.1)\n  .out()\n'
+  await importAndOpen(page, S.base, SRC13, 'Switch off')
+  await waitForPicture(page)
+  await sleep(400)
+
+  await check('13a', 'switch a modifier off with its // toggle and with a swipe right: the export comments that line only; switch it back on; the generator toggle switches the whole chain', async () => {
+    await touch.tap('[data-fn=rotate] .row-toggle')
+    await sleep(300)
+    assert.equal(await codeOf(page), SRC13.replace('  .rotate(0.8)', '  // .rotate(0.8)'))
+    assert.ok(await page.locator('[data-fn=rotate]').evaluate((e) => e.classList.contains('is-disabled') && getComputedStyle(e).opacity < 0.9), 'dimmed in place')
+    await shot(page, '13-disabled-row.png')
+    // swipe right on kaleid's free area (its closing parenthesis)
+    const p = await touch.center('[data-fn=kaleid] [data-testid=fname]')
+    await touch.drag(p, 130, 0, { steps: 10 })
+    await sleep(300)
+    assert.equal(await codeOf(page), SRC13.replace('  .rotate(0.8)', '  // .rotate(0.8)').replace('  .kaleid(4)', '  // .kaleid(4)'))
+    // back on through the row menu
+    await touch.tap('[data-fn=rotate] [data-testid=handle]')
+    await touch.tap('[data-testid=menu-disable]')
+    await touch.tap('[data-fn=kaleid] .row-toggle')
+    await sleep(300)
+    assert.equal(await codeOf(page), SRC13, 're-enabled: byte-identical')
+    // the generator's toggle: the whole statement becomes a comment, still shown and editable
+    await touch.tap('[data-testid=row-gen] .row-toggle')
+    await sleep(300)
+    assert.equal(await codeOf(page), SRC13.trimEnd().split('\n').map((l) => '// ' + l).join('\n') + '\n')
+    assert.ok(await page.locator('[data-testid=stmt-chain]').evaluate((e) => e.classList.contains('is-disabled')))
+    await shot(page, '13-disabled-chain.png')
+    await touch.tap('[data-testid=undo]')
+    await sleep(300)
+    assert.equal(await codeOf(page), SRC13, 'undo')
+  })
+
+  await check('13b', 'preview up to here: the eye opens a peek under the row; it renders without touching the main output; the preference hides it', async () => {
+    const runsBefore = await page.evaluate(() => window.__stack.runner.runs)
+    await touch.tap('[data-fn=rotate] [data-testid=eye]')
+    await page.waitForSelector('[data-fn=rotate] + [data-testid=peek-row]')
+    await peekReady(page)
+    const st = await page.evaluate(() => window.__stack.previews().stats)
+    assert.ok(st.frames > 0, `the preview drew (${JSON.stringify(st)})`)
+    await touch.tap('.peek-pic')
+    await sleep(1200)
+    assert.ok(await page.locator('.preview-peek.open').count(), 'expanded')
+    await shot(page, '13-peek-prefix.png')
+    assert.equal(await page.evaluate(() => window.__stack.runner.runs), runsBefore, 'the main runtime did not re-run')
+    // previews off (⋯ menu): eyes and peeks go away; back to on demand
+    const mode = () => page.evaluate(() => window.__stack.core.previewMode())
+    while ((await mode()) !== 'off') {
+      await touch.tap('[data-testid=more]')
+      await touch.tap('[data-testid=menu-previews]')
+      await sleep(150)
+    }
+    assert.equal(await page.locator('[data-testid=eye]').count(), 0)
+    assert.equal(await page.locator('.preview-peek').count(), 0)
+    while ((await mode()) !== 'demand') {
+      await touch.tap('[data-testid=more]')
+      await touch.tap('[data-testid=menu-previews]')
+      await sleep(150)
+    }
+    assert.ok(await page.locator('[data-testid=eye]').count() >= 4)
+    return `pool: ${st.runtimes} runtime(s), ${st.frames} frame(s)`
+  })
+
+  await check('13c', 'A/B a modifier: long-press its name, "What does this do?" shows before and after', async () => {
+    await touch.hold('[data-fn=kaleid] [data-testid=fname]', 700)
+    await touch.tap('[data-testid=menu-ab]')
+    await page.waitForSelector('[data-fn=kaleid] + [data-testid=peek-row][data-kind=diff]')
+    await peekReady(page)
+    await touch.tap('[data-fn=kaleid] + [data-testid=peek-row] .peek-pic')
+    await page.waitForSelector('.peek-ab')
+    await touch.tap('.peek-ab button:has-text("A · before")')
+    assert.equal(await page.locator('.peek-ab button[aria-pressed=true]').innerText(), 'A · before')
+    await sleep(800)
+    await shot(page, '13-peek-ab.png')
+    await touch.tap('[data-testid=peek-close]')
+    assert.equal(await page.locator('[data-testid=peek-row]').count(), 0)
+  })
+
+  await check('13d', 'drag-in: a chip dragged from the tray opens a gap between rows (rows part, the gap highlights) and lands there; a generator on a texture parameter makes a pocket', async () => {
+    await touch.tap('[data-testid=tray-toggle]')
+    await page.waitForSelector('[data-tray] .tray-scroll')
+    let mid
+    const code = await dragChip(S, 'scale', '[data-fn=rotate]', 18, {
+      before: async () => {
+        mid = await page.evaluate(() => ({ line: getComputedStyle(document.querySelector('[data-testid=drop-line]')).display, parted: [...document.querySelectorAll('.chain .rows > *')].filter((e) => /translateY/.test(e.style.transform)).length }))
+        await shot(page, '13-drag-in.png')
+      },
+    })
+    assert.equal(mid.line, 'block', 'the insertion line shows while dragging')
+    assert.ok(mid.parted >= 2, `rows below the gap part (${mid.parted})`)
+    assert.equal(code, SRC13.replace('  .rotate(0.8)\n', '  .rotate(0.8)\n  .scale()\n'))
+    const c2 = await dragChip(S, 'shape', '[data-fn=modulate] [data-tex-call] .pocket', 0)
+    assert.match(c2, /\.modulate\(shape\(\)/)
+    await touch.tap('[data-testid=undo]')
+    await sleep(200)
+    assert.equal(await page.evaluate(() => document.querySelectorAll('.drag-ghost, .drop-line').length), 0, 'nothing left behind')
+  })
+
+  await check('13e', 'no-drag paths: long-press a row → "insert above" opens the tray at that point; the tray’s search + Enter inserts after the selected row; a row dragged onto the tray is deleted, with undo', async () => {
+    const start = await codeOf(page)
+    await touch.hold('[data-fn=kaleid] [data-testid=fname]', 700)
+    await touch.tap('[data-testid=menu-insert-above]')
+    assert.match(await page.locator('[data-testid=tray-target]').innerText(), /Insert above \.kaleid/)
+    assert.equal(await page.locator('[data-tray] [data-group=Generators]').count(), 0, 'filtered to modifiers')
+    await touch.tap(await chip(S, 'invert'))
+    assert.equal(await codeOf(page), start.replace('  .kaleid(4)', '  .invert()\n  .kaleid(4)'))
+    // keyboard: the selected row is invert now
+    await page.fill('[data-testid=tray-search]', 'pixelate')
+    await page.focus('[data-testid=tray-search]')
+    await page.keyboard.press('Enter')
+    await sleep(250)
+    assert.equal(await codeOf(page), start.replace('  .kaleid(4)', '  .invert()\n  .pixelate()\n  .kaleid(4)'))
+    // drag the pixelate row out onto the tray
+    const h = await touch.center('[data-fn=pixelate] [data-testid=handle]')
+    const t = await touch.center('[data-tray] .tray-scroll')
+    const path = Array.from({ length: 16 }, (_, i) => ({ x: h.x + ((t.x - h.x) * (i + 1)) / 16, y: h.y + ((t.y - h.y) * (i + 1)) / 16 }))
+    await touch.drag(h, 0, 0, { path, preHold: 420, release: false, stepMs: 25 })
+    assert.ok(await page.locator('[data-testid=tray-delete]').count(), 'the tray says "drop here to delete"')
+    await shot(page, '13-drag-out.png')
+    await touch.raw('touchEnd', [])
+    await sleep(400)
+    assert.equal(await codeOf(page), start.replace('  .kaleid(4)', '  .invert()\n  .kaleid(4)'))
+    assert.ok(await page.locator('.toast:has-text("Deleted")').count(), 'undo toast')
+    await touch.tap('[data-testid=undo]')
+    await sleep(250)
+    assert.match(await codeOf(page), /\.pixelate\(\)/)
+  })
+
+  await check('13f', 'existing gestures alongside drag-in: reorder by the handle and swipe-left delete still work, with undo', async () => {
+    const before = await codeOf(page)
+    const h = await touch.center('[data-fn=kaleid] [data-testid=handle]')
+    const up = await touch.center('[data-fn=rotate]')
+    await touch.drag(h, 0, up.y - h.y - 4, { preHold: 420, steps: 14, stepMs: 25 })
+    await sleep(300)
+    const moved = await codeOf(page)
+    assert.ok(moved.indexOf('.kaleid') < moved.indexOf('.rotate') || moved.indexOf('.kaleid') < moved.indexOf('.scale'), `kaleid moved up:\n${moved}`)
+    const p = await touch.center('[data-fn=invert] [data-testid=fname]')
+    await touch.drag(p, -140, 0, { steps: 10 })
+    await sleep(400)
+    assert.doesNotMatch(await codeOf(page), /\.invert/)
+    await touch.tap('[data-testid=undo]')
+    await touch.tap('[data-testid=undo]')
+    await sleep(300)
+    assert.equal(await codeOf(page), before)
+  })
+
+  await check('13g', 'importing commented-out code: the revived chunks show as disabled, with a one-time note', async () => {
+    await importAndOpen(page, S.base, 'osc(10)\n  // .rotate(1)\n  .out()\n// noise(3).out(o1)\n', 'Revived')
+    await page.waitForSelector('[data-testid=revived-banner]')
+    assert.match(await page.locator('[data-testid=revived-banner]').innerText(), /2 commented-out chunks were revived as disabled/)
+    assert.equal(await page.locator('.is-disabled[data-call], .stmt.is-disabled').count(), 2)
+    await shot(page, '13-revived.png')
+    await touch.tap('[data-testid=revived-dismiss]')
+    await sleep(300)
+    await page.evaluate(() => window.__stack.lib.flush())
+    await page.reload()
+    await page.waitForFunction(() => !!window.__stack?.store, null, { timeout: 15000 })
+    await sleep(500)
+    assert.equal(await page.locator('[data-testid=revived-banner]').count(), 0, 'stays dismissed')
+    return 'Chain Stack never had a bypass/mute/solo flag in meta.stack, so there is no old flag to migrate'
+  })
+  assert.deepEqual(S.errors, [], '13: no page errors')
 })
 
 // ============================================================================================================ summary

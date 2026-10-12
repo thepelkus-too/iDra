@@ -3,6 +3,7 @@
 import {
   contentHash,
   describe,
+  disabledNodes,
   type Chain,
   type Call,
   type OutName,
@@ -21,10 +22,15 @@ export interface StackMeta {
   /** one entry per statement, in source order, at the time the view was built */
   rows: Array<{ id: string; kind: RowKind }>
   /** the chain strip as built: source order, labelled by output */
-  chains: Array<{ id: string; label: string; flag?: 'not-rendered' | 'shadowed' }>
+  chains: Array<{ id: string; label: string; flag?: StripFlag }>
   /** statement id of the chain the dice, mutate and the strip act on */
   active?: string
   renderMode: 'single' | 'all'
+  /**
+   * Set on the first open of a sketch that already has switched-off chunks (commented-out code the importer revived):
+   * how many, for a one-time note. Removed when the note is dismissed.
+   */
+  revived?: number
 }
 
 export function rowKind(s: Stmt): RowKind {
@@ -39,6 +45,9 @@ export function rowKind(s: Stmt): RowKind {
   }
 }
 
+/** `off`: the chain statement is switched off (shown dimmed; it draws nothing) */
+export type StripFlag = 'not-rendered' | 'shadowed' | 'off'
+
 export interface StripItem {
   stmtId: string
   chainId: string
@@ -46,20 +55,31 @@ export interface StripItem {
   label: string
   gen: string
   out: OutName | null
-  flag?: 'not-rendered' | 'shadowed'
+  flag?: StripFlag
 }
 
-/** The chain strip for the current sketch: every top-level chain in source order. */
+/** The chain strip for the current sketch: every top-level chain in source order, switched-off ones included (flag `off`). */
 export function stripOf(sketch: Sketch): StripItem[] {
   const d = describe(sketch)
-  return d.chains.map((c) => ({
-    stmtId: c.stmtId,
-    chainId: c.chainId,
-    label: c.out ?? '—',
-    gen: c.gen,
-    out: c.out,
-    flag: !c.rendered ? 'not-rendered' : c.shadowed ? 'shadowed' : undefined,
-  }))
+  const facts = new Map(d.chains.map((c) => [c.stmtId, c]))
+  const out: StripItem[] = []
+  for (const s of sketch.stmts) {
+    if (s.k !== 'chain') continue
+    const c = facts.get(s.id)
+    if (c) {
+      out.push({
+        stmtId: c.stmtId,
+        chainId: c.chainId,
+        label: c.out ?? '—',
+        gen: c.gen,
+        out: c.out,
+        flag: !c.rendered ? 'not-rendered' : c.shadowed ? 'shadowed' : undefined,
+      })
+    } else if (s.disabled) {
+      out.push({ stmtId: s.id, chainId: s.chain.id, label: s.chain.out ?? '—', gen: s.chain.gen.fn, out: s.chain.out ?? null, flag: 'off' })
+    }
+  }
+  return out
 }
 
 /** Pick the chain the strip starts on: the one that wins o0, else the first rendered one, else the first. */
@@ -68,7 +88,7 @@ export function defaultActive(sketch: Sketch): string | undefined {
   const d = describe(sketch)
   const winner = d.outputs.o0.winner
   const byWinner = winner ? strip.find((s) => s.chainId === winner) : undefined
-  return (byWinner ?? strip.find((s) => !s.flag) ?? strip[0])?.stmtId
+  return (byWinner ?? strip.find((s) => !s.flag) ?? strip.find((s) => s.flag !== 'off') ?? strip[0])?.stmtId
 }
 
 /** Deterministic default view. Pure function of the sketch: same input, same output; never reads or touches other apps' meta. */
@@ -83,6 +103,13 @@ export function autoView(sketch: Sketch): StackMeta {
     active: defaultActive(sketch),
     renderMode: d.activeRender === 'all' ? 'all' : 'single',
   }
+}
+
+/** The view a sketch gets the first time this editor opens it: `autoView`, plus the revived-chunks count for the one-time note. */
+export function firstView(sketch: Sketch): StackMeta {
+  const d = disabledNodes(sketch)
+  const n = d.stmts.length + d.calls.length
+  return { ...autoView(sketch), ...(n ? { revived: n } : {}) }
 }
 
 export function metaOf(sketch: Sketch): StackMeta | undefined {

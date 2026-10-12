@@ -410,6 +410,19 @@ function Pocket({ a, v }: { a: ArgInfo; v: Extract<Value, { k: 'tex' }> }) {
 }
 
 export function ArgView({ value, a }: { value: Value | undefined; a: ArgInfo }) {
+  const inner = <ArgInner value={value} a={a} />
+  // a texture parameter takes an operator dropped from the tray (drag.ts finds it by these attributes)
+  if (a.input?.type === 'sampler2D' && 'call' in a.refd) {
+    return (
+      <span class="texslot" data-tex-call={a.refd.call} data-tex-i={a.refd.i}>
+        {inner}
+      </span>
+    )
+  }
+  return inner
+}
+
+function ArgInner({ value, a }: { value: Value | undefined; a: ArgInfo }) {
   const v = value ?? DEFAULT
   switch (v.k) {
     case 'num':

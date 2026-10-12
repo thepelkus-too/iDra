@@ -31,6 +31,8 @@ setKitHost({
   endGroup: () => ctx.store.endGroup(),
   subscribe: (cb) => (ctx.store ? ctx.store.subscribe(cb) : () => {}),
   invoke: (name, method, args) => ctx.runner?.rt?.invoke(name, method, args) ?? false,
+  // chunk previews follow the main runtime's clock and live numbers, and copy its outputs (never run anything in it)
+  runtime: () => ctx.runner?.rt,
   trusted: () => !!ctx.runner && !ctx.runner.trust.pending,
   // approve the content just committed (the runner may not have picked it up yet)
   approveOnce: () => {

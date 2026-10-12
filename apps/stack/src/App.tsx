@@ -12,6 +12,7 @@ import { AddBar, Banners, ChainStrip, FooterAbout, TopBar, openAudioSheet } from
 import { CodeView, codeBridge } from './ui/CodeView'
 import { useCatalogVersion } from './ui/Picker'
 import { StatementList, duplicateStatement, type ViewState } from './ui/Rows'
+import { Tray, useTray } from './ui/Tray'
 
 function duplicateSelection(): void {
   const sel = ctx.store.selection
@@ -33,6 +34,7 @@ export function App({ stage }: { stage: HTMLElement }) {
   const catVersion = useCatalogVersion()
   const layout = useLayout()
   const backdrop = useBackdrop().placement === 'backdrop'
+  const trayOpen = useTray().open
   useShortcuts(
     history,
     (e, mod) => {
@@ -69,21 +71,24 @@ export function App({ stage }: { stage: HTMLElement }) {
 
   const st = runner.status
   return (
-    <div class={`app ${layout} ${backdrop ? 'backdrop' : collapsed ? 'pip' : ''} mode-${mode}`} data-layout={layout} data-preview={backdrop ? 'backdrop' : collapsed ? 'pip' : 'panel'} data-testid="app">
+    <div class={`app ${layout} ${backdrop ? 'backdrop' : collapsed ? 'pip' : ''} mode-${mode}${trayOpen && mode === 'blocks' ? ' tray-open' : ''}`} data-layout={layout} data-preview={backdrop ? 'backdrop' : collapsed ? 'pip' : 'panel'} data-testid="app">
       <TopBar mode={mode} setMode={setMode} onToggleAudio={openAudioSheet} />
       <ChainStrip />
       <div class="body">
         <section class="pane stack-pane" aria-label="Stack">
           <Banners />
-          <div class="scroll" data-testid="stack-scroll">
-            {mode === 'blocks' ? (
-              <>
-                <StatementList view={view} />
-                <AddBar />
-              </>
-            ) : (
-              <CodeView active />
-            )}
+          <div class={`stack-mid ${layout === 'land' ? 'tray-side' : 'tray-bottom'}`}>
+            <div class="scroll" data-testid="stack-scroll">
+              {mode === 'blocks' ? (
+                <>
+                  <StatementList view={view} />
+                  <AddBar />
+                </>
+              ) : (
+                <CodeView active />
+              )}
+            </div>
+            {mode === 'blocks' && <Tray side={layout === 'land'} />}
           </div>
           <div class="foot">
             <FooterAbout />

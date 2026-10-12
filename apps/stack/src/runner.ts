@@ -97,6 +97,8 @@ export class Runner {
       /* optional */
     }
     this.onStarted?.()
+    // the UI shows the isolation (inline banner): say so even when the next run turns out to have nothing to do
+    this.emit()
   }
 
   dispose(): void {

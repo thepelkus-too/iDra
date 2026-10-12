@@ -1,5 +1,6 @@
 import * as core from '@hydra-ipad/core'
 import { applyAppBase, createBackdrop, getAudioEngine, getLibrary, injectStyles, mountUpdateToast, parseRoute, routeHash, withMeta, type Sketch } from '@hydra-ipad/core'
+import { kitPreviewPool } from '@hydra-ipad/kit'
 import { render } from 'preact'
 import { App } from './App'
 import { ctx } from './ctx'
@@ -8,7 +9,7 @@ import { Store } from './store'
 import { CSS } from './styles'
 import { thumbs } from './thumbs'
 import { codeBridge } from './ui/CodeView'
-import { APP, autoView, metaOf } from './view'
+import { APP, firstView, metaOf } from './view'
 
 applyAppBase()
 document.documentElement.dataset.theme = 'dark'
@@ -29,7 +30,7 @@ async function pickSketch(): Promise<Sketch> {
 /** First open: build the default view (meta.stack) from the sketch; never touches another app's meta. */
 function withView(s: Sketch): { sketch: Sketch; created: boolean } {
   if (metaOf(s)) return { sketch: s, created: false }
-  return { sketch: withMeta(s, APP, autoView(s) as unknown as Record<string, unknown>), created: true }
+  return { sketch: withMeta(s, APP, firstView(s) as unknown as Record<string, unknown>), created: true }
 }
 
 async function boot() {
@@ -110,7 +111,7 @@ async function boot() {
 
   mountUpdateToast({ onBeforeReload: () => lib.flush() })
   render(<App stage={stage} />, document.getElementById('app')!)
-  ;(window as unknown as Record<string, unknown>).__stack = { store, runner, backdrop, lib, audio: ctx.audio, thumbs, ctx, core }
+  ;(window as unknown as Record<string, unknown>).__stack = { store, runner, backdrop, lib, audio: ctx.audio, thumbs, ctx, core, previews: kitPreviewPool }
 
   await runner.start()
   runner.run(true, first.sketch)
