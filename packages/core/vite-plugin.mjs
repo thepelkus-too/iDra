@@ -92,6 +92,8 @@ export function hydraApp(metaUrl, extra = {}) {
       __BRANCH__: JSON.stringify(branch),
       // optional CORS proxy for podcast feeds/audio (docs/audio.md › Running your own proxy); unset by default, none ships
       __AUDIO_PROXY_URL__: JSON.stringify(env.AUDIO_PROXY_URL || ''),
+      // feeds-only proxy (api/feed.mjs on the Vercel deployment); falls back to AUDIO_PROXY_URL
+      __FEED_PROXY_URL__: JSON.stringify(env.FEED_PROXY_URL || ''),
       ...define,
     },
     build: { outDir: 'dist', emptyOutDir: true, target: ['es2020', 'safari14'], sourcemap: false, ...build },

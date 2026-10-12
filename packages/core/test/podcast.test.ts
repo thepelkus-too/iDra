@@ -192,6 +192,23 @@ describe('resolveAudioUrl', () => {
     expect(seen.at(-1)).toBe('cors:https://proxy.example/get?u=' + encodeURIComponent('https://feeds.example/show.xml'))
     expect(proxiedUrl('https://p.example/?url=', 'https://a/b c')).toBe('https://p.example/?url=https%3A%2F%2Fa%2Fb%20c')
   })
+  test('through the feed proxy: relative links resolve against the feed, the feed keeps its own URL; a refusal is "blocked"', async () => {
+    const rel = RSS.replace('https://cdn.example/ep3.mp3', 'media/ep3.mp3')
+    const fetch = vi.fn(async (u: string, init?: RequestInit) => {
+      if (u.startsWith('/api/feed?url=')) return u.includes('radio') ? res('not a feed', 'text/plain', 415) : new Response(rel, { headers: { 'content-type': 'application/rss+xml', 'x-feed-url': 'https://feeds.example/final/show.xml' } })
+      if (init?.mode === 'cors') throw new TypeError('Failed to fetch')
+      return new Response(null)
+    })
+    const r = await resolveAudioUrl('https://feeds.example/show.rss', { fetch, proxy: '/api/feed?url=' })
+    expect(r.kind).toBe('feed')
+    if (r.kind === 'feed') {
+      expect(r.viaProxy).toBe(true)
+      expect(r.feed.url).toBe('https://feeds.example/show.rss')
+      expect(r.feed.episodes[0].url).toBe('https://feeds.example/final/media/ep3.mp3')
+    }
+    // a radio stream without CORS: the feeds-only proxy refuses it, and it is tried as a stream as before
+    expect(await resolveAudioUrl('https://radio.example/live', { fetch, proxy: '/api/feed?url=' })).toMatchObject({ kind: 'blocked', looksLikeFeed: false })
+  })
   test('feeds over the size cap are refused', async () => {
     const r = await resolveAudioUrl('https://feeds.example/show', { fetch: async () => res(RSS, 'application/xml'), proxy: null, maxFeedBytes: 100 })
     expect(r).toMatchObject({ kind: 'error', code: 'too-large' })

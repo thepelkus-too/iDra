@@ -26,6 +26,22 @@ export function audioProxyUrl(override?: string | null): string | undefined {
   return undefined
 }
 
+declare const __FEED_PROXY_URL__: string | undefined
+
+/**
+ * The proxy for reading feeds only: the `FEED_PROXY_URL` build setting (the site's own /api/feed on Vercel, see
+ * api/feed.mjs), else AUDIO_PROXY_URL. `override` is for tests; `null` forces "no proxy".
+ */
+export function feedProxyUrl(override?: string | null): string | undefined {
+  if (override !== undefined) return override || undefined
+  try {
+    if (typeof __FEED_PROXY_URL__ !== 'undefined' && __FEED_PROXY_URL__) return __FEED_PROXY_URL__
+  } catch {
+    /* not defined in this build */
+  }
+  return audioProxyUrl()
+}
+
 // ------------------------------------------------------------------ links we recognise but cannot use
 
 export interface UnsupportedService {
@@ -288,7 +304,7 @@ export async function resolveAudioUrl(raw: string, opts: { fetch?: FetchLike; pr
   if (!/^https?:$/.test(parsed.protocol)) return { kind: 'error', code: 'invalid', message: 'Paste an http(s) link to a podcast feed or an audio file.' }
   if (isDirectAudioUrl(url)) return { kind: 'audio', url }
   const f: FetchLike = opts.fetch ?? ((i, init) => fetch(i, init))
-  const proxy = audioProxyUrl(opts.proxy)
+  const proxy = feedProxyUrl(opts.proxy)
   const cap = opts.maxFeedBytes ?? FEED_LIMITS.maxFeedBytes
   const attempt = async (target: string): Promise<Response> => {
     const ac = typeof AbortController !== 'undefined' ? new AbortController() : undefined
@@ -324,6 +340,8 @@ export async function resolveAudioUrl(raw: string, opts: { fetch?: FetchLike; pr
   }
   if (!res.ok) {
     void res.body?.cancel?.().catch(() => {})
+    // the proxy only passes feeds: anything else it refuses is treated like the CORS refusal (radio may still play)
+    if (viaProxy) return blocked(url)
     return { kind: 'error', code: 'http', message: `The server answered ${res.status}${res.statusText ? ` ${res.statusText}` : ''}.` }
   }
   const type = (res.headers.get('content-type') ?? '').toLowerCase()
@@ -337,7 +355,10 @@ export async function resolveAudioUrl(raw: string, opts: { fetch?: FetchLike; pr
   }
   try {
     const xml = await readCapped(res, cap)
-    return { kind: 'feed', feed: parseFeed(xml, res.url || url), viaProxy }
+    // through the proxy, res.url is the proxy's: resolve relative links against the feed's own (final) URL
+    const base = viaProxy ? res.headers.get('x-feed-url') || url : res.url || url
+    const feed = parseFeed(xml, base)
+    return { kind: 'feed', feed: viaProxy ? { ...feed, url } : feed, viaProxy }
   } catch (e) {
     if (e instanceof PodcastError) return { kind: 'error', code: e.code, message: e.message }
     return { kind: 'error', code: 'unreachable', message: `Could not read the feed: ${(e as Error).message}` }

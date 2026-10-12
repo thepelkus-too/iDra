@@ -102,6 +102,24 @@ source type); the panel says so. Diagnostics → *HLS streams* reports `canPlayT
 * **Share sheet:** Web Share Target is not available to iOS home-screen web apps as far as we know, so the app does not
   register one. Save the audio to Files (Share › Save to Files) and use *Audio file…*.
 
+### The feed proxy on the Vercel deployment (`/api/feed`)
+
+Many podcast hosts (SoundCloud among them) send no CORS headers on their feeds. The Vercel deployment includes a small
+**feeds-only** proxy, `api/feed.mjs`, and its build sets `FEED_PROXY_URL=/api/feed?url=` (in `vercel.json`'s `buildCommand`).
+The panel uses it only after a feed host refuses CORS; the state line then says the feed was read through the proxy. It
+proxies **feeds, never audio**: episodes from such hosts still play without analysis, or download through Safari and the Files
+app. Its safeguards (tested in `api/feed.test.mjs`):
+
+* GET only; same-origin only (it refuses requests whose `Sec-Fetch-Site` is another site, and sends no
+  `Access-Control-Allow-Origin`, so other sites' pages cannot read it);
+* `http(s)` targets only, no credentials in URLs, no cookies or `Authorization` forwarded, none of the host's cookies passed back;
+* public addresses only: loopback, private, link-local, CGNAT, multicast, documentation and metadata ranges are refused, checked
+  when connecting (so DNS rebinding can't slip past) and again on every redirect (at most 5);
+* RSS/Atom/XML content types only (anything else gets 415, and the panel falls back to trying the link as a stream), at most
+  10 MB, 10 s timeout; responses are cached at the edge for 5 minutes to spare the feed hosts.
+
+Local builds and other hosts don't set `FEED_PROXY_URL`, so they behave as before.
+
 ### Running your own proxy (`AUDIO_PROXY_URL`)
 
 Many podcast hosts send no CORS headers. A build can name a proxy that the panel uses **only after** a CORS refusal, for the

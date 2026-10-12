@@ -626,7 +626,7 @@ export function mountAudioPanel(el: HTMLElement, opts: AudioPanelOptions = {}): 
         break
       case 'feed':
         feed = r.feed
-        say(r.viaProxy ? 'Feed read through your proxy (AUDIO_PROXY_URL).' : '')
+        say(r.viaProxy ? 'This host blocks web pages, so the feed was read through the feed proxy.' : '')
         await podcasts.rememberFeed(r.feed).catch(() => {})
         await loadPositions()
         renderEpisodes()
