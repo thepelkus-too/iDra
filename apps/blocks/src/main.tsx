@@ -1,3 +1,4 @@
+import { kitPreviewPool } from '@hydra-ipad/kit'
 import { boot } from './kit/boot'
 import { ctx } from './kit/ctx'
 import { thumbs } from './kit/thumbs'
@@ -22,5 +23,5 @@ void boot({
   hasView: (s) => !!metaOf(s),
   App,
   css: CSS,
-  expose: { thumbs, ui, metaNow, commit, applyDrop, doDrop, dragHooks, wsApi, edit, ops, help, chunk, previewStats: () => chunk.blocksPreviewPool().stats },
+  expose: { thumbs, ui, metaNow, commit, applyDrop, doDrop, dragHooks, wsApi, edit, ops, help, chunk, previewStats: () => kitPreviewPool().stats },
 })

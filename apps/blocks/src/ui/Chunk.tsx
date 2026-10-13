@@ -2,8 +2,8 @@
 // switched-off block stays where it is, dimmed and striped, with its slots still editable; the kit's DisableToggle and
 // disableAction carry the rules (a hat switches its whole script, a def takes the scripts that use it along). Previews come
 // from the kit's PreviewPeek in a popover anchored to the block; nothing runs while it is closed.
-import { onPreviewMode, previewMode, setPreviewMode, walkChains, type Call, type Chain, type PreviewHandle, type PreviewMode, type PreviewPool, type PreviewSpec, type Sketch } from '@hydra-ipad/core'
-import { disableAction, DisableToggle, kitPreviewPool, openPopover, PreviewPeek, toast } from '@hydra-ipad/kit'
+import { onPreviewMode, previewMode, setPreviewMode, walkChains, type Call, type Chain, type PreviewMode, type PreviewSpec, type Sketch } from '@hydra-ipad/core'
+import { disableAction, DisableToggle, openPopover, PreviewPeek, toast } from '@hydra-ipad/kit'
 import { useEffect, useState } from 'preact/hooks'
 import { ctx, useStore } from '../kit/ctx'
 import { openMenu, type MenuItem } from '../kit/Menu'
@@ -69,51 +69,6 @@ export const isOff = (sk: Sketch, id: string): boolean => disableAction(sk, id).
 
 // ---------------------------------------------------------------- previews
 
-let pool: PreviewPool | undefined
-/**
- * The kit's shared pool, with one workaround (see the README's core change requests): core's pool drops a preview that is
- * `starting` when `update()` arrives with the same chunk (a new plan object, same key), and it then stays `starting` for
- * good. PreviewPeek calls `update()` right after opening, and the workspace commits view state (the camera) at any time,
- * so here updates wait until the preview has left `starting`; the latest one wins.
- */
-export function blocksPreviewPool(): PreviewPool {
-  if (pool) return pool
-  const base = kitPreviewPool()
-  pool = {
-    open(spec, c) {
-      const h = base.open(spec, c)
-      let pending: Parameters<PreviewHandle['update']>[0] | undefined
-      const flush = () => {
-        if (!pending || h.state === 'starting') return
-        const next = pending
-        pending = undefined
-        h.update(next)
-      }
-      h.onState(flush)
-      const update = (next: Parameters<PreviewHandle['update']>[0]) => {
-        pending = { ...pending, ...next }
-        flush()
-      }
-      return new Proxy(h, {
-        get(t, k) {
-          if (k === 'update') return update
-          const v = Reflect.get(t, k)
-          return typeof v === 'function' ? v.bind(t) : v
-        },
-      })
-    },
-    get stats() {
-      return base.stats
-    },
-    get mode() {
-      return base.mode
-    },
-    setMode: (m) => base.setMode(m),
-    dispose: () => base.dispose(),
-  }
-  return pool
-}
-
 /** "osc → rotate → kaleid": the chain's enabled calls up to `upTo` (the call itself always counts). */
 export function chainLabel(chain: Chain, upTo: string): string {
   const out: string[] = []
@@ -128,7 +83,7 @@ function PeekPanel({ spec, title }: { spec: PreviewSpec; title: string }) {
   return (
     <div class="peek-pop" data-testid="peek-pop" data-kind={spec.kind}>
       <div class="peek-title">{title}</div>
-      <PreviewPeek spec={spec} label={title} pool={blocksPreviewPool()} />
+      <PreviewPeek spec={spec} label={title} />
       <small class="peek-hint">{spec.kind === 'diff' ? 'Tap the picture to play it, then A or B.' : 'Tap the picture to play it larger.'}</small>
     </div>
   )

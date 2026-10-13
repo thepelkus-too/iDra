@@ -46,7 +46,7 @@ import { DisableToggle, PreviewPeek, closePopover, disableAction, openNumberEdit
 import { onPreviewMode, previewMode, type PreviewSpec } from '@hydra-ipad/core'
 import { useEffect } from 'preact/hooks'
 import { focusNode } from '../nav'
-import { setPeek, stackPreviewPool, togglePeek, usePeek } from '../peek'
+import { setPeek, togglePeek, usePeek } from '../peek'
 import { setTray } from '../tray'
 import { openTrayAt } from './Tray'
 import type { RowProblem } from '../problems'
@@ -297,7 +297,7 @@ function CallRow({ call, chainId, index, count, stmtId, nested, depth, rows }: C
     </div>
     {spec && previews && (
       <div class="peek-row" data-reorder="skip" data-testid="peek-row" data-kind={spec.kind}>
-        <PreviewPeek key={`${spec.kind}:${call.id}`} spec={spec} pool={stackPreviewPool()} sketch={view.sketch} label={label} />
+        <PreviewPeek key={`${spec.kind}:${call.id}`} spec={spec} sketch={view.sketch} label={label} />
         <button type="button" class="linkish" data-testid="peek-close" onClick={() => setPeek(undefined)}>
           close
         </button>

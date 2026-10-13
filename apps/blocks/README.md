@@ -118,12 +118,6 @@ committed as one undo step. View state is `sketch.meta.blocks`: script positions
 
 ## Core change requests
 
-* **The preview pool can stay `starting` for good** (`packages/core/src/preview.ts`). `start()` checks `h.plan !== plan`
-  (object identity) after `await s.rt.ready`, `rt.run` and the clock sync, but `handle.update()` always replans (a new plan
-  object with the same key) and restarts only when the key changes. The kit's `PreviewPeek` calls `update()` right after
-  opening, so the first peek in a cold pool never ran (stats: 0 runs, 0 frames). Fix: compare `h.plan?.key !== plan.key`
-  in those three places. Until then Blocks wraps the pool (`blocksPreviewPool` in `src/ui/Chunk.tsx`) so `update()` waits
-  until the handle has left `starting`. Every editor using `PreviewPeek` needs either the fix or the same wrapper.
 * **Carry the import report to the editor.** `report.revived` is lost once the library stores the sketch, so Blocks infers
   "revived" from a sketch no editor has opened that already has switched-off parts. A field such as
   `meta.import = { revived }` written by `library.create`/import (and cleared by the first editor that shows it) would make
