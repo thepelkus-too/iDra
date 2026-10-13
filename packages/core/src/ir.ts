@@ -42,6 +42,12 @@ export interface CallSrc {
    * untouched import re-exports byte for byte. Absent for calls that were not imported as comments.
    */
   lead?: string
+  /**
+   * Each argument's place in `text` (`[from, to)`) and content hash, so an edited call keeps the text of the arguments that
+   * did not change, the separators and line breaks between them, and arguments a user typed that equal the default.
+   * Absent on calls imported before it existed, and on revived disabled calls: those are regenerated in canonical form.
+   */
+  args?: Array<{ from: number; to: number; hash: string }>
 }
 
 export interface Call {

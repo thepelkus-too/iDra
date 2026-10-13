@@ -186,8 +186,40 @@ function emitCallArgs(call: Call, ctx: Ctx): Piece {
 }
 
 function emitCall(call: Call, position: 'gen' | 'mod', ctx: Ctx): Piece {
-  const p = cat([position === 'mod' ? '.' : '', call.fn, emitCallArgs(call, ctx)])
+  const p = (!ctx.fresh && !ctx.live && editedCallText(call, position, ctx)) || cat([position === 'mod' ? '.' : '', call.fn, emitCallArgs(call, ctx)])
   return marked(call.id, p)
+}
+
+/**
+ * An edited call written over its original text: arguments whose content did not change keep their text, the separators
+ * and line breaks between arguments stay, and an argument the user typed is not dropped for equalling the default. Only the
+ * changed arguments are regenerated; added ones follow with `, `. Undefined when the original text cannot carry the edit
+ * (another function, no recorded arguments, or every argument gone): the call is then written in canonical form.
+ */
+function editedCallText(call: Call, position: 'gen' | 'mod', ctx: Ctx): Piece | undefined {
+  const src = call.src
+  if (!src?.args?.length || !src.text) return undefined
+  const head = src.text.slice(0, src.args[0].from)
+  const name = new RegExp(`^${position === 'mod' ? '\\.' : ''}\\s*${call.fn.replace(/[$]/g, '\\$')}\\s*\\(`)
+  if (!name.test(head)) return undefined
+  const inputs = ctx.cat.inputs(call.fn)
+  const typed = src.args.length
+  // what canonical form keeps, extended over the arguments that were typed (unless now left to their default)
+  let keep = trimArgs(call, ctx, inputs).length
+  let k = Math.min(call.args.length, typed)
+  while (k > keep && call.args[k - 1].k === 'default') k--
+  keep = Math.max(keep, k)
+  if (!keep) return undefined
+  const parts: Array<string | Piece> = [head]
+  for (let i = 0; i < keep; i++) {
+    if (i) parts.push(i < typed ? src.text.slice(src.args[i - 1].to, src.args[i].from) : ', ')
+    const a = call.args[i]
+    const was = src.args[i]
+    parts.push(was && was.hash === contentHash(a) ? src.text.slice(was.from, was.to) : emitValue(a, ctx, inputs[i]))
+  }
+  // after the last argument kept: the original text after the last argument (a trailing comma, a line break, the `)`)
+  parts.push(src.text.slice(src.args[typed - 1].to))
+  return cat(parts)
 }
 
 function emitChainInline(chain: Chain, ctx: Ctx): Piece {
