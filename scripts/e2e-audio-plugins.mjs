@@ -466,6 +466,8 @@ await step('a direct episode URL (no feed) plays and analyses; Forget clears the
 await step('audio file: chosen through the Files picker, shown by name, kept on the device when asked', async () => {
   await page.selectOption('[data-role=source]', 'file')
   assert.match(await page.textContent('[data-role=file-help]'), /Patreon, Telegram or any download/)
+  // explicit extensions: iOS greys out MP3s it can't map to audio/*
+  assert.match(await page.getAttribute('[data-role=file-input]', 'accept'), /\.mp3,.*\.m4a/)
   await page.check('[data-role=keep]')
   await page.setInputFiles('[data-role=file-input]', { name: 'beats.wav', mimeType: 'audio/wav', buffer: readFileSync(join(fx, 'beats.wav')) })
   await page.waitForFunction(() => /beats\.wav/.test(document.querySelector('[data-role=file-name]').textContent))

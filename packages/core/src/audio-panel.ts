@@ -120,6 +120,12 @@ const FILE_HELP = 'Accepts audio saved from Patreon, Telegram or any download: s
 const fmtMB = (n?: number) => (n === undefined ? '' : n < 1048576 ? `${Math.max(1, Math.round(n / 1024))} KB` : n < 1073741824 ? `${(n / 1048576).toFixed(1)} MB` : `${(n / 1073741824).toFixed(1)} GB`)
 
 /** Audio control panel: source (mic, input device, file, stream URL, other apps), transport, meters, Hydra's settings, monitor. */
+export const AUDIO_FILE_ACCEPT = [
+  'audio/*', 'video/*',
+  '.mp3', '.m4a', '.m4b', '.aac', '.wav', '.aif', '.aiff', '.caf', '.flac', '.ogg', '.oga', '.opus', '.webm', '.mp4', '.mov',
+  'audio/mpeg', 'audio/mp3', 'audio/mp4', 'audio/x-m4a', 'audio/aac', 'audio/wav', 'audio/x-wav', 'audio/flac', 'audio/ogg',
+].join(',')
+
 export function mountAudioPanel(el: HTMLElement, opts: AudioPanelOptions = {}): AudioPanelHandle {
   injectStyles('audio-panel', CSS)
   const engine = opts.engine ?? getAudioEngine()
@@ -149,7 +155,9 @@ export function mountAudioPanel(el: HTMLElement, opts: AudioPanelOptions = {}): 
   const deviceBox = h('div', { class: 'src', hidden: true }, h('div', { class: 'row' }, deviceSel, findBtn), deviceNote)
 
   // file
-  const fileInput = h('input', { type: 'file', accept: 'audio/*,video/*', style: 'display:none', 'data-role': 'file-input' }) as HTMLInputElement
+  // iOS greys out files it can't map to "audio/*" (an MP3 saved from Telegram or Safari often isn't), and Android may label
+  // them application/octet-stream: list the extensions and exact types too
+  const fileInput = h('input', { type: 'file', accept: AUDIO_FILE_ACCEPT, style: 'display:none', 'data-role': 'file-input' }) as HTMLInputElement
   const chooseBtn = h('button', { 'data-role': 'choose-file' }, 'Choose file…')
   const fileName = h('div', { class: 'note fname', 'data-role': 'file-name' }, 'No file chosen')
   const fileHelp = h('div', { class: 'note', 'data-role': 'file-help' }, FILE_HELP)
