@@ -62,6 +62,8 @@ export async function boot(o: BootOptions): Promise<void> {
   ctx.runner = runner
   ctx.lib = lib
   ctx.audio = getAudioEngine()
+  // audio playing on the last page (another editor, the Library) is offered to continue here
+  core.installAudioContinue(ctx.audio)
 
   let viewTimer: ReturnType<typeof setTimeout> | undefined
   let thumbTimer: ReturnType<typeof setTimeout> | undefined

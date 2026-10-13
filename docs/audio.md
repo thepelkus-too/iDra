@@ -154,6 +154,16 @@ should be shipped as a default: a public open relay is an abuse and legal risk. 
 | **Tab / screen audio** | yes, on desktop Chromium | not offered (no `getDisplayMedia` on iPadOS) |
 | **YouTube / Vimeo / Spotify / Apple Podcasts pages** | no: their players don't expose the samples, and extraction breaks their terms | the panel explains this and points to the file and mic/input routes |
 
+## Switching sketches and editors
+
+Each editor and the Library is its own page, so a switch ends playback. When a stream, podcast episode, download or kept
+file is playing as the page goes away, its place, speed and loop setting are kept in `sessionStorage` (this tab only, for
+30 minutes; `audio-continue.ts`). The next editor shows **▶ Continue “name” · 0:20** at the bottom left; one tap starts it
+again at the same place (iOS only starts sound from a tap), and ✕ drops it. Downloads and kept files come back from the
+device; anything else from its URL. The microphone, input devices, tab audio and a picked file that wasn't kept are not
+offered. Sketch switches inside one editor (`#/s/<id>`) don't load a page, so audio simply keeps playing. Truly gapless
+playback across editors would need one host page that loads the editors inside it; that is a larger change, not done.
+
 ## Output and iOS behaviour
 
 * Volume slider and mute for the monitor (what you hear). Live inputs start muted; with a live input **and** speakers on, the
@@ -215,4 +225,6 @@ Nothing above proves iPadOS behaviour; CI only has Chromium with fake devices.
    the meters move. Delete it; the space shown drops. Note whether a ~100 MB episode downloads without the tab reloading.
    On a host without CORS, ↓ shows *Open file*, *Copy link* and *Episode page*: note which way of saving the file to Files
    works best in Safari (Share › Save to Files in the opened tab, or long-press › Download Linked File).
-10. **Camera in the sandboxed frame:** Diagnostics › *Probe camera in frame* (expected: denied, see docs/security.md).
+10. **Continue across a switch:** play an episode, switch editor through ⇄ and through the Library: the new editor shows
+   *Continue*, one tap resumes at the same place (and the meters move). Try a kept file and a download too.
+11. **Camera in the sandboxed frame:** Diagnostics › *Probe camera in frame* (expected: denied, see docs/security.md).

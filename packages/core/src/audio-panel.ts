@@ -318,7 +318,7 @@ export function mountAudioPanel(el: HTMLElement, opts: AudioPanelOptions = {}): 
         return d ? new DeviceSource(d.deviceId, d.label) : new MicSource()
       }
       case 'file':
-        return pendingFile ? new FileSource(pendingFile.blob, pendingFile.name, { loop: loop.checked }) : undefined
+        return pendingFile ? new FileSource(pendingFile.blob, pendingFile.name, { loop: loop.checked, ref: pendingFile.assetId ? { assetId: pendingFile.assetId } : undefined }) : undefined
       case 'stream':
         return pick ? streamFor(pick) : undefined
       case 'display':
@@ -381,6 +381,8 @@ export function mountAudioPanel(el: HTMLElement, opts: AudioPanelOptions = {}): 
     try {
       const a = await assets.add(pendingFile.blob, pendingFile.name)
       pendingFile.assetId = a.id
+      // kept: the next page can continue it (audio-continue.ts)
+      if (engine.source instanceof FileSource && !engine.source.resumeRef) engine.source.resumeRef = { assetId: a.id }
       await refreshSaved()
     } catch (e) {
       keep.checked = false
@@ -428,7 +430,7 @@ export function mountAudioPanel(el: HTMLElement, opts: AudioPanelOptions = {}): 
     urlNote.hidden = !msg
   }
   const streamFor = (p: NonNullable<typeof pick>) =>
-    new StreamSource(p.src ?? p.url, { name: p.name, startAt: resumePoint(positions.has(p.url) ? { url: p.url, position: positions.get(p.url)!, updatedAt: 0 } : undefined, p.duration), rate: Number(speedSel.value) || 1, proxy })
+    new StreamSource(p.src ?? p.url, { name: p.name, ref: { url: p.url, assetId: downloads.get(p.url)?.asset.id }, startAt: resumePoint(positions.has(p.url) ? { url: p.url, position: positions.get(p.url)!, updatedAt: 0 } : undefined, p.duration), rate: Number(speedSel.value) || 1, proxy })
   const refreshRecent = async () => {
     try {
       const list = await podcasts.recentFeeds()

@@ -52,6 +52,8 @@ async function boot() {
   ctx.backdrop = backdrop
   ctx.lib = lib
   ctx.audio = getAudioEngine()
+  // audio playing on the last page (another editor, the Library) is offered to continue here
+  core.installAudioContinue(ctx.audio)
 
   // ------------------------------------------------------------ persistence + running
   let viewTimer: ReturnType<typeof setTimeout> | undefined

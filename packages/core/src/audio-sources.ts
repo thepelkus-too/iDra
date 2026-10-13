@@ -30,6 +30,14 @@ export interface AudioSource {
   monitorDefaultMuted?: boolean
   /** true when the source plays outside Web Audio (a stream without CORS): audible, but the analyser gets silence */
   readonly playOnly?: boolean
+  /** how the next page finds this file/stream again to continue it (audio-continue.ts); unset: it can't be continued */
+  resumeRef?: AudioResumeRef
+}
+
+/** A URL, or a file kept on the device (audio-assets.ts id). */
+export interface AudioResumeRef {
+  url?: string
+  assetId?: string
 }
 
 export type AudioSourceSpec =
@@ -255,9 +263,11 @@ export class FileSource extends ElementSource {
   readonly label: string
   /** byte size when known (Blob/File) */
   readonly size?: number
+  resumeRef?: AudioResumeRef
   private url?: string
-  constructor(private file: Blob | File | string, name?: string, opts: { createElement?: MediaElementFactory; loop?: boolean } = {}) {
+  constructor(private file: Blob | File | string, name?: string, opts: { createElement?: MediaElementFactory; loop?: boolean; ref?: AudioResumeRef } = {}) {
     super(opts.createElement ?? defaultElement, opts.loop ?? true)
+    this.resumeRef = opts.ref ?? (typeof file === 'string' && /^https?:/.test(file) ? { url: file } : undefined)
     this.label = name ?? (typeof file === 'string' ? file.split('/').pop() || 'audio' : (file as File).name || 'audio file')
     this.size = typeof file === 'string' ? undefined : file.size
   }
@@ -326,6 +336,8 @@ export interface StreamSourceOptions {
   rate?: number
   /** the AUDIO_PROXY_URL build setting: tried for analysis when the host sends no CORS headers (never set by default) */
   proxy?: string
+  /** how the next page finds it again (default: the URL itself, unless it is a blob: URL) */
+  ref?: AudioResumeRef
 }
 
 /** `https://p.example/fetch?url={url}` → the encoded target substituted; without `{url}` the encoded target is appended. */
@@ -344,6 +356,7 @@ export class StreamSource extends ElementSource {
   readonly label: string
   readonly playOnly: boolean
   readonly monitorDefaultMuted = false
+  resumeRef?: AudioResumeRef
   /** true when the audio is analysed through the AUDIO_PROXY_URL proxy (the host itself sends no CORS headers) */
   viaProxy = false
   private loadTimeoutMs: number
@@ -352,6 +365,7 @@ export class StreamSource extends ElementSource {
   constructor(readonly url: string, private opts: StreamSourceOptions = {}) {
     super(opts.createElement ?? defaultElement, false)
     this.playOnly = !!opts.playOnly
+    this.resumeRef = opts.ref ?? (/^https?:/i.test(url) ? { url } : undefined)
     this.loadTimeoutMs = opts.loadTimeoutMs ?? 15000
     this.resumeAt = opts.startAt ?? 0
     this._rate = opts.rate ?? 1

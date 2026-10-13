@@ -618,6 +618,42 @@ await step('no Web MIDI (requestMIDIAccess removed): banner with a Diagnostics l
   await p2.close()
 })
 
+await step('audio continues across a page switch: harness → Library → editor shows “Continue”, one tap resumes at the same place', async () => {
+  const p3 = await context.newPage() // its own tab, so its own sessionStorage
+  watch(p3)
+  await p3.goto(base + 'harness/')
+  await p3.waitForFunction(() => !!window.__harness?.rt, null, { timeout: 20000 })
+  await tab(p3, 'audio')
+  await p3.selectOption('[data-role=source]', 'stream')
+  await p3.fill('[data-role=stream-url]', podUrl(podA, '/ep.wav'))
+  await p3.click('[data-role=url-open]')
+  await p3.click('[data-role=start]')
+  await p3.waitForFunction(() => window.__harness.audio.state === 'running' && window.__harness.audio.source.transport.duration > 0, null, { timeout: 15000 })
+  await p3.evaluate(() => window.__harness.audio.source.transport.seek(20))
+  await p3.waitForFunction(() => window.__harness.audio.source.transport.currentTime >= 20, null, { timeout: 10000 })
+  const sketchId = await p3.evaluate(() => window.__harness.sketch.id)
+  // the Library has no audio; the offer waits for the next editor
+  await p3.goto(base)
+  assert.equal(await p3.$('[data-role=continue-audio]'), null)
+  const ed = (await (await p3.request.get(base + 'apps.json')).json()).apps.find((a) => a.name !== 'harness')
+  await p3.goto(new URL(ed.path, base).href + `#/s/${sketchId}`)
+  await p3.waitForFunction(() => !!(window.__app ?? window.__stack)?.audio, null, { timeout: 20000 })
+  await p3.waitForSelector('[data-role=continue-audio]', { timeout: 5000 })
+  assert.match(await p3.textContent('[data-role=continue-audio]'), /Continue “.*ep\.wav” · 0:2\d/)
+  assert.equal(await p3.evaluate(() => (window.__app ?? window.__stack).audio.state), 'idle')
+  await shot(p3, `05b-${ed.name}-continue-audio`)
+  await p3.click('[data-role=continue-audio]')
+  await p3.waitForFunction(() => (window.__app ?? window.__stack).audio.state === 'running' && (window.__app ?? window.__stack).audio.analysis === 'ok' && (window.__app ?? window.__stack).audio.source.transport.currentTime >= 20, null, { timeout: 15000 })
+  assert.equal(await p3.$('[data-role=continue-audio]'), null)
+  // stopped before leaving: nothing is offered on the next page
+  await p3.evaluate(() => (window.__app ?? window.__stack).audio.stop())
+  await p3.reload()
+  await p3.waitForFunction(() => !!(window.__app ?? window.__stack)?.audio, null, { timeout: 20000 })
+  assert.equal(await p3.$('[data-role=continue-audio]'), null)
+  await p3.close()
+  return ed.name
+})
+
 // ------------------------------------------------------------------ every editor + shell
 
 await step('the ⇄ menu in an editor opens the Plugins and MIDI sheets', async () => {
