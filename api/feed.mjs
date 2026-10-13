@@ -46,7 +46,11 @@ class ProxyError extends Error {
   }
 }
 
-function get(target, lookup, isPrivate, redirects = 0) {
+// some hosts answer 5xx to anything that doesn't look like a browser; the retry asks the way a browser tab would
+const HEADERS = { 'user-agent': 'iDra feed proxy (+https://github.com/thepelkus-too/iDra)', accept: 'application/rss+xml, application/atom+xml, application/xml, text/xml;q=0.9' }
+const BROWSER_HEADERS = { 'user-agent': 'Mozilla/5.0 (compatible; iDra feed proxy; +https://github.com/thepelkus-too/iDra)', accept: '*/*', 'accept-language': 'en' }
+
+function get(target, lookup, isPrivate, redirects = 0, headers = HEADERS) {
   return new Promise((resolve, reject) => {
     let u
     try {
@@ -58,12 +62,12 @@ function get(target, lookup, isPrivate, redirects = 0) {
     if (u.username || u.password) return reject(new ProxyError(400, 'no credentials in urls'))
     if (isIP(u.hostname.replace(/^\[|\]$/g, '')) && isPrivate(u.hostname.replace(/^\[|\]$/g, ''))) return reject(new ProxyError(403, 'blocked address'))
     const mod = u.protocol === 'https:' ? https : http
-    const req = mod.get(u, { lookup, headers: { 'user-agent': 'iDra feed proxy (+https://github.com/thepelkus-too/iDra)', accept: 'application/rss+xml, application/atom+xml, application/xml, text/xml;q=0.9' }, timeout: LIMITS.timeoutMs }, (res) => {
+    const req = mod.get(u, { lookup, headers, timeout: LIMITS.timeoutMs }, (res) => {
       const code = res.statusCode ?? 0
       if (code >= 300 && code < 400 && res.headers.location) {
         res.resume()
         if (redirects >= LIMITS.maxRedirects) return reject(new ProxyError(508, 'too many redirects'))
-        return resolve(get(new URL(res.headers.location, u).href, lookup, isPrivate, redirects + 1))
+        return resolve(get(new URL(res.headers.location, u).href, lookup, isPrivate, redirects + 1, headers))
       }
       resolve({ res, finalUrl: u.href })
     })
@@ -87,6 +91,10 @@ export default async function handler(req, res, opts = {}) {
   let upstream
   try {
     upstream = await get(target, opts.lookup ?? publicLookup, opts.isPrivate ?? isPrivateAddress)
+    if ((upstream.res.statusCode ?? 0) >= 500) {
+      upstream.res.resume()
+      upstream = await get(target, opts.lookup ?? publicLookup, opts.isPrivate ?? isPrivateAddress, 0, BROWSER_HEADERS)
+    }
   } catch (e) {
     return send(e.status ?? 502, e.message ?? 'failed')
   }
