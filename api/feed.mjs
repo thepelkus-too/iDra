@@ -68,7 +68,7 @@ function get(target, lookup, isPrivate, redirects = 0) {
       resolve({ res, finalUrl: u.href })
     })
     req.on('timeout', () => req.destroy(new ProxyError(504, 'timed out')))
-    req.on('error', (e) => reject(e instanceof ProxyError ? e : new ProxyError(e.code === 'EBLOCKED' ? 403 : 502, e.code === 'EBLOCKED' ? 'blocked address' : 'unreachable')))
+    req.on('error', (e) => reject(e instanceof ProxyError ? e : new ProxyError(e.code === 'EBLOCKED' ? 403 : 502, e.code === 'EBLOCKED' ? 'blocked address' : `unreachable${e.code ? ` (${e.code})` : ''}`)))
   })
 }
 
@@ -117,8 +117,8 @@ export default async function handler(req, res, opts = {}) {
       }
       chunks.push(c)
     }
-  } catch {
-    return send(502, 'upstream failed')
+  } catch (e) {
+    return send(502, `upstream failed${e?.code ? ` (${e.code})` : ''}`)
   }
   // no Access-Control-Allow-Origin: only iDra's own pages (same origin) can read this
   res.writeHead(200, { 'content-type': type, 'cache-control': 'public, s-maxage=300, max-age=0', 'x-content-type-options': 'nosniff', 'x-feed-url': upstream.finalUrl })

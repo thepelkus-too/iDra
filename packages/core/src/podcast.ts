@@ -351,9 +351,13 @@ export async function resolveAudioUrl(raw: string, opts: { fetch?: FetchLike; pr
     } else return blocked(url)
   }
   if (!res.ok) {
-    void res.body?.cancel?.().catch(() => {})
     // the proxy only passes feeds: anything else it refuses is treated like the CORS refusal (radio may still play)
-    if (viaProxy) return blocked(url, res.status)
+    if (viaProxy) {
+      // its plain-text body says why (e.g. "upstream answered 403", "unreachable (ECONNRESET)")
+      const why = /^text\/plain/i.test(res.headers.get('content-type') ?? '') ? (await res.text().catch(() => '')).trim().slice(0, 120) : ''
+      return blocked(url, res.status, why)
+    }
+    void res.body?.cancel?.().catch(() => {})
     return { kind: 'error', code: 'http', message: `The server answered ${res.status}${res.statusText ? ` ${res.statusText}` : ''}.` }
   }
   const type = (res.headers.get('content-type') ?? '').toLowerCase()
@@ -377,9 +381,9 @@ export async function resolveAudioUrl(raw: string, opts: { fetch?: FetchLike; pr
   }
 }
 
-function blocked(url: string, proxyStatus?: number): UrlResolution {
+function blocked(url: string, proxyStatus?: number, proxyWhy = ''): UrlResolution {
   const looksLikeFeed = looksLikeFeedUrl(url)
-  const proxyNote = proxyStatus === undefined ? '' : ` (The feed proxy couldn’t read it either: ${proxyStatus ? `it answered ${proxyStatus}` : 'it could not be reached'}.)`
+  const proxyNote = proxyStatus === undefined ? '' : ` (The feed proxy couldn’t read it either: ${proxyStatus ? `it answered ${proxyStatus}${proxyWhy ? `, “${proxyWhy}”` : ''}` : 'it could not be reached'}.)`
   return { kind: 'blocked', url, looksLikeFeed, message: (looksLikeFeed ? FEED_BLOCKED_TEXT : 'The host doesn’t let web pages read this link (no CORS headers). Trying it as an audio stream: it may play without driving visuals.') + proxyNote }
 }
 

@@ -212,7 +212,7 @@ describe('resolveAudioUrl', () => {
     // a radio stream without CORS: the feeds-only proxy refuses it, and it is tried as a stream as before
     expect(await resolveAudioUrl('https://radio.example/live', { fetch, proxy: '/api/feed?url=' })).toMatchObject({ kind: 'blocked', looksLikeFeed: false })
     const r2 = await resolveAudioUrl('https://radio.example/live', { fetch, proxy: '/api/feed?url=' })
-    expect(r2.kind === 'blocked' && r2.message).toMatch(/feed proxy couldn’t read it either: it answered 415/)
+    expect(r2.kind === 'blocked' && r2.message).toMatch(/feed proxy couldn’t read it either: it answered 415, “not a feed”/)
     // the site's own proxy may need the deployment's cookies (Vercel preview protection)
     expect(fetch.mock.calls.find(([u]) => String(u).startsWith('/api/feed'))?.[1]).toMatchObject({ credentials: 'same-origin' })
   })

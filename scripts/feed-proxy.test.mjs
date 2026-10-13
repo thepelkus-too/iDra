@@ -16,6 +16,7 @@ before(async () => {
     if (req.url === '/big') return res.writeHead(200, { 'content-type': 'application/xml' }).end(Buffer.alloc(LIMITS.maxBytes + 1, 32))
     if (req.url === '/hop') return res.writeHead(302, { location: '/feed.xml' }).end()
     if (req.url === '/loop') return res.writeHead(302, { location: '/loop' }).end()
+    if (req.url === '/forbidden') return res.writeHead(403).end()
     if (req.url === '/creds') return res.writeHead(200, { 'content-type': 'application/xml' }).end(JSON.stringify(req.headers))
     res.writeHead(404).end()
   })
@@ -66,4 +67,16 @@ test('SSRF: private, loopback and metadata addresses are refused (literal IPs an
   // the real lookup refuses a name that resolves to loopback
   const r = await via(`http://localhost:${origin.address().port}/feed.xml`, { headers: { 'x-test-real-lookup': '1' } })
   assert.equal(r.status, 403)
+})
+test('a refusal says why: the upstream status, or the connection error', async () => {
+  const r = await via(base + '/forbidden')
+  assert.equal(r.status, 502)
+  assert.equal(await r.text(), 'upstream answered 403')
+  const closed = http.createServer()
+  await new Promise((ok) => closed.listen(0, '127.0.0.1', ok))
+  const port = closed.address().port
+  await new Promise((ok) => closed.close(ok))
+  const down = await via(`http://127.0.0.1:${port}/feed.xml`)
+  assert.equal(down.status, 502)
+  assert.equal(await down.text(), 'unreachable (ECONNREFUSED)')
 })
