@@ -555,6 +555,9 @@ export function mountAudioPanel(el: HTMLElement, opts: AudioPanelOptions = {}): 
           }
         },
       })
+      // the list shows ✓ before the note says so
+      active.delete(ep.url)
+      await loadDownloads()
       sayDl(`“${ep.title}” is saved on this device.`)
     } catch (e) {
       sayDl(ctl.signal.aborted ? 'Download cancelled.' : (e as Error).message, ctl.signal.aborted ? 'note' : 'note err')
