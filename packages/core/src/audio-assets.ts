@@ -33,8 +33,8 @@ interface Row extends AudioAsset {
 }
 
 export const AUDIO_ASSET_LIMITS = {
-  /** largest single picked file kept (bytes) */
-  maxFile: 60 * 1024 * 1024,
+  /** largest single picked file kept (bytes); stored as a Blob like downloads, so a long podcast MP3 fits */
+  maxFile: 400 * 1024 * 1024,
   /** largest single downloaded episode (bytes) */
   maxDownload: 400 * 1024 * 1024,
   /** total kept, files and downloads together (bytes); nothing is evicted automatically: the owner chooses what to remove */
@@ -80,7 +80,8 @@ export class AudioAssets {
     const used = (await this.usage()) - (existing?.size ?? 0)
     if (used + file.size > maxTotal) throw new AudioAssetError(`Keeping “${name}” would use more than ${mb(maxTotal)}. Remove a kept file first.`)
     const meta: AudioAsset = { id: existing?.id ?? newId(), name, type: file.type || 'audio/*', size: file.size, addedAt: Date.now() }
-    await (await this.store()).put(meta.id, { ...meta, data: await blobBytes(file) })
+    // a Blob, not its bytes: IndexedDB keeps it on disk without copying a long file into one buffer
+    await (await this.store()).put(meta.id, { ...meta, blob: file.slice(0, file.size, file.type) })
     return meta
   }
   /** Throws AudioAssetError when a download of `size` bytes (or unknown size) would not fit. */

@@ -60,6 +60,7 @@ ${TOKENS_CSS}
 .hi-audio .src{display:grid;gap:6px}
 .hi-audio .src[hidden],.hi-audio [hidden]{display:none!important}
 .hi-audio .fname{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%}
+.hi-audio .fname.err{white-space:normal;overflow-wrap:anywhere}
 .hi-audio .seek{grid-template-columns:1fr}
 .hi-audio .eps{display:grid;gap:4px;max-height:260px;overflow:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain}
 .hi-audio .ep{display:grid;grid-template-columns:1fr auto;gap:4px}
