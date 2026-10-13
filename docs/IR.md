@@ -41,7 +41,10 @@ Statements:
 * `src` records on `Sketch`, `Stmt`, `Chain`, `Call` are the **format-preservation** data written by the importer: original text,
   a content hash, whitespace between statements, and the gaps between chain segments. `toCode` re-emits the original text of
   anything whose content hash is unchanged and regenerates only what was edited, so changing one number in a 6-line chain
-  rewrites one line. Never edit or drop `src`; spread nodes (`{...call, args}`) and it stays valid. Use `fresh: true` to ignore it.
+  rewrites one line. An edited call is written over its own original text: arguments that did not change keep their spelling,
+  the separators and line breaks between arguments stay, and an argument the user typed is kept even when it equals the
+  default (`modulate(noise(3), 0.1)` with a new texture becomes `modulate(o0, 0.1)`); only a `default` value is dropped.
+  Calls whose `src` has no `args` record (saved before it existed) are regenerated in canonical form. Never edit or drop `src`; spread nodes (`{...call, args}`) and it stays valid. Use `fresh: true` to ignore it.
 * Unknown functions are kept as ordinary calls (`fn: 'foo'`); position is inferred from the chain (first = generator). `validate`
   reports them as warnings and re-resolves them when `catalog.refresh` learns about a plugin function.
 

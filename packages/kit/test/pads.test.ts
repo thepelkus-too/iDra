@@ -43,7 +43,7 @@ describe('bindToPad', () => {
     const r = bindToPad(s0, nested, 0, 2)!
     const out = toCode(r.sketch)
     expect(out.indexOf('scaleAmount = knob(2')).toBeGreaterThan(out.indexOf('noise(3).out(o1)'))
-    expect(out).toMatch(/scaleAmount = knob\(2, .*\)\nosc\(10\)\.modulate\(noise\(3\)\.scale\(scaleAmount\)\)/)
+    expect(out).toMatch(/scaleAmount = knob\(2, .*\)\nosc\(10\)\.modulate\(noise\(3\)\.scale\(scaleAmount\), 0\.1\)/)
   })
   it('never shadows Hydra globals, functions or existing defs', () => {
     const s0 = sk('const oscFrequency = 2\nosc(oscFrequency).out()\n')

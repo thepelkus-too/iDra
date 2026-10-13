@@ -7,6 +7,7 @@ import {
   SOURCE_NAMES,
   type ArrMods,
   type Call,
+  type CallSrc,
   type Chain,
   type OutName,
   type Sketch,
@@ -457,6 +458,11 @@ function unquoteArgs(args: Node[], c: Ctx): { arg?: string; argsSrc?: string } {
   return { argsSrc: c.code.slice(args[0].start, args[args.length - 1].end) }
 }
 
+/** Where each argument of a call sits in the call's own text (which starts at `base`), with its content hash. */
+function argSpans(call: Call, node: Node, base: number): NonNullable<CallSrc['args']> {
+  return (node.arguments as Node[]).map((a, i) => ({ from: a.start - base, to: a.end - base, hash: contentHash(call.args[i]) }))
+}
+
 function convertExpressionStatement(node: Node, c: Ctx): { stmt?: Stmt; chainSrc?: Chain['src']; why?: string } {
   const e = node.expression
   if (e.type === 'AssignmentExpression' && e.operator === '=' && e.left.type === 'Identifier') {
@@ -518,13 +524,14 @@ function convertExpressionStatement(node: Node, c: Ctx): { stmt?: Stmt; chainSrc
   }
   const gen = convertCall(genName, flat.gen, c)
   // per-call source records so an edit to one call only rewrites that call
-  gen.src = { text: slice(c, flat.gen), hash: contentHash({ fn: gen.fn, args: gen.args }) }
+  gen.src = { text: slice(c, flat.gen), hash: contentHash({ fn: gen.fn, args: gen.args }), args: argSpans(gen, flat.gen, flat.gen.start) }
   const gaps: string[] = []
   const mods: Call[] = []
   // `start` is where the segment's text begins (the `//` of a revived modifier's comment line), `end` where it ends
   let prevEnd = flat.gen.end
-  const take = (call: Call, start: number, dot: number, end: number) => {
+  const take = (call: Call, start: number, dot: number, end: number, node?: Node) => {
     call.src = { ...call.src, text: c.code.slice(dot, end), hash: contentHash({ fn: call.fn, args: call.args }) }
+    if (node) call.src.args = argSpans(call, node, dot)
     gaps.push(c.code.slice(prevEnd, start))
     mods.push(call)
     prevEnd = end
@@ -534,7 +541,7 @@ function convertExpressionStatement(node: Node, c: Ctx): { stmt?: Stmt; chainSrc
   }
   for (const m of modCalls) {
     reviveUpTo(m.dot!)
-    take(convertCall(m.name, m.node, c), m.dot!, m.dot!, m.node.end)
+    take(convertCall(m.name, m.node, c), m.dot!, m.dot!, m.node.end, m.node)
   }
   if (!outCall && c.extendTo) {
     reviveUpTo(c.extendTo)

@@ -1,9 +1,9 @@
 import { describe, expect, test } from 'vitest'
 import { importText, fromCode } from '../src/parse'
-import { toCode } from '../src/codegen'
+import { toCode, toCodeWithMap } from '../src/codegen'
 import { canonicalSketch } from '../src/normalize'
 import { catalog } from '../src/catalog'
-import type { Stmt } from '../src/ir'
+import { setArg, type Stmt, type Value } from '../src/ir'
 
 const kinds = (code: string) => importText(code).sketch.stmts.map((s) => s.k)
 const first = (code: string): any => importText(code).sketch.stmts[0]
@@ -172,6 +172,33 @@ describe('edit then export', () => {
     const d: any = s.stmts[1]
     const s2 = { ...s, stmts: [s.stmts[0], { ...d, value: { k: 'num', v: 5 } }, s.stmts[2]] }
     expect(toCode(s2 as any)).toBe('const a = 1\nconst b = 5\nosc(a, b).out()\n')
+  })
+  test('an edited call keeps typed default arguments and its other arguments as written', () => {
+    const edit = (code: string, path: (s: any) => any, index: number, value: Value) => {
+      const s = fromCode(code)
+      return toCode(setArg(s, path(s).id, index, value))
+    }
+    const mod = (i: number) => (s: any) => s.stmts[0].chain.mods[i]
+    // a new texture: the typed 0.1 (modulate's default) stays
+    expect(edit('osc().modulate(noise(3), 0.1).out()\n', mod(0), 0, { k: 'ref', name: 'o0' })).toBe('osc().modulate(o0, 0.1).out()\n')
+    expect(edit('osc().blend(src(o0), 0.5).out()\n', mod(0), 0, { k: 'ref', name: 'o1' })).toBe('osc().blend(o1, 0.5).out()\n')
+    // an unchanged argument keeps its spelling; only the edited one is regenerated
+    expect(edit('osc(.5, 0.1, 0)\n  .out()\n', (s) => s.stmts[0].chain.gen, 1, { k: 'num', v: 0.2 })).toBe('osc(.5, 0.2, 0)\n  .out()\n')
+    // a call written over several lines stays over several lines
+    const multi = 'osc(10)\n  .modulate(\n    noise(3),\n    0.1,\n  )\n  .out()\n'
+    expect(edit(multi, mod(0), 1, { k: 'num', v: 0.4 })).toBe('osc(10)\n  .modulate(\n    noise(3),\n    0.4,\n  )\n  .out()\n')
+    // an argument added after the typed ones, and one reset to `default`, which is dropped as before
+    expect(edit('osc(10).out()\n', (s) => s.stmts[0].chain.gen, 1, { k: 'num', v: 0.3 })).toBe('osc(10, 0.3).out()\n')
+    expect(edit('osc(10, 0.3).out()\n', (s) => s.stmts[0].chain.gen, 1, { k: 'default' })).toBe('osc(10).out()\n')
+    // a nested call inside an argument kept as written still has its range in the code map
+    const n = fromCode('osc().modulate(noise(3), 0.1).out()\n')
+    const noise = (n.stmts[0] as any).chain.mods[0].args[0].chain.gen
+    const { code, map } = toCodeWithMap(setArg(n, mod(0)(n).id, 1, { k: 'num', v: 0.4 }))
+    expect(code).toBe('osc().modulate(noise(3), 0.4).out()\n')
+    expect(code.slice(map[noise.id].from, map[noise.id].to)).toBe('noise(3)')
+    // live/fresh output is unchanged: canonical, defaults trimmed
+    const s = fromCode('osc().modulate(noise(3), 0.1).out()\n')
+    expect(toCode(setArg(s, mod(0)(s).id, 0, { k: 'ref', name: 'o0' }), { fresh: true })).toBe('osc()\n  .modulate(o0)\n  .out()\n')
   })
   test('deleting a statement keeps the others exactly', () => {
     const code = 'osc(1).out()\n\n// keep\nnoise(2).out(o1)\n'
