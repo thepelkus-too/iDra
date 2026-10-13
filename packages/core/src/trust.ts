@@ -83,12 +83,21 @@ function keyOf(x: unknown): string {
  * every key it has was approved: switching code off (`//`) or back on, or deleting it, never asks again; any new or changed
  * code does.
  */
-export function trustKeys(sketch: Sketch): string[] {
+export function trustKeys(sketch: Sketch, opts: { plugins?: boolean } = {}): string[] {
   const keys = riskyParts(sketch)
     .filter((p) => p.kind !== 'plugin')
     .map((p) => keyOf(['part', p.kind, p.full]))
-  for (const p of sketch.plugins ?? []) keys.push(keyOf(['plugin', p.id, p.url ?? null, p.src ?? null, p.integrity ?? null]))
+  if (opts.plugins !== false) for (const p of sketch.plugins ?? []) keys.push(keyOf(['plugin', p.id, p.url ?? null, p.src ?? null, p.integrity ?? null]))
   return keys
+}
+
+/**
+ * Keys of the code the owner wrote in an edit: risky parts in `next` that are neither `foreign` (what came from outside:
+ * the sketch as it was opened, pasted or dropped text) nor already `approved`. Editors approve these as the owner's own,
+ * so the prompt only asks about code from outside. Plugins are never the owner's own: a new plugin always asks.
+ */
+export function ownCodeKeys(next: Sketch, foreign: ReadonlySet<string>, approved: ReadonlySet<string>): string[] {
+  return [...new Set(trustKeys(next, { plugins: false }))].filter((k) => !foreign.has(k) && !approved.has(k))
 }
 
 /** What the library stores for an approved sketch: every trust key the owner has said yes to. */

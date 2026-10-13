@@ -5,7 +5,7 @@ import { commentOut, toCode, toCodeWithMap, toRunnable, uncommentOut } from '../
 import { canonicalSketch } from '../src/normalize'
 import { validate } from '../src/validate'
 import { describe as describeSketch } from '../src/analyze'
-import { needsTrustPrompt, riskyParts, trustFingerprint, trustKeys } from '../src/trust'
+import { needsTrustPrompt, ownCodeKeys, riskyParts, trustFingerprint, trustKeys } from '../src/trust'
 import { buildGraph } from '../src/autoLayout'
 import { randomSketch, rng } from '../src/randomize'
 import { activeSketch, canDisable, disabledNodes, enableAll, isDisabled, setDisabled, toggleDisabled } from '../src/disable'
@@ -247,6 +247,17 @@ describe('everything else ignores disabled nodes', () => {
     expect(needsTrustPrompt(off, { v: 2, keys })).toBe(false) // …but every piece that still runs was approved
     expect(needsTrustPrompt(setDisabled(off, chainOf(s, 1).mods[0].id, false), keys)).toBe(false)
     expect(needsTrustPrompt(fromCode('k = knob(0.5)\nnoise(3).modulate(o0, () => k * 0.3).out(o1)\n'), keys)).toBe(true)
+  })
+
+  test('trust: ownCodeKeys is the code an edit added, never a plugin', () => {
+    const s = fromCode('f = () => fetch("a")\nosc().out()\n')
+    const foreign = new Set(trustKeys(s))
+    expect(ownCodeKeys(s, foreign, new Set())).toEqual([])
+    const typed = fromCode('f = () => fetch("a")\ng = () => fetch("b")\nosc().out()\n')
+    expect(ownCodeKeys(typed, foreign, new Set())).toHaveLength(1)
+    const withPlugin = { ...s, plugins: [{ id: 'p', name: 'p', url: 'https://example.com/p.js' }] }
+    expect(ownCodeKeys(withPlugin as any, foreign, new Set())).toEqual([])
+    expect(needsTrustPrompt(withPlugin as any, trustKeys(s))).toBe(true)
   })
 
   test('autoLayout keeps disabled nodes in place, flagged; skip mode lays out only what runs', () => {

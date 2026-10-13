@@ -8,7 +8,7 @@ import { toCode } from '../src/codegen'
 import { withMeta } from '../src/ir'
 import { appStorage } from '../src/storage'
 import { setDisabled } from '../src/disable'
-import { trustFingerprint } from '../src/trust'
+import { ownCodeKeys, trustFingerprint, trustKeys } from '../src/trust'
 
 let n = 0
 const fresh = (extra = {}) => new Library({ indexedDB: new IDBFactory(), dbName: 'db' + n++, channelName: 'ch' + n, autosaveDelay: 10, revisionInterval: 0, ...extra })
@@ -183,6 +183,16 @@ describe('library', () => {
     await (await (lib as any).kv()).put('trust', s.id, trustFingerprint(s))
     expect(await lib.needsTrust(s)).toBe(false)
     await lib.approve(s) // upgrades it
+    expect(await lib.needsTrust(s)).toBe(false)
+  })
+
+  test('approveKeys adds the owner\'s own code, carrying over an old fingerprint approval of the version edited', async () => {
+    const lib = mk()
+    const s = await lib.create('x', 'update = () => {}\nosc().out()')
+    await (await (lib as any).kv()).put('trust', s.id, trustFingerprint(s))
+    const typed = fromCode('update = () => {}\nf = () => 1 + g()\nosc().out()', { id: s.id })
+    await lib.approveKeys(s.id, ownCodeKeys(typed, new Set(trustKeys(s)), new Set()), s)
+    expect(await lib.needsTrust(typed)).toBe(false)
     expect(await lib.needsTrust(s)).toBe(false)
   })
 

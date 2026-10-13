@@ -35,6 +35,13 @@ sketch, and "Run it once" keeps them for as long as the sketch stays open. So sw
 on, or deleting it never asks again, while any new or changed code does — including code that was already commented out when the
 owner approved (disabled code is not listed, so it was never approved). A fingerprint stored before approvals were per piece
 (`trustFingerprint`) still matches exactly that content.
+
+**Code the owner writes is theirs.** The prompt is for code from outside: the sandbox already keeps every sketch away from the
+library, so what the prompt adds is a check on someone else's code (network requests with frames it was given, a frozen tab,
+inline mode). So the editors' runners approve, for good, each new piece of risky code an edit adds (`ownCodeKeys`,
+`library.approveKeys`), except: the code a sketch had when it was opened (imported, pasted as a new sketch, opened from a link
+or the library), code an edit adds after a `paste` or `drop` anywhere on the page, and plugins. Those still ask. Undo bringing
+back outside code that was deleted does not approve it, since it is in the outside set.
 `runtime.run(sketch, { safe: true })` runs only recognised chains, settings and sources and replaces unsafe expressions by the catalog default.
 The allowlist is deliberately small; it is a convenience filter for "obviously just maths", **not** a security boundary — the iframe is.
 

@@ -1,7 +1,7 @@
 import { toCode } from './codegen'
 import { importText } from './parse'
 import { contentHash, newId, type Sketch } from './ir'
-import { needsTrustPrompt, trustKeys, type TrustApproval } from './trust'
+import { needsTrustPrompt, trustFingerprint, trustKeys, type TrustApproval } from './trust'
 import { starters } from './starters'
 
 // The shared sketch library. Every app on the origin reads and writes the same one.
@@ -240,6 +240,8 @@ export class Library {
   private pending = new Map<string, Sketch>()
   private timer: ReturnType<typeof setTimeout> | undefined
   private inflight: Promise<void> = Promise.resolve()
+  /** approvals are read-modify-write: one at a time */
+  private trustWrites: Promise<void> = Promise.resolve()
   private lastRev = new Map<string, number>()
   private readonly origin = newId('o')
 
@@ -510,14 +512,28 @@ export class Library {
    * that code switched off, or switched back on, runs without asking; new or changed code still asks.
    */
   async approve(sketch: Sketch): Promise<void> {
-    const kv = await this.kv()
-    const prev = await kv.get<string | TrustApproval>('trust', sketch.id)
-    const keys = new Set(typeof prev === 'object' && prev ? prev.keys : [])
-    for (const k of trustKeys(sketch)) {
-      keys.delete(k) // re-added last: the cap below drops the longest-unapproved keys first
-      keys.add(k)
-    }
-    await kv.put('trust', sketch.id, { v: 2, keys: [...keys].slice(-MAX_TRUST_KEYS) } satisfies TrustApproval)
+    await this.approveKeys(sketch.id, trustKeys(sketch))
+  }
+  /**
+   * Approve these pieces of code (`trustKeys`) for sketch `id`, keeping what was approved before (the owner's own edits).
+   * `base`: the version the edit started from, so an approval stored as one fingerprint (before approvals were per piece)
+   * carries over when it matches.
+   */
+  approveKeys(id: string, add: string[], base?: Sketch): Promise<void> {
+    if (!add.length) return this.trustWrites
+    const write = this.trustWrites.then(async () => {
+      const kv = await this.kv()
+      const prev = await kv.get<string | TrustApproval>('trust', id)
+      const keys = new Set(typeof prev === 'object' && prev ? prev.keys : [])
+      if (typeof prev === 'string' && base && prev === trustFingerprint(base)) for (const k of trustKeys(base)) keys.add(k)
+      for (const k of add) {
+        keys.delete(k) // re-added last: the cap below drops the longest-unapproved keys first
+        keys.add(k)
+      }
+      await kv.put('trust', id, { v: 2, keys: [...keys].slice(-MAX_TRUST_KEYS) } satisfies TrustApproval)
+    })
+    this.trustWrites = write.catch(() => {})
+    return write
   }
   async needsTrust(sketch: Sketch): Promise<boolean> {
     const approved = await (await this.kv()).get<string | TrustApproval>('trust', sketch.id)
