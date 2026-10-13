@@ -36,6 +36,8 @@ const CSS = `
 ${TOKENS_CSS}
 .hi-audio{font:13px/1.35 system-ui,-apple-system,sans-serif;color:var(--hi-text);background:var(--hi-panel);border:1px solid var(--hi-line);border-radius:var(--hi-r);padding:10px;display:grid;gap:8px;min-width:220px;max-width:340px;touch-action:manipulation;-webkit-user-select:none;user-select:none}
 .hi-audio .row{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+/* the editors turn the long-press menu off page-wide; links here need it (Download Linked File, Copy) */
+.hi-audio a{-webkit-touch-callout:default}
 .hi-audio .note .links{margin-top:6px}.hi-audio .note .links a{color:inherit;font-weight:600;min-height:40px;display:inline-flex;align-items:center;padding:0 6px}
 .hi-audio button,.hi-audio select,.hi-audio input[type=url],.hi-audio input[type=text]{min-height:40px;padding:0 12px;border-radius:8px;border:1px solid var(--hi-line);background:var(--hi-bg);color:var(--hi-text);font:inherit;min-width:0}
 .hi-audio input[type=url]{flex:1;-webkit-user-select:text;user-select:text}
