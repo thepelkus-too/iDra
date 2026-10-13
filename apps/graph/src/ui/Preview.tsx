@@ -7,7 +7,6 @@ import { graphOf, metaNow, ui, useUi } from '../doc'
 import { ctx, useStore } from '../kit/ctx'
 import { nodeById } from '../model'
 import { previewSpecFor } from '../peek'
-import { graphPreviewPool } from './pool'
 
 export { previewSpecFor }
 
@@ -51,7 +50,7 @@ export function NodePeeks({ pos, hidden }: { pos: (id: string) => { x: number; y
         return (
           <div key={id} class="gpeek" style={{ transform: `translate(${at.x}px,${at.y}px)` }} data-testid="node-preview" data-node-peek={id} data-no-undo-tap>
             <div class="gpeek-in">
-            <PreviewPeek key={`${id}:${p.spec.kind}`} spec={p.spec} label={p.label} pool={graphPreviewPool()} />
+            <PreviewPeek key={`${id}:${p.spec.kind}`} spec={p.spec} label={p.label} />
             <div class="gpeek-tools">
               {p.mod && (
                 <button type="button" class={`btn sm ${st.ab === id ? 'on' : ''}`} data-testid="peek-ab" aria-pressed={st.ab === id} title="Before and after this node" onClick={() => toggleAB(id)}>

@@ -139,8 +139,6 @@ whole corpus in the unit tests and again in the browser.
   the shader compile is the cost to watch (see the retrospective).
 * Pad presses (`runtime.invoke`) move the main output but not the previews (core's known gap); a module preview shows a
   pad-bound knob at rest.
-* The rack works around a core bug that left a preview stuck "starting" (see core change requests): `src/previews.ts`
-  holds a handle's updates back while it starts.
 * When a call is edited, core's codegen writes it again: explicit default arguments disappear
   (`blend(src(o0), 0.5)` becomes `blend(src(o0))`) and a call written over several lines comes back on one. Same sketch,
   different text; Patch Graph and Blocks behave the same way.
@@ -219,11 +217,6 @@ knob turning, Pencil precision and frame time are the things this container cann
 
 From step 09 (disabling and previews):
 
-* **Preview pool: compare plans by key, not identity.** `start()` in `packages/core/src/preview.ts` checks
-  `h.plan !== plan` after each `await`, and `handle.update()` always replans into a new object even when the key is the
-  same. PreviewPeek calls `update()` right after opening and on every store change, so the first preview in a cold pool
-  never ran (state "starting" for good, 0 runs). Compare `h.plan?.key !== plan.key` in the three places. The rack works
-  around it in `src/previews.ts` (Blocks found the same bug).
 * **`PreviewPeek` `open` prop.** A before/after peek is only useful expanded; the rack clicks the peek open after mounting
   it. An initial `open` (or `defaultOpen`) prop would do it properly.
 * **Forward pad presses to previews** (already listed in docs/previews-runtime.md as a known gap).

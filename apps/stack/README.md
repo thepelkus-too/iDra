@@ -102,7 +102,7 @@ Other apps' `meta` is never touched (tested). The IR is the only source of truth
 * `src/ui/*` Preact components: `Scrub`, `Keypad`, `ArgView` (every value kind), `FnEditor`, `ArrEditor`, `Picker`, `Tray`, `Rows`, `Chrome`, `CodeView`.
 * `src/tray.ts` where a tapped or dropped operator lands (`tapTarget`) and what the drop does to the IR (`dropOperator`: a gap,
   a texture parameter, a new chain); pure and unit-tested. `src/drag.ts` the chip drag itself (ghost, gaps, parting rows,
-  auto-scroll). `src/peek.ts` which row's preview is open, and the preview pool the rows use (see Core change requests, 7).
+  auto-scroll). `src/peek.ts` which row's preview is open.
 * `src/problems.ts` which row owns a problem: `validate()` already names nodes; thrown errors are attributed by name
   (`x is not defined / not a function`); everything else goes in the banner at the top of the stack.
 
@@ -185,11 +185,7 @@ banners, statement reordering, thumbnails (160×90) and completion.
 4. Node attribution for runtime errors: `toRunnable` could return ids by line/column so thrown errors map to rows without guessing from the message.
 5. A cheap clock for the array playhead (`rt.clock()` returning time, speed, bpm) instead of polling `rt.time()`.
 6. Frame `allow="display-capture"` (or a quieter failure) for `initScreen()` sketches.
-7. **Preview pool: a handle can stay in `starting` for ever.** `createPreviewPool`'s `start()` compares `h.plan !== plan` by
-   identity after `await s.rt.ready`, and every `handle.update()` makes a new plan object (same `key`). `PreviewPeek` calls
-   `update()` right after `open()`, so the first preview in a cold pool never runs (stats: `runs 0, frames 0`). Fix: compare
-   `h.plan?.key !== plan.key` (three places). Until then `src/peek.ts` wraps the pool so `update()` waits while a handle is
-   `starting` (the blocks editor hit the same bug).
+7. ~~Preview pool: a handle could stay in `starting` for ever.~~ Fixed in core (PR #18): plans are compared by key.
 8. **Keep the import report.** `library.create(name, code)` drops `importText`'s report, so an editor can't tell commented-out
    code the importer revived from chunks someone switched off in another editor. Chain Stack counts disabled nodes on its
    first open of a sketch instead; storing `report.revived` (or the whole report) with the entry would make the note exact.

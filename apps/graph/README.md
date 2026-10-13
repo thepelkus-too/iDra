@@ -103,12 +103,6 @@ old approach, a whole second runtime per pin drawing the node into a spare `o3`,
 
 ## Core change requests
 
-* **Preview pool: `update()` during `starting` abandons the run.** `start()` in `packages/core/src/preview.ts` compares
-  `h.plan !== plan` by object identity after awaiting the runtime, and `handle.update()` always makes a new plan object,
-  even when its key is unchanged. `<PreviewPeek>` calls `update()` right after opening, so the first preview of a cold pool
-  stays in `starting` and never draws. Fix: compare `h.plan?.key !== plan.key` in `start()` (three places). The graph
-  works around it in `src/ui/pool.ts` (drops updates that change nothing and holds others until the handle has left
-  `starting`); remove that wrapper once core is fixed. The Blocks editor found the same bug.
 * **Preview pool, live mode: thumbnails beyond the pool's size never get a first picture.** In live mode the newest
   handles keep the runtimes, so a thumbnail opened together with two newer ones (three pins on page load) shows nothing
   until one of them goes away. Suggestion: give waiting handles one still each, in turn, before animating the chosen ones.
