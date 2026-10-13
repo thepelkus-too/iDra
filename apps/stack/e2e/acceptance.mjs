@@ -794,9 +794,17 @@ if (want('9')) await block('9', async () => {
     await waitForPicture(page)
     await sleep(500)
     assert.equal(await page.locator('[data-testid=trust-banner]').count(), 0, 'approved for this exact content')
-    // changing the risky text asks again
+    // code the owner types is theirs: changing the risky text does not ask
     await touch.tap('[data-testid=raw-row] .raw-text')
     await page.fill('[data-testid=raw-edit]', 'update = () => { /* changed */ }')
+    await sleep(700)
+    await page.locator('[data-testid=sketch-name]').click({ force: true })
+    await sleep(700)
+    assert.equal(await page.locator('[data-testid=trust-banner]').count(), 0, 'typed code is the owner\'s own')
+    // pasted code came from outside: it asks
+    await touch.tap('[data-testid=raw-row] .raw-text')
+    await page.dispatchEvent('[data-testid=raw-edit]', 'paste')
+    await page.fill('[data-testid=raw-edit]', 'update = () => { /* pasted */ }')
     await sleep(700)
     await page.locator('[data-testid=sketch-name]').click({ force: true })
     await page.waitForSelector('[data-testid=trust-banner]', { timeout: 10000 })

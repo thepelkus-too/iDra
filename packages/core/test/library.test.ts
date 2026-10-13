@@ -7,6 +7,8 @@ import { fromCode } from '../src/parse'
 import { toCode } from '../src/codegen'
 import { withMeta } from '../src/ir'
 import { appStorage } from '../src/storage'
+import { setDisabled } from '../src/disable'
+import { ownCodeKeys, trustFingerprint, trustKeys } from '../src/trust'
 
 let n = 0
 const fresh = (extra = {}) => new Library({ indexedDB: new IDBFactory(), dbName: 'db' + n++, channelName: 'ch' + n, autosaveDelay: 10, revisionInterval: 0, ...extra })
@@ -154,6 +156,44 @@ describe('library', () => {
     expect(await lib.needsTrust(changed)).toBe(true)
     const safe = await lib.create('y', 'osc().out()')
     expect(await lib.needsTrust(safe)).toBe(false)
+  })
+
+  test('an approval covers each piece of code: switching parts off or on does not ask again, new code does', async () => {
+    const lib = mk()
+    const s = await lib.create('x', 'f = () => fetch("a")\ng = () => fetch("b")\nosc(10, 0.1, () => f()).out()\nnoise(() => g()).out(o1)\n')
+    await lib.approve(s)
+    const off = setDisabled(s, s.stmts[3].id, true, { cascade: true })
+    expect(await lib.needsTrust(off)).toBe(false)
+    expect(await lib.needsTrust(setDisabled(off, s.stmts[3].id, false, { cascade: true }))).toBe(false)
+    // approving a version with code switched off keeps what was approved before
+    await lib.approve(off)
+    expect(await lib.needsTrust(s)).toBe(false)
+    // code that was switched off when the sketch was approved still asks when it comes on
+    const fresh = await lib.create('z', 'f = () => fetch("a")\nosc().out()\n// noise(() => fetch("evil")).out(o1)\n')
+    await lib.approve(fresh)
+    const on = setDisabled(fresh, fresh.stmts[2].id, false)
+    expect(await lib.needsTrust(on)).toBe(true)
+    // changed code asks
+    expect(await lib.needsTrust(fromCode('f = () => fetch("c")\ng = () => fetch("b")\nosc().out()\n', { id: s.id }))).toBe(true)
+  })
+
+  test('a fingerprint stored before per-piece approvals still matches its exact content', async () => {
+    const lib = mk()
+    const s = await lib.create('x', 'update = () => {}\nosc().out()')
+    await (await (lib as any).kv()).put('trust', s.id, trustFingerprint(s))
+    expect(await lib.needsTrust(s)).toBe(false)
+    await lib.approve(s) // upgrades it
+    expect(await lib.needsTrust(s)).toBe(false)
+  })
+
+  test('approveKeys adds the owner\'s own code, carrying over an old fingerprint approval of the version edited', async () => {
+    const lib = mk()
+    const s = await lib.create('x', 'update = () => {}\nosc().out()')
+    await (await (lib as any).kv()).put('trust', s.id, trustFingerprint(s))
+    const typed = fromCode('update = () => {}\nf = () => 1 + g()\nosc().out()', { id: s.id })
+    await lib.approveKeys(s.id, ownCodeKeys(typed, new Set(trustKeys(s)), new Set()), s)
+    expect(await lib.needsTrust(typed)).toBe(false)
+    expect(await lib.needsTrust(s)).toBe(false)
   })
 
   test('storageInfo explains where data lives', async () => {

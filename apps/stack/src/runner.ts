@@ -7,7 +7,10 @@ import {
   getAudioEngine,
   getLibrary,
   riskyParts,
+  ownCodeKeys,
+  trustCovered,
   trustFingerprint,
+  trustKeys,
   type Isolation,
   type RiskyPart,
   type Runtime,
@@ -47,6 +50,15 @@ export class Runner {
   private audio = getAudioEngine()
   private sketch?: Sketch
   private approved = new Map<string, boolean>() // trust fingerprint → run allowed
+  /** trust keys the owner said yes to while this sketch is open ("Run it once" covers that code, switched off or on) */
+  private session = new Set<string>()
+  /** trust keys of code from outside: the sketch as it was opened, and pasted or dropped text. Editing never approves these. */
+  private foreign?: Set<string>
+  /** text was pasted or dropped since the last edit that added code: that code came from outside */
+  private pasted = false
+  private onPaste = () => {
+    this.pasted = true
+  }
   private lastGood?: { sketch: Sketch; safe: boolean }
   private lastAttempt?: { sketch: Sketch; safe: boolean; at: number }
   private startedAt = 0
@@ -66,7 +78,12 @@ export class Runner {
   /** called after every (re)start once the runtime is ready (the backdrop re-applies its resolution) */
   onStarted?: () => void
 
-  constructor(private stage: HTMLElement) {}
+  constructor(private stage: HTMLElement) {
+    if (typeof document !== 'undefined') {
+      document.addEventListener('paste', this.onPaste, true)
+      document.addEventListener('drop', this.onPaste, true)
+    }
+  }
 
   subscribe(cb: () => void): () => void {
     this.listeners.add(cb)
@@ -103,6 +120,10 @@ export class Runner {
 
   dispose(): void {
     this.disposed = true
+    if (typeof document !== 'undefined') {
+      document.removeEventListener('paste', this.onPaste, true)
+      document.removeEventListener('drop', this.onPaste, true)
+    }
     clearTimeout(this.settleTimer)
     this.unErr?.()
     this.rt?.dispose()
@@ -148,7 +169,8 @@ export class Runner {
       return { safe: false }
     }
     const fp = trustFingerprint(sketch)
-    let ok = this.approved.get(fp)
+    // code the owner already said yes to while it is open, with parts switched off or back on, does not ask again
+    let ok = trustCovered(sketch, this.session) ? true : this.approved.get(fp)
     if (ok === undefined) {
       const needs = await this.lib.needsTrust(sketch)
       // an approval given while the library answered (the owner's own pad binding) wins over the stored answer
@@ -159,23 +181,28 @@ export class Runner {
     return { safe: !ok }
   }
 
-  /** "Run it once" for this exact content. */
+  /** "Run it once": this code, and any version of it with parts switched off or back on, until another sketch opens. */
   approveOnce(): void {
     if (!this.sketch) return
     this.approved.set(trustFingerprint(this.sketch), true)
+    for (const k of trustKeys(this.sketch)) this.session.add(k)
     this.run(true)
   }
-  /** "Always for this sketch": stored in the library as a hash of exactly the risky parts. */
+  /** "Always for this sketch": the library adds a key for each piece of risky code (core `trustKeys`). */
   async approveAlways(): Promise<void> {
     if (!this.sketch) return
     await this.lib.approve(this.sketch)
     this.approved.set(trustFingerprint(this.sketch), true)
+    for (const k of trustKeys(this.sketch)) this.session.add(k)
     this.run(true)
   }
 
   /** Forget trust decisions (a different sketch was opened). */
   resetTrust(): void {
     this.approved.clear()
+    this.session.clear()
+    this.foreign = undefined
+    this.pasted = false
     this.trust = { pending: false, parts: [] }
   }
 
@@ -189,12 +216,37 @@ export class Runner {
 
   /** Remember the latest sketch without running it (a numeric drag already pushed live values). */
   track(sketch: Sketch): void {
+    this.authored(sketch)
     this.sketch = sketch
+  }
+
+  /**
+   * Code the owner types or edits in the editor is theirs: approve it (for good, in the library) so the trust prompt only asks
+   * about code from outside. The first sketch after a (re)load is what was opened: its code is outside code, and so is code
+   * an edit adds after a paste or drop. A new plugin always asks.
+   */
+  private authored(sketch: Sketch): void {
+    if (!this.foreign) {
+      this.foreign = new Set(trustKeys(sketch))
+      return
+    }
+    if (sketch === this.sketch) return
+    const fresh = ownCodeKeys(sketch, this.foreign, this.session)
+    if (!fresh.length) return
+    if (this.pasted) for (const k of fresh) this.foreign.add(k)
+    else {
+      for (const k of fresh) this.session.add(k)
+      void this.lib.approveKeys(sketch.id, fresh, this.sketch).catch(() => {})
+    }
+    this.pasted = false
   }
 
   /** Ask for a run of the latest sketch. Calls inside one animation frame collapse (core does too, this keeps the trust check off the hot path). */
   run(force = false, sketch?: Sketch): void {
-    if (sketch) this.sketch = sketch
+    if (sketch) {
+      this.authored(sketch)
+      this.sketch = sketch
+    }
     if (!this.sketch) return
     if (force) this.force = true
     if (this.running) {

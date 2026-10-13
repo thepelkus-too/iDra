@@ -96,7 +96,7 @@ plugins or iDra itself. See docs/motion.md.
 
 ## Trust
 
-A sketch with plugins always goes through the trust gate (`riskyParts` lists them; the approval fingerprint covers each plugin's
+A sketch with plugins always goes through the trust gate (`riskyParts` lists them; each plugin's approval key covers its
 id, URL, pasted source and integrity). Until the owner says yes it runs in safe mode, which skips plugins. See `docs/security.md`.
 
 ## API
