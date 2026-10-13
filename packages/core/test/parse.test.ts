@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest'
 import { importText, fromCode } from '../src/parse'
-import { toCode } from '../src/codegen'
+import { toCode, toCodeWithMap } from '../src/codegen'
 import { canonicalSketch } from '../src/normalize'
 import { catalog } from '../src/catalog'
 import { setArg, type Stmt, type Value } from '../src/ir'
@@ -190,6 +190,12 @@ describe('edit then export', () => {
     // an argument added after the typed ones, and one reset to `default`, which is dropped as before
     expect(edit('osc(10).out()\n', (s) => s.stmts[0].chain.gen, 1, { k: 'num', v: 0.3 })).toBe('osc(10, 0.3).out()\n')
     expect(edit('osc(10, 0.3).out()\n', (s) => s.stmts[0].chain.gen, 1, { k: 'default' })).toBe('osc(10).out()\n')
+    // a nested call inside an argument kept as written still has its range in the code map
+    const n = fromCode('osc().modulate(noise(3), 0.1).out()\n')
+    const noise = (n.stmts[0] as any).chain.mods[0].args[0].chain.gen
+    const { code, map } = toCodeWithMap(setArg(n, mod(0)(n).id, 1, { k: 'num', v: 0.4 }))
+    expect(code).toBe('osc().modulate(noise(3), 0.4).out()\n')
+    expect(code.slice(map[noise.id].from, map[noise.id].to)).toBe('noise(3)')
     // live/fresh output is unchanged: canonical, defaults trimmed
     const s = fromCode('osc().modulate(noise(3), 0.1).out()\n')
     expect(toCode(setArg(s, mod(0)(s).id, 0, { k: 'ref', name: 'o0' }), { fresh: true })).toBe('osc()\n  .modulate(o0)\n  .out()\n')

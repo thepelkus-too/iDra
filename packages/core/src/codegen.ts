@@ -215,7 +215,13 @@ function editedCallText(call: Call, position: 'gen' | 'mod', ctx: Ctx): Piece | 
     if (i) parts.push(i < typed ? src.text.slice(src.args[i - 1].to, src.args[i].from) : ', ')
     const a = call.args[i]
     const was = src.args[i]
-    parts.push(was && was.hash === contentHash(a) ? src.text.slice(was.from, was.to) : emitValue(a, ctx, inputs[i]))
+    if (!was || was.hash !== contentHash(a)) parts.push(emitValue(a, ctx, inputs[i]))
+    else {
+      // kept text; nested calls keep their code-view ranges when it reads the same as canonical form
+      const text = src.text.slice(was.from, was.to)
+      const fresh = emitValue(a, { ...ctx, fresh: true }, inputs[i])
+      parts.push(fresh.t === text ? fresh : text)
+    }
   }
   // after the last argument kept: the original text after the last argument (a trailing comma, a line break, the `)`)
   parts.push(src.text.slice(src.args[typed - 1].to))
