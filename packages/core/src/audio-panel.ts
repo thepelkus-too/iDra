@@ -172,7 +172,7 @@ export function mountAudioPanel(el: HTMLElement, opts: AudioPanelOptions = {}): 
     h('div', { class: 'row' }, chooseBtn, fileInput),
     fileName,
     fileHelp,
-    h('div', { class: 'row' }, h('label', { class: 'check' }, loop, 'loop'), h('label', { class: 'check', title: 'Stored on this device only, never in the sketch' }, keep, 'keep on this device')),
+    h('div', { class: 'row' }, h('label', { class: 'check' }, loop, 'loop'), h('label', { class: 'check', title: 'A copy in iDra’s own storage on this device (never in the sketch): the Files app only lends a picked file to this page, so without it the file can’t be reopened later or continued after switching editor' }, keep, 'save a copy in iDra')),
     savedRow,
   )
 

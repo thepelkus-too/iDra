@@ -498,7 +498,7 @@ export interface DownloadProgress {
 }
 
 export const DOWNLOAD_BLOCKED_TEXT =
-  'This podcast’s host doesn’t let web pages download its episodes (no CORS headers), so it can’t be saved here. Tap “Open file” and save it from there (iPad: Share › Save to Files; Android: ⋮ › Download), then pick it under “Audio file…” (tick “keep on this device”).'
+  'This podcast’s host doesn’t let web pages download its episodes (no CORS headers), so it can’t be saved here. Tap “Open file” and save it from there (iPad: Share › Save to Files; Android: ⋮ › Download), then pick it under “Audio file…” (with “save a copy in iDra” ticked).'
 
 /**
  * Download an episode into the kept-audio store (audio-assets.ts) for offline playback. Reading the bytes needs CORS on the
