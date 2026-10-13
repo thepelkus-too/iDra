@@ -105,7 +105,8 @@ source type); the panel says so. Diagnostics → *HLS streams* reports `canPlayT
 ### The feed proxy on the Vercel deployment (`/api/feed`)
 
 Many podcast hosts (SoundCloud among them) send no CORS headers on their feeds. The Vercel deployment includes a small
-**feeds-only** proxy, `api/feed.mjs`, and its build sets `FEED_PROXY_URL=/api/feed?url=` (in `vercel.json`'s `buildCommand`).
+**feeds-only** proxy, `api/feed.mjs`, and Vercel builds use it (`packages/core/vite-plugin.mjs` sets `FEED_PROXY_URL` to `/api/feed?url=` when `VERCEL=1`; set
+`FEED_PROXY_URL` yourself to override, or to an empty string to turn it off).
 The panel uses it only after a feed host refuses CORS; the state line then says the feed was read through the proxy. It
 proxies **feeds, never audio**: episodes from such hosts still play without analysis, or download through Safari and the Files
 app. Its safeguards (tested in `scripts/feed-proxy.test.mjs`):
@@ -118,7 +119,7 @@ app. Its safeguards (tested in `scripts/feed-proxy.test.mjs`):
 * RSS/Atom/XML content types only (anything else gets 415, and the panel falls back to trying the link as a stream), at most
   10 MB, 10 s timeout; responses are cached at the edge for 5 minutes to spare the feed hosts.
 
-Local builds and other hosts don't set `FEED_PROXY_URL`, so they behave as before.
+Local builds and other hosts don't set it, so they behave as before.
 
 ### Running your own proxy (`AUDIO_PROXY_URL`)
 
