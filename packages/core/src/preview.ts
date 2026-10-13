@@ -504,6 +504,7 @@ export function createPreviewPool(options: PreviewPoolOptions = {}): PreviewPool
   }
 
   async function start(s: Slot, h: H) {
+    // plans are compared by key: every update() replans into a new object, often with the same key
     const plan = h.plan
     if (!plan) return
     s.rt.loop({ running: false, fps: 1, outputs: plan.outputs })
@@ -514,12 +515,12 @@ export function createPreviewPool(options: PreviewPoolOptions = {}): PreviewPool
       if (s.handle === h) setState(h, 'error', String((e as Error)?.message ?? e))
       return
     }
-    if (s.handle !== h || h.plan !== plan) return
+    if (s.handle !== h || h.plan?.key !== plan.key) return
     stats.runs++
     const m = main()
     if (m) s.rt.setLiveBatch(m.liveTable())
     const r = await s.rt.run(plan.sketch)
-    if (s.handle !== h || h.plan !== plan) return
+    if (s.handle !== h || h.plan?.key !== plan.key) return
     if (!r.ok) {
       setState(h, 'error', r.error ?? 'the preview could not run')
       release(s)
@@ -535,7 +536,7 @@ export function createPreviewPool(options: PreviewPoolOptions = {}): PreviewPool
       await pumpFeeds(s, plan)
       if (plan.feeds.length) s.feedTimer = setInterval(() => void pumpFeeds(s, plan), feedMs)
     }
-    if (s.handle !== h || h.plan !== plan) return
+    if (s.handle !== h || h.plan?.key !== plan.key) return
     const still = mode !== 'live' && !h.active
     s.rt.loop({ running: true, fps: Math.min(fpsMax, h.fps), outputs: plan.outputs, frames: still ? 2 : undefined })
   }
@@ -547,7 +548,7 @@ export function createPreviewPool(options: PreviewPoolOptions = {}): PreviewPool
       const t0 = performance.now()
       try {
         const bmp = await m.snapshot(f.from, W, HT)
-        if (s.key !== plan.key && s.handle?.plan !== plan) {
+        if (s.key !== plan.key && s.handle?.plan?.key !== plan.key) {
           bmp.close?.()
           return
         }

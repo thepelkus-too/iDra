@@ -273,6 +273,19 @@ describe('PreviewPool', () => {
     expect(r.reason).toBe("reads o1, which can't be previewed in isolation")
   })
 
+  test('an update with the same sketch right after opening does not leave a cold pool’s preview starting', async () => {
+    // PreviewPeek opens a handle and then sends an update in the same tick; every update makes a new plan object
+    pool = mk({ size: 1 })
+    const h = pool.open(specs()[0], { sketch, trusted: true })
+    h.update({ sketch, trusted: true })
+    await flush()
+    const rt = FakeRuntime.all[0]
+    expect(rt.runs).toHaveLength(1)
+    expect(rt.loops.at(-1)).toMatchObject({ running: true })
+    rt.frame()
+    expect(h.state).toBe('running')
+  })
+
   test('nothing runs before the sketch is trusted, while invisible, or with previews off', async () => {
     pool = mk()
     const h = pool.open(specs()[0], { sketch, trusted: false })
