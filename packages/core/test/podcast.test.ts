@@ -20,12 +20,14 @@ const RSS = `<?xml version="1.0" encoding="UTF-8"?>
   <item>
     <title>Long one</title>
     <guid isPermaLink="false">ep-3</guid>
+    <link>https://show.example/episodes/3</link>
     <pubDate>Mon, 05 Oct 2026 10:00:00 GMT</pubDate>
     <itunes:duration>1:02:03</itunes:duration>
     <enclosure url="https://cdn.example/ep3.mp3" length="48000000" type="audio/mpeg"/>
   </item>
   <item>
     <title>Short one</title>
+    <link>javascript:alert(1)</link>
     <itunes:duration>12:34</itunes:duration>
     <enclosure url="ep2.m4a" length="0" type="audio/x-m4a"/>
   </item>
@@ -75,9 +77,10 @@ describe('feed parsing', () => {
     expect(f.title).toBe('Test Show')
     expect(f.episodes.map((e) => e.title)).toEqual(['Long one', 'Short one', 'Seconds only', 'untitled.mp3'])
     const [a, b, c, d] = f.episodes
-    expect(a).toMatchObject({ id: 'ep-3', duration: 3723, size: 48000000, url: 'https://cdn.example/ep3.mp3', date: Date.UTC(2026, 9, 5, 10) })
+    expect(a).toMatchObject({ id: 'ep-3', page: 'https://show.example/episodes/3', duration: 3723, size: 48000000, url: 'https://cdn.example/ep3.mp3', date: Date.UTC(2026, 9, 5, 10) })
     // relative enclosure resolved against the feed; length 0 → unknown size; missing guid → url as id
-    expect(b).toMatchObject({ url: 'https://feeds.example/ep2.m4a', size: undefined, duration: 754, id: 'https://feeds.example/ep2.m4a' })
+    // only an http(s) <link> is kept as the episode page
+    expect(b).toMatchObject({ page: undefined, url: 'https://feeds.example/ep2.m4a', size: undefined, duration: 754, id: 'https://feeds.example/ep2.m4a' })
     // several enclosures: the first audio one wins
     expect(c.url).toBe('https://cdn.example/ep1.mp3')
     expect(c.duration).toBe(754)
@@ -89,7 +92,7 @@ describe('feed parsing', () => {
     const f = parseFeed(ATOM, 'https://show.example/atom')
     expect(f.title).toBe('Atom Show')
     expect(f.episodes).toHaveLength(1)
-    expect(f.episodes[0]).toMatchObject({ id: 'urn:1', title: 'First', url: 'https://show.example/1.ogg', size: 1234, date: Date.UTC(2026, 9, 1) })
+    expect(f.episodes[0]).toMatchObject({ id: 'urn:1', title: 'First', url: 'https://show.example/1.ogg', page: 'https://show.example/1', size: 1234, date: Date.UTC(2026, 9, 1) })
   })
 
   test('not a feed', () => {

@@ -87,8 +87,9 @@ source type); the panel says so. Diagnostics → *HLS streams* reports `canPlayT
   page is hidden). Choosing an episode resumes there, unless the place is in its first 5 s or last 30 s. *Forget* removes the
   chosen feed and its positions; *Forget all* clears everything.
 * **Downloads for offline listening:** the ↓ next to an episode saves it on the device (progress shows on the button; tap it
-  again to cancel). Reading the bytes needs CORS on the audio host (or your proxy); without it the panel says so and points to
-  saving the file through Safari or a podcast app and using *Audio file…* with *keep on this device*. Downloads go into the same
+  again to cancel). Reading the bytes needs CORS on the audio host (or your proxy); without it the panel says so and offers
+  **Open file** (the audio in a new tab, where Safari can *Share › Save to Files*; or long-press it › *Download Linked File*),
+  **Copy link**, and the **Episode page** when the feed gives one; then use *Audio file…* with *keep on this device*. Downloads go into the same
   kept-audio store as picked files (IndexedDB `hydra-ipad-audio`, stored as a Blob so a long episode is not copied into one
   buffer): up to 400 MB per episode and 1 GB for files and downloads together, checked against the feed's size and
   `Content-Length` before downloading and again while streaming. Nothing is evicted automatically. The first download asks the
@@ -212,4 +213,6 @@ Nothing above proves iPadOS behaviour; CI only has Chromium with fake devices.
    whether analysis (the meters) is still moving when you unlock.
 9. **Downloads:** download an episode from a CORS-friendly feed, turn on Airplane Mode, play it from *Downloads*: it plays and
    the meters move. Delete it; the space shown drops. Note whether a ~100 MB episode downloads without the tab reloading.
+   On a host without CORS, ↓ shows *Open file*, *Copy link* and *Episode page*: note which way of saving the file to Files
+   works best in Safari (Share › Save to Files in the opened tab, or long-press › Download Linked File).
 10. **Camera in the sandboxed frame:** Diagnostics › *Probe camera in frame* (expected: denied, see docs/security.md).

@@ -94,7 +94,7 @@ function podServer(name, { cors, feed, redirectTo }) {
 }
 const rss = (items) => `<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0" xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd"><channel><title>E2E Show</title>
-${items.map(([t, u, i]) => `<item><title>${t}</title><guid>${u}</guid><pubDate>Mon, 0${i} Oct 2026 10:00:00 GMT</pubDate><itunes:duration>1:00</itunes:duration><enclosure url="${u}" length="${episodeWav.length}" type="audio/wav"/></item>`).join('\n')}
+${items.map(([t, u, i]) => `<item><title>${t}</title><guid>${u}</guid><link>https://show.example/ep${i}</link><pubDate>Mon, 0${i} Oct 2026 10:00:00 GMT</pubDate><itunes:duration>1:00</itunes:duration><enclosure url="${u}" length="${episodeWav.length}" type="audio/wav"/></item>`).join('\n')}
 <item><title>Video ad</title><enclosure url="https://ads.invalid/ad.mp4" type="video/mp4"/></item>
 </channel></rss>`
 let podA, podB, podC
@@ -404,6 +404,14 @@ await step('download an episode for offline; play it from Downloads with the net
   // a host without CORS can't be downloaded: said plainly
   await dl('Episode without CORS').click()
   await page.waitForFunction(() => /doesn’t let web pages download/.test(document.querySelector('[data-role=download-note]').textContent), null, { timeout: 15000 })
+  // …with the file to open in a tab (and save from there), its link to copy, and the episode page
+  assert.equal(await page.getAttribute('[data-role=download-note] [data-role=open-file]', 'href'), `http://127.0.0.1:${podB.port}/ep.wav`)
+  assert.equal(await page.getAttribute('[data-role=download-note] [data-role=open-file]', 'target'), '_blank')
+  assert.equal(await page.getAttribute('[data-role=download-note] [data-role=episode-page]', 'href'), 'https://show.example/ep1')
+  await page.evaluate(() => { navigator.clipboard.writeText = async (t) => void (window.__copied = t) })
+  await page.click('[data-role=download-note] [data-role=copy-link]')
+  assert.equal(await page.evaluate(() => window.__copied), `http://127.0.0.1:${podB.port}/ep.wav`)
+  assert.equal(await page.textContent('[data-role=copy-link]'), 'Copied')
   await shot(page, '02e-podcast-downloads')
   // offline: the download plays and analyses from the device
   await context.setOffline(true)

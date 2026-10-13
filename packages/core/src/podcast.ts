@@ -89,6 +89,8 @@ export interface PodcastEpisode {
   size?: number
   url: string
   type?: string
+  /** the episode's web page (RSS <link>, Atom rel=alternate), when the feed gives an http(s) one */
+  page?: string
 }
 
 export interface PodcastFeed {
@@ -192,6 +194,7 @@ export function parseFeed(xml: string, feedUrl = ''): PodcastFeed {
         size: size > 0 ? size : undefined,
         url,
         type: enc.type ?? undefined,
+        page: webPage(text(kids(it, 'link', '')[0]), feedUrl),
       })
     }
   } else if (rootName === 'feed') {
@@ -209,10 +212,17 @@ export function parseFeed(xml: string, feedUrl = ''): PodcastFeed {
         size: size > 0 ? size : undefined,
         url,
         type: link.getAttribute('type') ?? undefined,
+        page: webPage(kids(it, 'link').find((l) => (l.getAttribute('rel') ?? 'alternate') === 'alternate')?.getAttribute('href') ?? '', feedUrl),
       })
     }
   } else throw new PodcastError('This is not a podcast feed (it is not RSS or Atom).', 'not-a-feed')
   return { url: feedUrl, title: title || hostOf(feedUrl) || 'Podcast', episodes }
+}
+
+function webPage(raw: string, base: string): string | undefined {
+  if (!raw) return undefined
+  const u = absolute(raw, base)
+  return /^https?:\/\//i.test(u) ? u : undefined
 }
 
 function hostOf(url: string): string {
@@ -484,7 +494,7 @@ export interface DownloadProgress {
 }
 
 export const DOWNLOAD_BLOCKED_TEXT =
-  'This podcast’s host doesn’t let web pages download its episodes (no CORS headers), so it can’t be saved here. Download it in Safari or a podcast app, save it to Files, and pick it under “Audio file…” (tick “keep on this device”).'
+  'This podcast’s host doesn’t let web pages download its episodes (no CORS headers), so it can’t be saved here. Open the file below in a new tab and save it to Files (in Safari: Share › Save to Files, or long-press “Open file” › Download Linked File), then pick it under “Audio file…” (tick “keep on this device”).'
 
 /**
  * Download an episode into the kept-audio store (audio-assets.ts) for offline playback. Reading the bytes needs CORS on the

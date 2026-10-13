@@ -23,6 +23,7 @@ import {
   resumePoint,
   storageEstimate,
   FEED_BLOCKED_TEXT,
+  PodcastError,
   type PodcastEpisode,
   type PodcastFeed,
   type PodcastLibrary,
@@ -35,6 +36,7 @@ const CSS = `
 ${TOKENS_CSS}
 .hi-audio{font:13px/1.35 system-ui,-apple-system,sans-serif;color:var(--hi-text);background:var(--hi-panel);border:1px solid var(--hi-line);border-radius:var(--hi-r);padding:10px;display:grid;gap:8px;min-width:220px;max-width:340px;touch-action:manipulation;-webkit-user-select:none;user-select:none}
 .hi-audio .row{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.hi-audio .note .links{margin-top:6px}.hi-audio .note .links a{color:inherit;font-weight:600;min-height:40px;display:inline-flex;align-items:center;padding:0 6px}
 .hi-audio button,.hi-audio select,.hi-audio input[type=url],.hi-audio input[type=text]{min-height:40px;padding:0 12px;border-radius:8px;border:1px solid var(--hi-line);background:var(--hi-bg);color:var(--hi-text);font:inherit;min-width:0}
 .hi-audio input[type=url]{flex:1;-webkit-user-select:text;user-select:text}
 .hi-audio button.primary{background:var(--hi-accent);color:#042;border-color:transparent;font-weight:600}
@@ -477,6 +479,20 @@ export function mountAudioPanel(el: HTMLElement, opts: AudioPanelOptions = {}): 
     dlNote.className = cls
     dlNote.hidden = !msg
   }
+  // a host without CORS: the file itself still opens in a tab, where the browser can save it
+  const fileLinks = (ep: PodcastEpisode) => {
+    const copy = h('button', { type: 'button', 'data-role': 'copy-link' }, 'Copy link')
+    copy.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(ep.url)
+        copy.textContent = 'Copied'
+      } catch {
+        window.prompt('Copy this link:', ep.url)
+      }
+    })
+    const page = ep.page ? h('a', { href: ep.page, target: '_blank', rel: 'noopener noreferrer', 'data-role': 'episode-page' }, 'Episode page') : null
+    return h('div', { class: 'row links' }, h('a', { href: ep.url, target: '_blank', rel: 'noopener noreferrer', 'data-role': 'open-file' }, 'Open file'), copy, ...(page ? [page] : []))
+  }
   const renderDownloads = async () => {
     const list = [...downloads.values()]
     dlList.textContent = ''
@@ -538,6 +554,7 @@ export function mountAudioPanel(el: HTMLElement, opts: AudioPanelOptions = {}): 
       sayDl(`“${ep.title}” is saved on this device.`)
     } catch (e) {
       sayDl(ctl.signal.aborted ? 'Download cancelled.' : (e as Error).message, ctl.signal.aborted ? 'note' : 'note err')
+      if (e instanceof PodcastError && e.code === 'no-cors') dlNote.append(fileLinks(ep))
     } finally {
       active.delete(ep.url)
       await refreshSaved()
