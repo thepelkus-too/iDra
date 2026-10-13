@@ -20,9 +20,12 @@ import { launch, SOFTWARE_GL_ARGS, FAKE_MEDIA_ARGS } from './lib/browser.mjs'
 import { makeBeatsWav } from './lib/wav.mjs'
 import { serve } from './serve.mjs'
 import { createServer } from 'node:http'
+import { lookup as dnsLookup } from 'node:dns'
+import feedProxy from '../api/feed.mjs'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-if (!process.argv.includes('--skip-build')) execFileSync('npm', ['run', 'build:all'], { cwd: root, stdio: 'inherit' })
+// the feed proxy is on, as on Vercel (build with FEED_PROXY_URL=/api/feed?url= when passing --skip-build)
+if (!process.argv.includes('--skip-build')) execFileSync('npm', ['run', 'build:all'], { cwd: root, stdio: 'inherit', env: { ...process.env, FEED_PROXY_URL: '/api/feed?url=' } })
 const shotsArg = process.argv.indexOf('--shots')
 const shots = shotsArg > 0 ? resolve(process.argv[shotsArg + 1]) : join(root, 'test-results', 'ipad')
 mkdirSync(shots, { recursive: true })
@@ -44,7 +47,9 @@ window.e2eHelper = (x) => x * 2
 writeFileSync(join(fx, 'e2e-plugin@1.0.0/plugin.js'), PLUGIN)
 cpSync(join(root, 'scripts/fixtures/hydra-midi/index.js'), join(fx, 'hydra-midi@0.4.6/dist/index.js'))
 
-const app = await serve(join(tmp, 'dist'), 0)
+// api/feed.mjs as on Vercel; the fixture hosts are on loopback, which the real proxy refuses, so the test lets them through
+const feedLog = []
+const app = await serve(join(tmp, 'dist'), 0, { api: { '/api/feed': (req, res) => (feedLog.push(req.url), feedProxy(req, res, { lookup: (h, o, cb) => dnsLookup(h, o, cb), isPrivate: () => false })) } })
 const cors = await serve(fx, 0, { cors: true })
 const nocors = await serve(fx, 0)
 const base = `http://localhost:${app.port}/`
@@ -420,13 +425,18 @@ await step('download an episode for offline; play it from Downloads with the net
   assert.deepEqual(await page.evaluate(async () => (await window.__harness.core.getAudioAssets().downloads()).length), 0)
 })
 
-await step('feed without CORS: said plainly, with the two working routes', async () => {
+await step('feed without CORS: read through the feed proxy (/api/feed), episodes listed', async () => {
+  const before = feedLog.length
   await openLink(podUrl(podB, '/feed.xml'))
-  await page.waitForFunction(() => /doesn’t let web pages read its feed/.test(document.querySelector('[data-role=url-note]').textContent), null, { timeout: 15000 })
-  const note = await page.textContent('[data-role=url-note]')
-  assert.match(note, /direct audio URL/)
-  assert.match(note, /Audio file…/)
-  assert.equal(await page.isVisible('[data-role=episodes]'), false)
+  await page.waitForFunction(() => /read through the feed proxy/.test(document.querySelector('[data-role=url-note]').textContent), null, { timeout: 15000 })
+  assert.ok(feedLog.length > before, 'the proxy was asked')
+  await page.waitForSelector('[data-role=episode]')
+  assert.deepEqual(await page.$$eval('[data-role=episode] b', (b) => b.map((x) => x.textContent)), ['Only episode'])
+  // the feed is remembered by its own URL, not the proxy's
+  assert.ok(await page.evaluate(async (u) => (await window.__harness.core.getPodcastLibrary().recentFeeds()).some((f) => f.url === u), podUrl(podB, '/feed.xml')))
+  // a page that isn't a feed: the proxy refuses it, and the panel says so with the status
+  await openLink(podUrl(podB, '/nothing-here'))
+  await page.waitForFunction(() => /feed proxy couldn’t read it either: it answered 404/.test(document.querySelector('[data-role=url-note]').textContent), null, { timeout: 15000 })
 })
 
 await step('a direct episode URL (no feed) plays and analyses; Forget clears the remembered podcast', async () => {
@@ -437,6 +447,10 @@ await step('a direct episode URL (no feed) plays and analyses; Forget clears the
   await page.selectOption('[data-role=recent-feeds]', podUrl(podA, '/feed.xml'))
   await page.waitForSelector('[data-role=episode]')
   await page.click('[data-role=forget-feed]')
+  await page.waitForFunction((u) => ![...document.querySelectorAll('[data-role=recent-feeds] option')].some((o) => o.value === u), podUrl(podA, '/feed.xml'))
+  // the proxied feed is still remembered; Forget all clears it
+  assert.deepEqual((await page.evaluate(() => window.__harness.core.getPodcastLibrary().recentFeeds())).map((f) => f.url), [podUrl(podB, '/feed.xml')])
+  await page.click('[data-role=forget-all-feeds]')
   await page.waitForFunction(() => document.querySelector('[data-role=recent-feeds]').closest('.row').hidden)
   assert.deepEqual(await page.evaluate(() => window.__harness.core.getPodcastLibrary().recentFeeds()), [])
 })

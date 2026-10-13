@@ -593,7 +593,8 @@ export function mountAudioPanel(el: HTMLElement, opts: AudioPanelOptions = {}): 
     loading = true
     say('Checking the link…')
     refresh()
-    const r = await resolveAudioUrl(u, { proxy: proxy ?? null })
+    // feeds use the feed proxy (FEED_PROXY_URL, else AUDIO_PROXY_URL); only an explicit panel option overrides it
+    const r = await resolveAudioUrl(u, opts.proxy !== undefined ? { proxy: opts.proxy } : {})
     loading = false
     if (urlInput.value.trim() !== u) return refresh() // the owner pasted something else meanwhile
     if (r.kind !== 'feed' && feed) {
