@@ -11,6 +11,8 @@ export function serve(dir, port = 0, opts = {}) {
   const base = resolve(dir)
   const server = createServer((req, res) => {
     let p = decodeURIComponent((req.url || '/').split('?')[0])
+    // optional same-origin API routes (the e2e run mounts api/feed.mjs here)
+    if (opts.api?.[p]) return void opts.api[p](req, res)
     if (opts.prefix && p.startsWith(opts.prefix)) p = p.slice(opts.prefix.length - 1)
     const file = normalize(join(base, p))
     if (!file.startsWith(base)) return void res.writeHead(403).end()

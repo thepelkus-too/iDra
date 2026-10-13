@@ -7,6 +7,9 @@
 //   app      dist/ (the shell registers the service worker)
 //   cors     fixtures with Access-Control-Allow-Origin: *  (a WAV "stream", a test plugin, hydra-midi 0.4.6 for tests)
 //   nocors   the same files without CORS headers
+//   podA     podcast host with CORS: a feed, a 60 s episode with range requests, a redirect to podC (another origin)
+//   podB     podcast host without CORS: the same feed and episode
+//   podC     the redirect target (CORS)
 import assert from 'node:assert/strict'
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
@@ -16,9 +19,13 @@ import { fileURLToPath } from 'node:url'
 import { launch, SOFTWARE_GL_ARGS, FAKE_MEDIA_ARGS } from './lib/browser.mjs'
 import { makeBeatsWav } from './lib/wav.mjs'
 import { serve } from './serve.mjs'
+import { createServer } from 'node:http'
+import { lookup as dnsLookup } from 'node:dns'
+import feedProxy from '../api/feed.mjs'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-if (!process.argv.includes('--skip-build')) execFileSync('npm', ['run', 'build:all'], { cwd: root, stdio: 'inherit' })
+// the feed proxy is on, as on Vercel (build with FEED_PROXY_URL=/api/feed?url= when passing --skip-build)
+if (!process.argv.includes('--skip-build')) execFileSync('npm', ['run', 'build:all'], { cwd: root, stdio: 'inherit', env: { ...process.env, FEED_PROXY_URL: '/api/feed?url=' } })
 const shotsArg = process.argv.indexOf('--shots')
 const shots = shotsArg > 0 ? resolve(process.argv[shotsArg + 1]) : join(root, 'test-results', 'ipad')
 mkdirSync(shots, { recursive: true })
@@ -40,13 +47,68 @@ window.e2eHelper = (x) => x * 2
 writeFileSync(join(fx, 'e2e-plugin@1.0.0/plugin.js'), PLUGIN)
 cpSync(join(root, 'scripts/fixtures/hydra-midi/index.js'), join(fx, 'hydra-midi@0.4.6/dist/index.js'))
 
-const app = await serve(join(tmp, 'dist'), 0)
+// api/feed.mjs as on Vercel; the fixture hosts are on loopback, which the real proxy refuses, so the test lets them through
+const feedLog = []
+const app = await serve(join(tmp, 'dist'), 0, { api: { '/api/feed': (req, res) => (feedLog.push(req.url), feedProxy(req, res, { lookup: (h, o, cb) => dnsLookup(h, o, cb), isPrivate: () => false })) } })
 const cors = await serve(fx, 0, { cors: true })
 const nocors = await serve(fx, 0)
 const base = `http://localhost:${app.port}/`
 // a different host name = a different origin from the app (and from each other by port)
 const corsBase = `http://127.0.0.1:${cors.port}/`
 const nocorsBase = `http://127.0.0.1:${nocors.port}/`
+
+// ---- podcast hosts (range requests, redirects; every request is logged)
+const episodeWav = makeBeatsWav({ sampleRate: 8000, seconds: 60, beatEvery: 0.5 })
+const podLog = []
+function podServer(name, { cors, feed, redirectTo }) {
+  const server = createServer((req, res) => {
+    const path = (req.url || '/').split('?')[0]
+    const base = cors ? { 'access-control-allow-origin': '*', 'access-control-expose-headers': 'content-length, content-range, accept-ranges' } : {}
+    const log = (status) => podLog.push({ host: name, path, range: req.headers.range ?? null, status })
+    if (path === '/feed.xml') {
+      log(200)
+      return void res.writeHead(200, { ...base, 'content-type': 'application/rss+xml; charset=utf-8' }).end(feed())
+    }
+    if (path.startsWith('/redirect/') && redirectTo) {
+      log(302)
+      return void res.writeHead(302, { ...base, location: redirectTo() + path.slice('/redirect/'.length) }).end()
+    }
+    if (path === '/ep.wav') {
+      const total = episodeWav.length
+      const m = /^bytes=(\d*)-(\d*)$/.exec(req.headers.range ?? '')
+      if (m) {
+        const start = m[1] ? Number(m[1]) : 0
+        const end = m[2] ? Math.min(Number(m[2]), total - 1) : total - 1
+        log(206)
+        res.writeHead(206, { ...base, 'content-type': 'audio/wav', 'accept-ranges': 'bytes', 'content-range': `bytes ${start}-${end}/${total}`, 'content-length': end - start + 1 })
+        return void res.end(req.method === 'HEAD' ? undefined : episodeWav.subarray(start, end + 1))
+      }
+      log(200)
+      res.writeHead(200, { ...base, 'content-type': 'audio/wav', 'accept-ranges': 'bytes', 'content-length': total })
+      return void res.end(req.method === 'HEAD' ? undefined : episodeWav)
+    }
+    log(404)
+    res.writeHead(404, base).end()
+  })
+  return new Promise((ok) => server.listen(0, '0.0.0.0', () => ok({ server, port: server.address().port })))
+}
+const rss = (items) => `<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd"><channel><title>E2E Show</title>
+${items.map(([t, u, i]) => `<item><title>${t}</title><guid>${u}</guid><link>https://show.example/ep${i}</link><pubDate>Mon, 0${i} Oct 2026 10:00:00 GMT</pubDate><itunes:duration>1:00</itunes:duration><enclosure url="${u}" length="${episodeWav.length}" type="audio/wav"/></item>`).join('\n')}
+<item><title>Video ad</title><enclosure url="https://ads.invalid/ad.mp4" type="video/mp4"/></item>
+</channel></rss>`
+let podA, podB, podC
+podC = await podServer('C', { cors: true })
+podB = await podServer('B', { cors: false, feed: () => rss([['Only episode', `http://127.0.0.1:${podB.port}/ep.wav`, 1]]) })
+podA = await podServer('A', {
+  cors: true,
+  redirectTo: () => `http://127.0.0.1:${podC.port}/`,
+  feed: () => rss([
+    ['Episode with CORS', `http://127.0.0.1:${podA.port}/ep.wav`, 3],
+    ['Episode via redirect', `http://127.0.0.1:${podA.port}/redirect/ep.wav`, 2],
+    ['Episode without CORS', `http://127.0.0.1:${podB.port}/ep.wav`, 1],
+  ]),
+})
 const PLUGIN_URL = corsBase + 'e2e-plugin@1.0.0/plugin.js'
 const MIDI_URL = corsBase + 'hydra-midi@0.4.6/dist/index.js'
 
@@ -136,6 +198,7 @@ await step('audio sources list: mic, input device, file, stream, tab/screen (fea
   await tab(page, 'audio')
   const opts = await page.$$eval('[data-role=source] option', (o) => o.map((x) => x.value))
   assert.deepEqual(opts.filter((v) => v !== 'display'), ['mic', 'device', 'file', 'stream', 'other'])
+  assert.equal(await page.textContent('[data-role=source] option[value=stream]'), 'Podcast / URL…')
   const hasGdm = await page.evaluate(() => !!navigator.mediaDevices?.getDisplayMedia)
   assert.equal(opts.includes('display'), hasGdm, 'Tab / screen only where getDisplayMedia exists')
   await page.selectOption('[data-role=source]', 'other')
@@ -243,8 +306,170 @@ await step('stream URL without CORS: “plays but doesn’t allow analysis”, t
   await page.click('[data-role=start]')
 })
 
+// ------------------------------------------------------------------ podcasts and pasted links
+
+const podUrl = (host, path) => `http://127.0.0.1:${host.port}${path}`
+const openLink = async (url) => {
+  await page.fill('[data-role=stream-url]', url)
+  await page.click('[data-role=url-open]')
+}
+const episode = (title) => page.locator('[data-role=episode]', { hasText: title })
+const audioState = () => page.evaluate(() => ({ state: window.__harness.audio.state, analysis: window.__harness.audio.analysis, playOnly: !!window.__harness.audio.source?.playOnly, label: window.__harness.audio.source?.label }))
+
+await step('YouTube / Vimeo / Spotify / Apple Podcasts links: a kind explanation with the working routes, nothing loaded', async () => {
+  await page.selectOption('[data-role=source]', 'stream')
+  for (const [u, name] of [['https://www.youtube.com/watch?v=dQw4w9WgXcQ', 'YouTube'], ['https://vimeo.com/1', 'Vimeo'], ['https://open.spotify.com/episode/x', 'Spotify'], ['https://podcasts.apple.com/us/podcast/x/id1', 'Apple Podcasts']]) {
+    await openLink(u)
+    await page.waitForFunction((n) => document.querySelector('[data-role=url-note]')?.textContent.includes(n), name)
+    assert.match(await page.textContent('[data-role=url-note]'), /Audio file…/)
+  }
+  await shot(page, '02b-podcast-youtube-note')
+})
+
+await step('podcast feed with CORS: episodes listed (video ad left out); an episode plays and analyses', async () => {
+  await openLink(podUrl(podA, '/feed.xml'))
+  await page.waitForSelector('[data-role=episode]')
+  const titles = await page.$$eval('[data-role=episode] b', (b) => b.map((x) => x.textContent))
+  assert.deepEqual(titles, ['Episode with CORS', 'Episode via redirect', 'Episode without CORS'])
+  assert.match(await page.textContent('[data-role=feed-title]'), /E2E Show · 3 episodes/)
+  assert.match(await episode('Episode with CORS').textContent(), /1:00/)
+  await episode('Episode with CORS').click()
+  await page.waitForFunction(() => window.__harness.audio.state === 'running' && window.__harness.audio.analysis === 'ok', null, { timeout: 15000 })
+  await page.waitForFunction(() => /Analysis allowed/.test(document.querySelector('[data-role=pod-state]').textContent))
+  assert.equal((await audioState()).label, 'Episode with CORS')
+  await shot(page, '02c-podcast-episodes')
+})
+
+await step('episode transport: +15 s / −15 s, seek (range requests), speed', async () => {
+  const t = () => page.evaluate(() => window.__harness.audio.source.transport.currentTime)
+  await page.waitForSelector('[data-role=fwd15]:not([disabled])')
+  const before = await t()
+  await page.click('[data-role=fwd15]')
+  assert.ok((await t()) >= before + 14, `+15 from ${before} → ${await t()}`)
+  await page.click('[data-role=back15]')
+  assert.ok((await t()) < before + 5)
+  const ranged = podLog.filter((r) => r.host === 'A' && r.path === '/ep.wav' && r.status === 206).length
+  await page.evaluate(() => window.__harness.audio.source.transport.seek(15))
+  await page.waitForFunction(() => window.__harness.audio.source.transport.currentTime >= 15, null, { timeout: 5000 })
+  assert.ok(podLog.some((r) => r.host === 'A' && r.range && r.status === 206), 'the episode was fetched with range requests')
+  await page.selectOption('[data-role=speed]', '1.5')
+  assert.equal(await page.evaluate(() => window.__harness.audio.source.transport.rate), 1.5)
+  await page.selectOption('[data-role=speed]', '1')
+  return `${podLog.filter((r) => r.host === 'A' && r.status === 206).length} range responses (${ranged} before the seek)`
+})
+
+await step('the place in an episode is remembered (stop, reload, "resume at")', async () => {
+  await page.click('[data-role=start]') // stop: saves the position
+  const url = podUrl(podA, '/ep.wav')
+  await page.waitForFunction(async (u) => ((await window.__harness.core.getPodcastLibrary().position(u))?.position ?? 0) >= 15, url, { timeout: 5000 })
+  await page.reload()
+  await page.waitForFunction(() => !!window.__harness?.rt, null, { timeout: 20000 })
+  await page.evaluate(() => window.__harness.audio.onFrame((f) => (window.__lastAudio = f)))
+  await tab(page, 'audio')
+  await page.waitForSelector('[data-role=recent-feeds] option:nth-child(2)', { state: 'attached' })
+  assert.match(await page.textContent('[data-role=recent-feeds]'), /E2E Show · 3 ep\./)
+  await page.selectOption('[data-role=recent-feeds]', podUrl(podA, '/feed.xml'))
+  await page.waitForSelector('[data-role=episode]')
+  assert.match(await episode('Episode with CORS').textContent(), /resume at 0:(1[5-9]|2\d)/)
+  await episode('Episode with CORS').click()
+  await page.waitForFunction(() => window.__harness.audio.state === 'running' && window.__harness.audio.source.transport.currentTime >= 15, null, { timeout: 15000 })
+})
+
+await step('episode behind a cross-origin redirect (CORS on both hosts): plays and analyses', async () => {
+  await episode('Episode via redirect').click()
+  await page.waitForFunction(() => window.__harness.audio.state === 'running' && window.__harness.audio.analysis === 'ok' && /redirect/.test(window.__harness.audio.source.label), null, { timeout: 15000 })
+  assert.ok(podLog.some((r) => r.host === 'C' && r.path === '/ep.wav'), 'fetched from the redirect target')
+})
+
+await step('episode on a host without CORS: “plays but can’t drive visuals”, then play-only', async () => {
+  await episode('Episode without CORS').click()
+  await page.waitForFunction(() => window.__harness.audio.state === 'error', null, { timeout: 20000 })
+  await page.waitForSelector('[data-role=play-only]:not([hidden])')
+  await page.click('[data-role=play-only]')
+  await page.waitForFunction(() => window.__harness.audio.state === 'running' && window.__harness.audio.source.playOnly, null, { timeout: 15000 })
+  assert.match(await page.textContent('[data-role=pod-state]'), /Play only: plays but can’t drive visuals/)
+  assert.equal((await audioState()).label, 'Episode without CORS')
+  await shot(page, '02d-podcast-play-only')
+  await page.click('[data-role=start]')
+})
+
+await step('download an episode for offline; play it from Downloads with the network off; delete it', async () => {
+  const dl = (title) => page.locator('.ep', { has: episode(title) }).locator('[data-role=download]')
+  await dl('Episode with CORS').click()
+  await page.waitForFunction(() => /is saved on this device/.test(document.querySelector('[data-role=download-note]').textContent), null, { timeout: 15000 })
+  assert.equal(await dl('Episode with CORS').textContent(), '✓')
+  assert.match(await episode('Episode with CORS').textContent(), /on this device/)
+  await page.waitForSelector('[data-role=downloaded]')
+  assert.match(await page.textContent('[data-role=downloads-head]'), /Downloads \(1\)/)
+  // a host without CORS can't be downloaded: said plainly
+  await dl('Episode without CORS').click()
+  await page.waitForFunction(() => /doesn’t let web pages download/.test(document.querySelector('[data-role=download-note]').textContent), null, { timeout: 15000 })
+  // …with the file to open in a tab (and save from there), its link to copy, and the episode page
+  assert.equal(await page.getAttribute('[data-role=download-note] [data-role=open-file]', 'href'), `http://127.0.0.1:${podB.port}/ep.wav`)
+  assert.equal(await page.getAttribute('[data-role=download-note] [data-role=open-file]', 'target'), '_blank')
+  assert.equal(await page.getAttribute('[data-role=download-note] [data-role=episode-page]', 'href'), 'https://show.example/ep1')
+  await page.evaluate(() => { navigator.clipboard.writeText = async (t) => void (window.__copied = t) })
+  await page.click('[data-role=download-note] [data-role=copy-link]')
+  assert.equal(await page.evaluate(() => window.__copied), `http://127.0.0.1:${podB.port}/ep.wav`)
+  assert.equal(await page.textContent('[data-role=copy-link]'), 'Copied')
+  await shot(page, '02e-podcast-downloads')
+  // offline: the download plays and analyses from the device
+  await context.setOffline(true)
+  try {
+    await page.click('[data-role=downloaded]')
+    await page.waitForFunction(() => window.__harness.audio.state === 'running' && window.__harness.audio.analysis === 'ok' && window.__harness.audio.source.url.startsWith('blob:'), null, { timeout: 15000 })
+    assert.equal((await audioState()).label, 'Episode with CORS')
+    await page.selectOption('[data-role=speed]', '1.5')
+    assert.equal(await page.evaluate(() => window.__harness.audio.source.transport.rate), 1.5)
+    await page.selectOption('[data-role=speed]', '1')
+  } finally {
+    await context.setOffline(false)
+  }
+  // it is also among the kept files of the Audio file source
+  assert.ok(await page.evaluate(async () => (await window.__harness.core.getAudioAssets().list()).some((a) => a.origin?.title === 'Episode with CORS')))
+  await page.click('[data-role=delete-download]')
+  await page.waitForFunction(() => document.querySelector('[data-role=downloads]').closest('.dls').hidden, null, { timeout: 10000 })
+  assert.equal(await page.evaluate(() => window.__harness.audio.state), 'idle')
+  assert.deepEqual(await page.evaluate(async () => (await window.__harness.core.getAudioAssets().downloads()).length), 0)
+})
+
+await step('feed without CORS: read through the feed proxy (/api/feed), episodes listed', async () => {
+  const before = feedLog.length
+  await openLink(podUrl(podB, '/feed.xml'))
+  await page.waitForFunction(() => /read through the feed proxy/.test(document.querySelector('[data-role=url-note]').textContent), null, { timeout: 15000 })
+  assert.ok(feedLog.length > before, 'the proxy was asked')
+  await page.waitForSelector('[data-role=episode]')
+  assert.deepEqual(await page.$$eval('[data-role=episode] b', (b) => b.map((x) => x.textContent)), ['Only episode'])
+  // the feed is remembered by its own URL, not the proxy's
+  assert.ok(await page.evaluate(async (u) => (await window.__harness.core.getPodcastLibrary().recentFeeds()).some((f) => f.url === u), podUrl(podB, '/feed.xml')))
+  // a page that isn't a feed: the proxy refuses it, and the panel says so with the status
+  await openLink(podUrl(podB, '/nothing-here'))
+  await page.waitForFunction(() => /feed proxy couldn’t read it either: it answered 404/.test(document.querySelector('[data-role=url-note]').textContent), null, { timeout: 15000 })
+})
+
+await step('a direct episode URL (no feed) plays and analyses; Forget clears the remembered podcast', async () => {
+  await openLink(podUrl(podA, '/ep.wav'))
+  await page.click('[data-role=start]')
+  await page.waitForFunction(() => window.__harness.audio.state === 'running' && window.__harness.audio.analysis === 'ok', null, { timeout: 15000 })
+  await page.click('[data-role=start]')
+  await page.selectOption('[data-role=recent-feeds]', podUrl(podA, '/feed.xml'))
+  await page.waitForSelector('[data-role=episode]')
+  await page.click('[data-role=forget-feed]')
+  await page.waitForFunction((u) => ![...document.querySelectorAll('[data-role=recent-feeds] option')].some((o) => o.value === u), podUrl(podA, '/feed.xml'))
+  // the proxied feed is still remembered; Forget all clears it
+  assert.deepEqual((await page.evaluate(() => window.__harness.core.getPodcastLibrary().recentFeeds())).map((f) => f.url), [podUrl(podB, '/feed.xml')])
+  await page.click('[data-role=forget-all-feeds]')
+  await page.waitForFunction(() => document.querySelector('[data-role=recent-feeds]').closest('.row').hidden)
+  assert.deepEqual(await page.evaluate(() => window.__harness.core.getPodcastLibrary().recentFeeds()), [])
+})
+
 await step('audio file: chosen through the Files picker, shown by name, kept on the device when asked', async () => {
   await page.selectOption('[data-role=source]', 'file')
+  assert.match(await page.textContent('[data-role=file-help]'), /Patreon, Telegram or any download/)
+  // explicit extensions: iOS greys out MP3s it can't map to audio/*
+  assert.match(await page.getAttribute('[data-role=file-input]', 'accept'), /\.mp3,.*\.m4a/)
+  // kept by default, so a picked file can be continued in the next editor
+  assert.equal(await page.isChecked('[data-role=keep]'), true)
   await page.check('[data-role=keep]')
   await page.setInputFiles('[data-role=file-input]', { name: 'beats.wav', mimeType: 'audio/wav', buffer: readFileSync(join(fx, 'beats.wav')) })
   await page.waitForFunction(() => /beats\.wav/.test(document.querySelector('[data-role=file-name]').textContent))
@@ -397,6 +622,42 @@ await step('no Web MIDI (requestMIDIAccess removed): banner with a Diagnostics l
   await p2.close()
 })
 
+await step('audio continues across a page switch: harness → Library → editor shows “Continue”, one tap resumes at the same place', async () => {
+  const p3 = await context.newPage() // its own tab, so its own sessionStorage
+  watch(p3)
+  await p3.goto(base + 'harness/')
+  await p3.waitForFunction(() => !!window.__harness?.rt, null, { timeout: 20000 })
+  await tab(p3, 'audio')
+  await p3.selectOption('[data-role=source]', 'stream')
+  await p3.fill('[data-role=stream-url]', podUrl(podA, '/ep.wav'))
+  await p3.click('[data-role=url-open]')
+  await p3.click('[data-role=start]')
+  await p3.waitForFunction(() => window.__harness.audio.state === 'running' && window.__harness.audio.source.transport.duration > 0, null, { timeout: 15000 })
+  await p3.evaluate(() => window.__harness.audio.source.transport.seek(20))
+  await p3.waitForFunction(() => window.__harness.audio.source.transport.currentTime >= 20, null, { timeout: 10000 })
+  const sketchId = await p3.evaluate(() => window.__harness.sketch.id)
+  // the Library has no audio; the offer waits for the next editor
+  await p3.goto(base)
+  assert.equal(await p3.$('[data-role=continue-audio]'), null)
+  const ed = (await (await p3.request.get(base + 'apps.json')).json()).apps.find((a) => a.name !== 'harness')
+  await p3.goto(new URL(ed.path, base).href + `#/s/${sketchId}`)
+  await p3.waitForFunction(() => !!(window.__app ?? window.__stack)?.audio, null, { timeout: 20000 })
+  await p3.waitForSelector('[data-role=continue-audio]', { timeout: 5000 })
+  assert.match(await p3.textContent('[data-role=continue-audio]'), /Continue “.*ep\.wav” · 0:2\d/)
+  assert.equal(await p3.evaluate(() => (window.__app ?? window.__stack).audio.state), 'idle')
+  await shot(p3, `05b-${ed.name}-continue-audio`)
+  await p3.click('[data-role=continue-audio]')
+  await p3.waitForFunction(() => (window.__app ?? window.__stack).audio.state === 'running' && (window.__app ?? window.__stack).audio.analysis === 'ok' && (window.__app ?? window.__stack).audio.source.transport.currentTime >= 20, null, { timeout: 15000 })
+  assert.equal(await p3.$('[data-role=continue-audio]'), null)
+  // stopped before leaving: nothing is offered on the next page
+  await p3.evaluate(() => (window.__app ?? window.__stack).audio.stop())
+  await p3.reload()
+  await p3.waitForFunction(() => !!(window.__app ?? window.__stack)?.audio, null, { timeout: 20000 })
+  assert.equal(await p3.$('[data-role=continue-audio]'), null)
+  await p3.close()
+  return ed.name
+})
+
 // ------------------------------------------------------------------ every editor + shell
 
 await step('the ⇄ menu in an editor opens the Plugins and MIDI sheets', async () => {
@@ -444,6 +705,7 @@ await browser.close()
 app.server.close()
 cors.server.close()
 nocors.server.close()
+for (const p of [podA, podB, podC]) p.server.close()
 const failed = results.filter((r) => !r.ok)
 writeFileSync(join(shots, 'metrics.json'), JSON.stringify({ when: new Date().toISOString(), software: true, metrics, results }, null, 2))
 console.log(`\n${results.length - failed.length}/${results.length} steps passed in ${((Date.now() - t0) / 1000).toFixed(1)} s · screenshots and metrics in ${shots}`)

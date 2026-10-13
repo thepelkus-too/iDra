@@ -8,6 +8,8 @@ export interface MediaTransport {
   readonly currentTime: number
   readonly playing: boolean
   loop: boolean
+  /** playback speed (1 = normal); media elements keep the pitch */
+  rate?: number
   play(): Promise<void>
   pause(): void
   seek(t: number): void
@@ -28,6 +30,14 @@ export interface AudioSource {
   monitorDefaultMuted?: boolean
   /** true when the source plays outside Web Audio (a stream without CORS): audible, but the analyser gets silence */
   readonly playOnly?: boolean
+  /** how the next page finds this file/stream again to continue it (audio-continue.ts); unset: it can't be continued */
+  resumeRef?: AudioResumeRef
+}
+
+/** A URL, or a file kept on the device (audio-assets.ts id). */
+export interface AudioResumeRef {
+  url?: string
+  assetId?: string
 }
 
 export type AudioSourceSpec =
@@ -193,6 +203,7 @@ abstract class ElementSource implements AudioSource {
   abstract readonly label: string
   protected el?: HTMLAudioElement
   protected _loop: boolean
+  protected _rate = 1
   transport: MediaTransport
   constructor(protected makeElement: MediaElementFactory, loop: boolean) {
     this._loop = loop
@@ -213,6 +224,13 @@ abstract class ElementSource implements AudioSource {
       set loop(v: boolean) {
         self._loop = v
         if (self.el) self.el.loop = v
+      },
+      get rate() {
+        return self._rate
+      },
+      set rate(v: number) {
+        self._rate = v
+        if (self.el) self.el.playbackRate = v
       },
       async play() {
         await self.el?.play()
@@ -245,9 +263,11 @@ export class FileSource extends ElementSource {
   readonly label: string
   /** byte size when known (Blob/File) */
   readonly size?: number
+  resumeRef?: AudioResumeRef
   private url?: string
-  constructor(private file: Blob | File | string, name?: string, opts: { createElement?: MediaElementFactory; loop?: boolean } = {}) {
+  constructor(private file: Blob | File | string, name?: string, opts: { createElement?: MediaElementFactory; loop?: boolean; ref?: AudioResumeRef } = {}) {
     super(opts.createElement ?? defaultElement, opts.loop ?? true)
+    this.resumeRef = opts.ref ?? (typeof file === 'string' && /^https?:/.test(file) ? { url: file } : undefined)
     this.label = name ?? (typeof file === 'string' ? file.split('/').pop() || 'audio' : (file as File).name || 'audio file')
     this.size = typeof file === 'string' ? undefined : file.size
   }
@@ -305,6 +325,27 @@ export function nativeHls(): boolean {
   }
 }
 
+export interface StreamSourceOptions {
+  playOnly?: boolean
+  name?: string
+  createElement?: MediaElementFactory
+  loadTimeoutMs?: number
+  /** seconds to start from (a podcast episode's saved position) */
+  startAt?: number
+  /** playback speed */
+  rate?: number
+  /** the AUDIO_PROXY_URL build setting: tried for analysis when the host sends no CORS headers (never set by default) */
+  proxy?: string
+  /** how the next page finds it again (default: the URL itself, unless it is a blob: URL) */
+  ref?: AudioResumeRef
+}
+
+/** `https://p.example/fetch?url={url}` → the encoded target substituted; without `{url}` the encoded target is appended. */
+export function proxiedUrl(proxy: string, target: string): string {
+  const enc = encodeURIComponent(target)
+  return proxy.includes('{url}') ? proxy.replace('{url}', enc) : proxy + enc
+}
+
 /**
  * Internet radio / direct MP3, AAC, Ogg URLs. Loaded with `crossOrigin="anonymous"` so Web Audio may read the samples;
  * a server without CORS headers makes that load fail, and then a plain probe tells "no CORS" (plays, can't be analysed)
@@ -315,11 +356,19 @@ export class StreamSource extends ElementSource {
   readonly label: string
   readonly playOnly: boolean
   readonly monitorDefaultMuted = false
+  resumeRef?: AudioResumeRef
+  /** true when the audio is analysed through the AUDIO_PROXY_URL proxy (the host itself sends no CORS headers) */
+  viaProxy = false
   private loadTimeoutMs: number
-  constructor(readonly url: string, opts: { playOnly?: boolean; name?: string; createElement?: MediaElementFactory; loadTimeoutMs?: number } = {}) {
+  /** where playback (re)starts: the startAt option, then the position at the last stop() of a seekable file */
+  private resumeAt: number
+  constructor(readonly url: string, private opts: StreamSourceOptions = {}) {
     super(opts.createElement ?? defaultElement, false)
     this.playOnly = !!opts.playOnly
+    this.resumeRef = opts.ref ?? (/^https?:/i.test(url) ? { url } : undefined)
     this.loadTimeoutMs = opts.loadTimeoutMs ?? 15000
+    this.resumeAt = opts.startAt ?? 0
+    this._rate = opts.rate ?? 1
     let host = url
     try {
       host = new URL(url).host + new URL(url).pathname.replace(/\/$/, '')
@@ -328,13 +377,41 @@ export class StreamSource extends ElementSource {
     }
     this.label = opts.name ?? host
   }
+  /** The same URL, name, position and speed, played outside Web Audio (audible, never analysed). */
+  asPlayOnly(): StreamSource {
+    return new StreamSource(this.url, { ...this.opts, playOnly: true, startAt: this.position(), rate: this._rate })
+  }
+  private position(): number {
+    const el = this.el
+    return el && isFinite(el.duration) && el.currentTime > 0 ? el.currentTime : this.resumeAt
+  }
+  private prepare(el: HTMLAudioElement) {
+    el.preload = 'auto'
+    el.loop = false
+    el.playbackRate = this._rate
+    ;(el as any).preservesPitch = true
+    const at = this.resumeAt
+    if (at > 0) {
+      // seek once the duration is known (a range request on servers that support them; live streams ignore it)
+      const go = () => {
+        el.removeEventListener('loadedmetadata', go)
+        if (isFinite(el.duration) && at < el.duration) el.currentTime = at
+      }
+      el.addEventListener('loadedmetadata', go)
+      if (el.readyState >= 1) go()
+    }
+  }
+  override stop() {
+    const el = this.el
+    if (el && isFinite(el.duration) && el.currentTime > 0) this.resumeAt = el.currentTime
+    super.stop()
+  }
   async start(ctx: AudioContext): Promise<AudioNode> {
     if (!/^https?:|^blob:|^data:/i.test(this.url)) throw new AudioStartError('Enter an http(s) URL of an audio stream or file.', 'unreachable')
     if (isHlsUrl(this.url) && !nativeHls())
       throw new AudioStartError('This is an HLS (.m3u8) stream. Only browsers with native HLS (Safari) can play it; use the direct MP3/AAC/Ogg URL if the station has one.', 'unsupported')
     const el = this.makeElement()
-    el.preload = 'auto'
-    el.loop = false
+    this.prepare(el)
     this.el = el
     if (this.playOnly) {
       el.src = this.url
@@ -350,6 +427,21 @@ export class StreamSource extends ElementSource {
     if (r === 'ok') return node
     // CORS refused, unreachable, or a format the browser cannot play: find out which with a plain (no-CORS) probe
     this.stop()
+    const proxy = this.opts.proxy
+    if (proxy && /^https?:/i.test(this.url)) {
+      const pel = this.makeElement()
+      this.prepare(pel)
+      pel.crossOrigin = 'anonymous'
+      pel.src = proxiedUrl(proxy, this.url)
+      this.el = pel
+      const pnode = ctx.createMediaElementSource(pel)
+      void pel.play().catch(() => {})
+      if ((await waitPlayable(pel, this.loadTimeoutMs)) === 'ok') {
+        this.viaProxy = true
+        return pnode
+      }
+      this.stop()
+    }
     const probe = this.makeElement()
     probe.muted = true
     probe.preload = 'auto'

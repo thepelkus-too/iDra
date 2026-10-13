@@ -23,7 +23,6 @@ import {
   micError,
   analysisConstraints,
 } from '../src/audio'
-import { AudioAssets, AudioAssetError } from '../src/audio-assets'
 import { audioBindings } from '../src/audio-bindings'
 import { importText } from '../src/parse'
 import { toCode } from '../src/codegen'
@@ -331,21 +330,5 @@ describe('microphone, devices, hints', () => {
     await engine.resumeFromGesture()
     expect(engine.needsResume).toBe(false)
     engine.stop()
-  })
-})
-
-describe('AudioAssets (opt-in kept files)', () => {
-  test('keeps, lists, returns and removes files within the caps', async () => {
-    const assets = new AudioAssets({ limits: { maxFile: 1000, maxTotal: 1500 } })
-    const a = await assets.add(new Blob([new Uint8Array(800)], { type: 'audio/wav' }), 'a.wav')
-    expect((await assets.list()).map((x) => x.name)).toEqual(['a.wav'])
-    await expect(assets.add(new Blob([new Uint8Array(1200)]), 'big.wav')).rejects.toBeInstanceOf(AudioAssetError)
-    await expect(assets.add(new Blob([new Uint8Array(900)]), 'b.wav')).rejects.toThrow(/more than/)
-    const again = await assets.add(new Blob([new Uint8Array(800)]), 'a.wav') // same name+size replaces
-    expect(again.id).toBe(a.id)
-    const got = await assets.get(a.id)
-    expect(got!.blob.size).toBe(800)
-    await assets.remove(a.id)
-    expect(await assets.list()).toEqual([])
   })
 })

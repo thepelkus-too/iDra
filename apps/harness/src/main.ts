@@ -47,6 +47,7 @@ const APP = 'harness'
 const lib = getLibrary()
 const prefs = appStorage(APP)
 const audio = getAudioEngine()
+core.installAudioContinue(audio)
 
 let sketch: Sketch
 let rt: Runtime

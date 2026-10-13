@@ -48,15 +48,15 @@ export function mountDiagnostics(el: HTMLElement, getIsolation: () => string): v
   void probeSandboxedFrame
 }
 
-/** Audio lab tab: the audio panel (every source), a stand-alone CORS check for a stream URL, notes. */
+/** Audio lab tab: the audio panel (every source), a stand-alone CORS check for a stream or feed URL, notes. */
 export function mountAudioLab(el: HTMLElement): void {
-  const url = h('input', { type: 'text', placeholder: 'https://…/stream.mp3', 'aria-label': 'Stream URL', style: 'flex:1;min-width:200px' })
+  const url = h('input', { type: 'text', placeholder: 'https://…/stream.mp3 or a podcast feed', 'aria-label': 'Stream or feed URL', style: 'flex:1;min-width:200px' })
   const result = h('div', { class: 'status' })
   const panelHost = h('div', { id: 'audio-panel-host' })
   el.append(panelHost)
   mountAudioPanel(panelHost)
   el.append(
-    h('h3', {}, 'Stream URL'),
+    h('h3', {}, 'Stream or feed URL'),
     h('div', { class: 'row' }, url, h('button', { type: 'button', id: 'stream-check', onclick: async () => {
       result.textContent = 'Checking…'
       const r = await checkStreamCors(url.value.trim())
@@ -69,6 +69,7 @@ export function mountAudioLab(el: HTMLElement): void {
       h('li', {}, 'While the microphone is active iOS may route playback to the earpiece or lower its volume. With mic and speakers both on, the panel warns about feedback.'),
       h('li', {}, 'Audio from other apps cannot be captured by a web page on iPad. Use the mic (acoustic pickup) or a USB-C audio interface (Input device…).'),
       h('li', {}, 'Streams need CORS headers (Access-Control-Allow-Origin) for analysis. Without them the panel offers “Play without analysis”. HLS (.m3u8) plays natively only in Safari.'),
+      h('li', {}, 'Podcasts: paste an RSS feed under “Podcast / URL…”. The episode list needs CORS on the feed, analysis needs CORS on the audio host; otherwise paste an episode’s direct audio URL, download it and use “Audio file…”, or play it without analysis. YouTube, Vimeo, Spotify and Apple Podcasts links get an explanation only.'),
       h('li', {}, 'If iOS suspends audio (a call, Siri, another app), a “tap to resume” button appears in the panel.'),
     ),
   )
