@@ -163,7 +163,8 @@ export function mountAudioPanel(el: HTMLElement, opts: AudioPanelOptions = {}): 
   const fileHelp = h('div', { class: 'note', 'data-role': 'file-help' }, FILE_HELP)
   const seek = h('input', { type: 'range', min: 0, max: 1, step: 0.1, value: 0, 'aria-label': 'Seek', 'data-role': 'seek', disabled: true }) as HTMLInputElement
   const loop = h('input', { type: 'checkbox', checked: true, 'data-role': 'loop' }) as HTMLInputElement
-  const keep = h('input', { type: 'checkbox', 'data-role': 'keep' }) as HTMLInputElement
+  // on by default: a kept file can be picked again later and continued on the next page (audio-continue.ts)
+  const keep = h('input', { type: 'checkbox', 'data-role': 'keep', checked: prefs.get<boolean>('keepFiles') ?? true }) as HTMLInputElement
   const savedSel = h('select', { 'aria-label': 'Kept files', 'data-role': 'saved' }) as HTMLSelectElement
   const forgetBtn = h('button', { 'data-role': 'forget' }, 'Remove')
   const savedRow = h('div', { class: 'row', hidden: true }, savedSel, forgetBtn)
@@ -401,6 +402,7 @@ export function mountAudioPanel(el: HTMLElement, opts: AudioPanelOptions = {}): 
     }
   }
   keep.addEventListener('change', () => {
+    prefs.set('keepFiles', keep.checked)
     if (keep.checked) void keepFile()
   })
   savedSel.addEventListener('change', async () => {

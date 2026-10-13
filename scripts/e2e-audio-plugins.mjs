@@ -468,6 +468,8 @@ await step('audio file: chosen through the Files picker, shown by name, kept on 
   assert.match(await page.textContent('[data-role=file-help]'), /Patreon, Telegram or any download/)
   // explicit extensions: iOS greys out MP3s it can't map to audio/*
   assert.match(await page.getAttribute('[data-role=file-input]', 'accept'), /\.mp3,.*\.m4a/)
+  // kept by default, so a picked file can be continued in the next editor
+  assert.equal(await page.isChecked('[data-role=keep]'), true)
   await page.check('[data-role=keep]')
   await page.setInputFiles('[data-role=file-input]', { name: 'beats.wav', mimeType: 'audio/wav', buffer: readFileSync(join(fx, 'beats.wav')) })
   await page.waitForFunction(() => /beats\.wav/.test(document.querySelector('[data-role=file-name]').textContent))
