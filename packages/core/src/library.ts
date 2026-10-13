@@ -1,7 +1,7 @@
 import { toCode } from './codegen'
 import { importText } from './parse'
 import { contentHash, newId, type Sketch } from './ir'
-import { needsTrustPrompt, trustFingerprint } from './trust'
+import { needsTrustPrompt, trustKeys, type TrustApproval } from './trust'
 import { starters } from './starters'
 
 // The shared sketch library. Every app on the origin reads and writes the same one.
@@ -25,6 +25,8 @@ export interface Revision {
 
 export type StoreName = 'sketches' | 'entries' | 'revisions' | 'trust' | 'kv'
 const STORES: StoreName[] = ['sketches', 'entries', 'revisions', 'trust', 'kv']
+/** approved trust keys kept per sketch (`approve`); older ones beyond this ask again */
+const MAX_TRUST_KEYS = 1000
 
 export interface KV {
   readonly kind: 'indexeddb' | 'localstorage' | 'memory'
@@ -503,12 +505,23 @@ export class Library {
   }
 
   // ---- trust
+  /**
+   * "Always for this sketch": adds each piece of its risky code to what the owner approved for it, so a version with some of
+   * that code switched off, or switched back on, runs without asking; new or changed code still asks.
+   */
   async approve(sketch: Sketch): Promise<void> {
-    await (await this.kv()).put('trust', sketch.id, trustFingerprint(sketch))
+    const kv = await this.kv()
+    const prev = await kv.get<string | TrustApproval>('trust', sketch.id)
+    const keys = new Set(typeof prev === 'object' && prev ? prev.keys : [])
+    for (const k of trustKeys(sketch)) {
+      keys.delete(k) // re-added last: the cap below drops the longest-unapproved keys first
+      keys.add(k)
+    }
+    await kv.put('trust', sketch.id, { v: 2, keys: [...keys].slice(-MAX_TRUST_KEYS) } satisfies TrustApproval)
   }
   async needsTrust(sketch: Sketch): Promise<boolean> {
-    const fp = await (await this.kv()).get<string>('trust', sketch.id)
-    return needsTrustPrompt(sketch, fp ?? null)
+    const approved = await (await this.kv()).get<string | TrustApproval>('trust', sketch.id)
+    return needsTrustPrompt(sketch, approved ?? null)
   }
 
   // ---- first run

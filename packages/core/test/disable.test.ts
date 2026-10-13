@@ -5,7 +5,7 @@ import { commentOut, toCode, toCodeWithMap, toRunnable, uncommentOut } from '../
 import { canonicalSketch } from '../src/normalize'
 import { validate } from '../src/validate'
 import { describe as describeSketch } from '../src/analyze'
-import { needsTrustPrompt, riskyParts, trustFingerprint } from '../src/trust'
+import { needsTrustPrompt, riskyParts, trustFingerprint, trustKeys } from '../src/trust'
 import { buildGraph } from '../src/autoLayout'
 import { randomSketch, rng } from '../src/randomize'
 import { activeSketch, canDisable, disabledNodes, enableAll, isDisabled, setDisabled, toggleDisabled } from '../src/disable'
@@ -237,6 +237,16 @@ describe('everything else ignores disabled nodes', () => {
     const md = setDisabled(m, chainOf(m, 0).mods[0].id, true)
     expect(needsTrustPrompt(m)).toBe(true)
     expect(needsTrustPrompt(md)).toBe(false)
+  })
+
+  test('trust: an approval covers each piece, so switching approved code off or back on does not ask again', () => {
+    const s = fromCode('k = knob(0.5)\nosc(10, 0.1, k).out()\nnoise(3).modulate(o0, () => k * 0.2).out(o1)\n')
+    const keys = trustKeys(s)
+    const off = setDisabled(s, chainOf(s, 1).mods[0].id, true)
+    expect(trustFingerprint(off)).not.toBe(trustFingerprint(s)) // the whole-set hash changes…
+    expect(needsTrustPrompt(off, { v: 2, keys })).toBe(false) // …but every piece that still runs was approved
+    expect(needsTrustPrompt(setDisabled(off, chainOf(s, 1).mods[0].id, false), keys)).toBe(false)
+    expect(needsTrustPrompt(fromCode('k = knob(0.5)\nnoise(3).modulate(o0, () => k * 0.3).out(o1)\n'), keys)).toBe(true)
   })
 
   test('autoLayout keeps disabled nodes in place, flagged; skip mode lays out only what runs', () => {

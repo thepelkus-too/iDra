@@ -8,7 +8,9 @@ import {
   getAudioEngine,
   getLibrary,
   riskyParts,
+  trustCovered,
   trustFingerprint,
+  trustKeys,
   type Isolation,
   type RiskyPart,
   type Runtime,
@@ -48,6 +50,8 @@ export class Runner {
   private audio = getAudioEngine()
   private sketch?: Sketch
   private approved = new Map<string, boolean>() // trust fingerprint → run allowed
+  /** trust keys the owner said yes to while this sketch is open ("Run it once" covers that code, switched off or on) */
+  private session = new Set<string>()
   private lastGood?: { sketch: Sketch; safe: boolean }
   private lastAttempt?: { sketch: Sketch; safe: boolean; at: number }
   private startedAt = 0
@@ -152,7 +156,8 @@ export class Runner {
       return { safe: false }
     }
     const fp = trustFingerprint(sketch)
-    let ok = this.approved.get(fp)
+    // code the owner already said yes to while it is open, with parts switched off or back on, does not ask again
+    let ok = trustCovered(sketch, this.session) ? true : this.approved.get(fp)
     if (ok === undefined) {
       const needs = await this.lib.needsTrust(sketch)
       // an approval given while the library answered (the owner's own pad binding) wins over the stored answer
@@ -163,23 +168,26 @@ export class Runner {
     return { safe: !ok }
   }
 
-  /** "Run it once" for this exact content. */
+  /** "Run it once": this code, and any version of it with parts switched off or back on, until another sketch opens. */
   approveOnce(): void {
     if (!this.sketch) return
     this.approved.set(trustFingerprint(this.sketch), true)
+    for (const k of trustKeys(this.sketch)) this.session.add(k)
     this.run(true)
   }
-  /** "Always for this sketch": stored in the library as a hash of exactly the risky parts. */
+  /** "Always for this sketch": the library adds a key for each piece of risky code (core `trustKeys`). */
   async approveAlways(): Promise<void> {
     if (!this.sketch) return
     await this.lib.approve(this.sketch)
     this.approved.set(trustFingerprint(this.sketch), true)
+    for (const k of trustKeys(this.sketch)) this.session.add(k)
     this.run(true)
   }
 
   /** Forget trust decisions (a different sketch was opened). */
   resetTrust(): void {
     this.approved.clear()
+    this.session.clear()
     this.trust = { pending: false, parts: [] }
   }
 

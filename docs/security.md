@@ -27,9 +27,14 @@ Sketches are arbitrary JavaScript and plugins are third-party scripts. All apps 
 
 ## Trust gate
 
-`needsTrustPrompt(sketch, approvedFingerprint)` is true when a sketch has `raw` stmts, `def`s with arbitrary JS, expressions outside the
+`needsTrustPrompt(sketch, approved)` is true when a sketch has `raw` stmts, `def`s with arbitrary JS, expressions outside the
 safe subset (`isSafeExpression`: arithmetic over `time`, `mouse`, `a.fft[i]`, `a0()`, `bpm`, `width`, `height`, `Math.*`), or plugins —
-unless the owner approved that exact content (`library.approve(sketch)` stores a hash of just the risky parts).
+unless the owner approved every piece of that code. `trustKeys(sketch)` is one SHA-256 per risky part that runs (kind + complete
+text) and per plugin (id, URL, pasted source, integrity); `library.approve(sketch)` adds them to the keys already approved for the
+sketch, and "Run it once" keeps them for as long as the sketch stays open. So switching approved code off with `//`, switching it back
+on, or deleting it never asks again, while any new or changed code does — including code that was already commented out when the
+owner approved (disabled code is not listed, so it was never approved). A fingerprint stored before approvals were per piece
+(`trustFingerprint`) still matches exactly that content.
 `runtime.run(sketch, { safe: true })` runs only recognised chains, settings and sources and replaces unsafe expressions by the catalog default.
 The allowlist is deliberately small; it is a convenience filter for "obviously just maths", **not** a security boundary — the iframe is.
 
