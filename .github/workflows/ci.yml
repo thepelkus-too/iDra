@@ -22,7 +22,10 @@ jobs:
           git diff --exit-code -- packages/motion/dist packages/core/plugins/registry.json
       - run: npm run typecheck
       - run: npm test
-      - run: npm run build:all
+      - name: build (feed proxy on, as on Vercel; the audio e2e serves api/feed.mjs)
+        run: npm run build:all
+        env:
+          FEED_PROXY_URL: /api/feed?url=
       - name: e2e (Chromium, software WebGL)
         run: |
           npx playwright install --with-deps chromium
