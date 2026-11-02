@@ -10,7 +10,7 @@ import { execFileSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join, resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { launch, SOFTWARE_GL_ARGS, FAKE_MEDIA_ARGS } from './lib/browser.mjs'
+import { launch, BROWSER, IS_WEBKIT, SOFTWARE_GL_ARGS, FAKE_MEDIA_ARGS } from './lib/browser.mjs'
 import { serve } from './serve.mjs'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -38,7 +38,8 @@ async function step(name, fn) {
 
 const browser = await launch({ args: [...SOFTWARE_GL_ARGS, ...FAKE_MEDIA_ARGS] })
 const context = await browser.newContext({ viewport: { width: 834, height: 1194 }, deviceScaleFactor: 2, hasTouch: true, isMobile: true, acceptDownloads: true })
-await context.grantPermissions(['camera', 'microphone'], { origin: base.slice(0, -1) })
+// Playwright's WebKit has no fake camera/mic and rejects these permission names; the camera steps then only report.
+if (!IS_WEBKIT) await context.grantPermissions(['camera', 'microphone'], { origin: base.slice(0, -1) })
 const page = await context.newPage()
 const consoleErrors = []
 page.on('pageerror', (e) => consoleErrors.push('pageerror: ' + e.message))
@@ -47,7 +48,7 @@ page.on('console', (m) => m.type() === 'error' && consoleErrors.push('console.er
 const INPUT = readFileSync(join(root, 'packages/core/corpus/16-update.js'), 'utf8')
 let sketchId
 
-console.log(`\nHydra iPad e2e · ${base} · viewport 834×1194 · SOFTWARE WebGL (SwiftShader)\n`)
+console.log(`\nHydra iPad e2e · ${BROWSER} · ${base} · viewport 834×1194 · SOFTWARE WebGL\n`)
 
 await step('shell loads, seeds 3 starter sketches, lists editors from apps.json', async () => {
   await page.goto(base)
@@ -270,17 +271,29 @@ await step('live closures render the same pixels as baked numbers (10 random ske
       ctx.drawImage(img, 0, 0, 96, 54)
       return ctx.getImageData(0, 0, 96, 54).data
     }
+    const same = (a, b) => { for (let i = 0; i < a.length; i++) if (Math.abs(a[i] - b[i]) > 3) return false; return true }
+    // A sketch that reads an output feeds back and settles over several frames, and a slow software GL (WebKit in CI)
+    // draws fewer frames in a fixed wait: shoot until two consecutive frames agree (at most ~3 s).
+    const settled = async () => {
+      await sleep(350)
+      let prev = await shot()
+      for (let k = 0; k < 20; k++) {
+        await sleep(150)
+        const next = await shot()
+        if (same(prev, next)) return next
+        prev = next
+      }
+      return prev
+    }
     const out = []
     for (let seed = 1; seed <= 10; seed++) {
       const sk = core.randomSketch(seed, { fnP: 0, arrP: 0, nestedP: 1 })
       const baked = 'speed = 0\n' + core.toCode(sk, { fresh: true })
       await rt.run(baked, { force: true })
-      await sleep(350)
-      const a = await shot()
+      const a = await settled()
       const withSpeed = { ...sk, stmts: [{ id: 'sp', k: 'setting', name: 'speed', v: 0 }, ...sk.stmts] }
       const res = await rt.run(withSpeed, { force: true })
-      await sleep(350)
-      const b = await shot()
+      const b = await settled()
       let bad = 0, max = 0, lit = 0
       for (let i = 0; i < a.length; i += 4) {
         const d = Math.max(Math.abs(a[i] - b[i]), Math.abs(a[i + 1] - b[i + 1]), Math.abs(a[i + 2] - b[i + 2]))
@@ -316,13 +329,34 @@ await step('hovering the canvas drives Hydra\'s mouse in both modes without erro
 })
 
 await step('touch drags over the canvas move `mouse` (iOS sends no mouse events for a finger)', async () => {
-  const cdp = await context.newCDPSession(page)
+  // Chromium: real touch input through CDP, so the browser's own touch → pointer conversion is exercised.
+  // WebKit has no CDP; there the drag is touch-type pointer events dispatched on the Hydra canvas (in whichever frame
+  // owns it), which checks the app's handling but not the browser's conversion. E2E_TOUCH=dispatch forces that path.
+  const viaCdp = !IS_WEBKIT && process.env.E2E_TOUCH !== 'dispatch'
+  const cdp = viaCdp ? await context.newCDPSession(page) : null
+  const canvasFrame = async () => {
+    for (const f of page.frames()) if (await f.locator('canvas').count().catch(() => 0)) return f
+    throw new Error('no frame holds the Hydra canvas')
+  }
   const drag = async () => {
     const box = await page.locator('#stage').boundingBox()
     const pt = (i) => [{ x: box.x + 60 + i * 40, y: box.y + 80 + i * 10, id: 1 }]
-    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: pt(0) })
-    for (let i = 1; i < 12; i++) await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: pt(i) })
-    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
+    if (cdp) {
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: pt(0) })
+      for (let i = 1; i < 12; i++) await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: pt(i) })
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
+    } else {
+      const canvas = (await canvasFrame()).locator('canvas').first()
+      const cbox = await canvas.boundingBox() // page coordinates; turn them into the canvas frame's client coordinates
+      const local = await canvas.evaluate((c) => { const r = c.getBoundingClientRect(); return { x: r.left, y: r.top } })
+      const ev = (type, i, buttons) => {
+        const [p] = pt(i)
+        return canvas.dispatchEvent(type, { pointerType: 'touch', pointerId: 1, isPrimary: true, buttons, clientX: p.x - cbox.x + local.x, clientY: p.y - cbox.y + local.y, bubbles: true })
+      }
+      await ev('pointerdown', 0, 1)
+      for (let i = 1; i < 12; i++) await ev('pointermove', i, 1)
+      await ev('pointerup', 11, 0)
+    }
     await page.waitForTimeout(300)
   }
   // inline: read the value directly
@@ -350,7 +384,9 @@ await step('diagnostics page computes live results and a copyable report', async
   const rows = await page.$$eval('table.caps tr', (trs) => Object.fromEntries(trs.map((t) => [t.children[0].textContent, [t.children[1].textContent, t.children[2].textContent]])))
   assert.equal(rows['Sandboxed frame is isolated'][0], 'yes', rows['Sandboxed frame is isolated'][1])
   assert.match(rows['Web MIDI'][1], /MIDI/)
-  assert.match(rows['WebGL 1 / 2'][1], /SOFTWARE|swiftshader/i)
+  // Chromium names the software renderer; WebKit masks every renderer as "Apple GPU" (as Safari on a real iPad does),
+  // so there the report cannot tell software GL from the device GPU.
+  assert.match(rows['WebGL 1 / 2'][1], IS_WEBKIT ? /webgl2=true .*Apple GPU/ : /SOFTWARE|swiftshader/i)
   assert.match(await page.textContent('pre.report'), /Hydra iPad diagnostics/)
   return `webgl: ${rows['WebGL 1 / 2'][1].slice(0, 70)}`
 })
@@ -360,7 +396,7 @@ await step('camera inside the opaque-origin sandboxed frame (fake device)', asyn
   await page.waitForFunction(() => document.body.textContent.includes('camera:'), null, { timeout: 15000 })
   const row = await page.$$eval('table.caps tr', (trs) => trs.map((t) => t.textContent).find((t) => t.includes('Mic/camera inside')))
   const granted = /camera: granted/.test(row)
-  return `${granted ? 'WORKS' : 'DOES NOT WORK'} in Chromium with allow="camera *": ${row.slice(row.indexOf('mediaDevices')).slice(0, 120)}`
+  return `${granted ? 'WORKS' : 'DOES NOT WORK'} in ${BROWSER} with allow="camera *": ${row.slice(row.indexOf('mediaDevices')).slice(0, 120)}`
 })
 
 await step('audio: mic (fake device) → engine → frame; sketch-side `a` follows Hydra semantics', async () => {
@@ -369,6 +405,16 @@ await step('audio: mic (fake device) → engine → frame; sketch-side `a` follo
   await page.click('#tabbtn-audio')
   await page.evaluate(() => window.__harness.rt.run('a.show()\nosc(() => a.fft[0] * 20, 0.1, 1).out()', { force: true }))
   await page.click('#audio-panel-host button.primary') // Start (mic by default)
+  if (IS_WEBKIT) {
+    // Playwright's WebKit has no fake microphone, so the mic cannot start here. What still matters on Safari: the start
+    // must end, as running or as a stated error, never hang in "starting".
+    await page.waitForFunction(() => /^(running|error)$/.test(window.__harness.audio.state), null, { timeout: 15000 })
+    const { state, error } = await page.evaluate(() => ({ state: window.__harness.audio.state, error: window.__harness.audio.error }))
+    if (state === 'error') {
+      assert.ok(error, 'a failed start says why')
+      return `WebKit has no fake mic; the start failed visibly: ${error.slice(0, 100)}`
+    }
+  }
   await page.waitForFunction(() => window.__harness.audio.state === 'running', null, { timeout: 15000 })
   await page.waitForFunction(() => window.a && window.a.bins.some((x) => x > 0), null, { timeout: 15000 })
   const r = await page.evaluate(() => ({ vol: window.__harness.audio.getFrame().vol, specific: window.__harness.audio.getFrame().specific.length, bins: window.a.bins.length, fft: Array.from(window.a.fft), a0: typeof window.a0, ctx: window.__harness.audio.contextState }))

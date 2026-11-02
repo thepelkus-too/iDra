@@ -153,7 +153,7 @@ await step('thumbnails show everything up to each call, nested texture argument 
   const [solid, grad, osc, mod] = shots
   assert.ok(solid.pts.every((p) => near(p, [0, 0, 255, 255])), 'solid(0,0,1) is blue: ' + JSON.stringify(solid.pts[5]))
   assert.ok(lit(grad.pts[11]), 'gradient is lit')
-  assert.ok(osc.pts.some(lit) && mod.pts.some(lit), 'osc and osc.modulate(noise().scale()) are lit')
+  assert.ok(osc.pts.some(lit) && mod.pts.some(lit), `osc and osc.modulate(noise().scale()) are lit: osc ${JSON.stringify(osc.pts.slice(0, 6))} mod ${JSON.stringify(mod.pts.slice(0, 6))} states ${(await states()).join(' ')}`)
   const d = osc.pts.reduce((s, p, i) => s + Math.abs(p[0] - mod.pts[i][0]) + Math.abs(p[1] - mod.pts[i][1]) + Math.abs(p[2] - mod.pts[i][2]), 0) / 36
   assert.ok(d > 8, `modulate by the nested noise changes the picture (mean diff ${d.toFixed(1)})`)
   assert.ok(!st.some((s) => s === 'error'), 'no preview failed: ' + st.join(' '))
