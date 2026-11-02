@@ -49,3 +49,30 @@ jobs:
             test-results/ipad
             test-results/numbers
           if-no-files-found: ignore
+
+  # Safari's engine. Playwright's WebKit on Linux is close to, but not the same as, Safari on iPadOS: it catches
+  # WebKit-only CSS/JS/WebGL gaps, not iOS memory limits, PWA install, or real touch hardware.
+  webkit:
+    runs-on: ubuntu-latest
+    env:
+      BROWSER: webkit
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: build (feed proxy on, as on Vercel)
+        run: npm run build:all
+        env:
+          FEED_PROXY_URL: /api/feed?url=
+      - run: npx playwright install --with-deps webkit
+      - name: e2e (WebKit, iPad viewport)
+        run: node scripts/e2e.mjs --skip-build
+      - name: e2e evaluation model (WebKit)
+        if: always()
+        run: node scripts/e2e-eval.mjs --skip-build
+      - name: e2e chunk previews (WebKit)
+        if: always()
+        run: node scripts/e2e-previews.mjs --skip-build

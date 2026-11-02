@@ -10,7 +10,7 @@ import { execFileSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join, resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { launch, SOFTWARE_GL_ARGS, FAKE_MEDIA_ARGS } from './lib/browser.mjs'
+import { launch, BROWSER, IS_WEBKIT, SOFTWARE_GL_ARGS, FAKE_MEDIA_ARGS } from './lib/browser.mjs'
 import { serve } from './serve.mjs'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -38,7 +38,8 @@ async function step(name, fn) {
 
 const browser = await launch({ args: [...SOFTWARE_GL_ARGS, ...FAKE_MEDIA_ARGS] })
 const context = await browser.newContext({ viewport: { width: 834, height: 1194 }, deviceScaleFactor: 2, hasTouch: true, isMobile: true, acceptDownloads: true })
-await context.grantPermissions(['camera', 'microphone'], { origin: base.slice(0, -1) })
+// Playwright's WebKit has no fake camera/mic and rejects these permission names; the camera steps then only report.
+if (!IS_WEBKIT) await context.grantPermissions(['camera', 'microphone'], { origin: base.slice(0, -1) })
 const page = await context.newPage()
 const consoleErrors = []
 page.on('pageerror', (e) => consoleErrors.push('pageerror: ' + e.message))
@@ -47,7 +48,7 @@ page.on('console', (m) => m.type() === 'error' && consoleErrors.push('console.er
 const INPUT = readFileSync(join(root, 'packages/core/corpus/16-update.js'), 'utf8')
 let sketchId
 
-console.log(`\nHydra iPad e2e · ${base} · viewport 834×1194 · SOFTWARE WebGL (SwiftShader)\n`)
+console.log(`\nHydra iPad e2e · ${BROWSER} · ${base} · viewport 834×1194 · SOFTWARE WebGL\n`)
 
 await step('shell loads, seeds 3 starter sketches, lists editors from apps.json', async () => {
   await page.goto(base)
@@ -360,7 +361,7 @@ await step('camera inside the opaque-origin sandboxed frame (fake device)', asyn
   await page.waitForFunction(() => document.body.textContent.includes('camera:'), null, { timeout: 15000 })
   const row = await page.$$eval('table.caps tr', (trs) => trs.map((t) => t.textContent).find((t) => t.includes('Mic/camera inside')))
   const granted = /camera: granted/.test(row)
-  return `${granted ? 'WORKS' : 'DOES NOT WORK'} in Chromium with allow="camera *": ${row.slice(row.indexOf('mediaDevices')).slice(0, 120)}`
+  return `${granted ? 'WORKS' : 'DOES NOT WORK'} in ${BROWSER} with allow="camera *": ${row.slice(row.indexOf('mediaDevices')).slice(0, 120)}`
 })
 
 await step('audio: mic (fake device) → engine → frame; sketch-side `a` follows Hydra semantics', async () => {
