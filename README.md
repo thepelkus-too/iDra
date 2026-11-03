@@ -1,8 +1,56 @@
-# Hydra iPad
+# iDra: touch editors for Hydra
 
-Shared foundation for several **iPad-first visual editors** for [Hydra](https://hydra.ojack.xyz), the livecoding video synth. This repository
-contains the core (catalog, IR, text⇄IR, library, sandboxed runtime, audio), an installable shell/launcher, and a test harness. The editors
-(`stack`, `graph`, `blocks`, `rack`) are built later, each on its own branch, as `apps/<name>` over this core.
+**[Try it on an iPad →](https://idra-sable.vercel.app/)** (any modern browser works; Safari › Share › *Add to Home Screen* installs it)
+
+[Hydra](https://hydra.ojack.xyz) is a live-coding video synth: you chain functions like `osc(20).rotate(0.8).kaleid(5).out()` and the
+picture changes as you type. That works well with a keyboard and poorly on a tablet. iDra gives the same sketches four touch editors
+that all edit one shared sketch, so you can switch between them mid-performance without losing anything.
+
+![One sketch opened in the Stack, Graph, Blocks and Rack editors in turn](docs/media/four-editors.gif)
+
+| Editor | Idea |
+|---|---|
+| **Stack** | the code as a vertical stack of tappable, scrubbable calls |
+| **Graph** | every call is a node; textures and feedback loops are visible cables |
+| **Blocks** | snap blocks together; sockets take textures, reporters make numbers move |
+| **Rack** | knobs, pads and a mod bay: play Hydra like an instrument |
+
+Dragging a number changes the picture on the next frame, without recompiling the shader:
+
+![Scrubbing a number in the Stack editor](docs/media/scrub.gif)
+
+## How it works
+
+```mermaid
+flowchart LR
+  text["Hydra code<br/>(pasted, imported, exported)"] -- "parse (acorn)" --> ir
+  ir["Sketch IR<br/>statements · chains · calls · values"] -- "toCode<br/>(format-preserving)" --> text
+  editors["Stack · Graph · Blocks · Rack"] -- "edit IR,<br/>own meta only" --> ir
+  ir <--> lib[("Library<br/>IndexedDB")]
+  ir -- "toRunnable<br/>(numbers as live closures)" --> host["Runtime host"]
+  host -- "postMessage only" --> frame["Sandboxed iframe<br/>hydra-synth + WebGL"]
+```
+
+* **Round trip without loss.** Code is parsed into an IR; anything the IR doesn't model is kept as raw text. Unchanged statements
+  and calls export byte-for-byte, so a sketch from the Hydra community survives a trip through any editor. ([docs/IR.md](docs/IR.md))
+* **Fast number edits.** Hydra pastes numbers into shader source, so every drag would recompile. The runtime turns them into
+  closures over a live table, so a drag only updates a value. ([docs/live-edit.md](docs/live-edit.md))
+* **Untrusted code stays boxed.** Sketches and plugins are arbitrary JavaScript, so they run in an opaque-origin sandboxed iframe
+  that can't see the library. A trust prompt gates code from outside. ([docs/security.md](docs/security.md))
+* **Offline, installable.** One PWA shell with a root-scope service worker; all editors share its library and cache.
+* **Tested in real browsers.** 1,400+ unit tests (including a 35-sketch corpus round trip) plus Playwright end-to-end suites at iPad viewports.
+
+## How it was built
+
+<!-- TODO(Kai): rewrite in your own words: why you built it, what you decided, what surprised you. -->
+I built iDra with parallel Claude Code sessions in about a week (19 pull requests in 6 days, October 2026). I set the product
+direction and the rules (a shared core with its own PRs, each editor on its own branch touching only `apps/<name>`, the IR as the
+only contract between them), and each session worked from a written brief. The briefs, contracts and findings are in [docs/](docs/).
+
+## Developing
+
+Shared foundation: the core (catalog, IR, text⇄IR, library, sandboxed runtime, audio), an installable shell/launcher, a test harness,
+and the four editors as `apps/<name>` over the core.
 
 * **Hydra source is authoritative.** The function catalog is derived from `hydra-synth/src/glsl/glsl-functions.js` at build/run time, never hand-copied.
 * **Licence: AGPL-3.0**, except the hydra-motion plugin in `packages/motion`, which is MIT (see below). A running copy offers its source: every page shows **About / Source**.
@@ -37,13 +85,14 @@ vercel.json  .github/workflows/{ci,pages}.yml
 
 ```
 npm ci
-npm test                              # core unit tests (vitest; 300+ tests incl. the 33-sketch corpus)
+npm test                              # unit tests for every package and app (vitest; incl. the 35-sketch corpus)
 npm run typecheck
 npm run build:all                     # dist/: shell at the root + dist/<name>/ for every apps/* with a build script + apps.json + sw.js
 npm run serve                         # serve dist/ on :4173
 npm run dev --workspace=harness       # vite dev server for one app
 npm run test:e2e                      # Playwright/Chromium, iPad viewport, software WebGL
 npm run test:e2e:audio                # audio sources, plugins, MIDI (local CORS/no-CORS servers, fake devices); screenshots in test-results/ipad
+node scripts/record-readme-media.mjs  # re-record docs/media/*.gif from the built dist/ (needs ffmpeg)
 ```
 
 ## Adding a front-end
@@ -89,7 +138,7 @@ The shell's **Docs** button opens this README and everything in `docs/`, rendere
 ## Known gaps
 
 Audio sources, plugins and MIDI are in (see their docs; the on-iPad checklist is at the end of docs/audio.md). Not bundled: an HLS library for non-Safari browsers.
-Also not done: host-side camera relay into the sandbox; the editors themselves; real-iPad verification of iOS audio (silent switch, interruptions), storage separation and Add-to-Home-Screen
+Also not done: host-side camera relay into the sandbox; real-iPad verification of iOS audio (silent switch, interruptions), storage separation and Add-to-Home-Screen
 behaviour (documented, not testable in the container); Vercel dashboard steps (documented, not executed). See the end-of-session summary for more.
 
 ## Licence and third-party code

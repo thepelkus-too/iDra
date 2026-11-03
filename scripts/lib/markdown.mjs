@@ -35,6 +35,13 @@ export function inline(text, { link = (h) => h } = {}) {
       flush()
       out.push(`<code>${escapeHtml(m[2].replace(/^ (.*) $/, '$1'))}</code>`)
       i += m[0].length
+    } else if ((m = /^!\[([^\]]*)\]\(([^)\s]+)\)/.exec(rest))) {
+      // images (README media) become a link, so the offline docs don't precache megabytes of GIFs
+      flush()
+      const href = link(m[2])
+      const ext = /^https?:/i.test(href)
+      out.push(`<a class="media" href="${escapeHtml(safeHref(href))}"${ext ? ' rel="noopener" target="_blank"' : ''}>${escapeHtml(m[1] || 'image')} (image)</a>`)
+      i += m[0].length
     } else if ((m = /^\[([^\]]+)\]\(([^)\s]+)\)/.exec(rest))) {
       flush()
       const href = link(m[2])

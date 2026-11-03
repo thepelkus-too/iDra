@@ -24,6 +24,12 @@ test('links can be rewritten', () => {
   assert.match(html('[m](docs/motion.md#api)', { link: (h) => h.replace('docs/motion.md', 'motion.html') }), /href="motion.html#api"/)
 })
 
+test('images become links to the image, not embeds', () => {
+  const html = render('![Four editors](docs/media/a.gif)').html
+  assert.match(html, /<a class="media" href="docs\/media\/a\.gif">Four editors \(image\)<\/a>/)
+  assert.doesNotMatch(html, /<img|!<a/)
+})
+
 test('fenced code keeps its text exactly', () => {
   assert.equal(html('```js\nk = knob(0.5) // <x> & y\n\n  z\n```'), '<pre><code class="language-js">k = knob(0.5) // &lt;x&gt; &amp; y\n\n  z</code></pre>')
 })
